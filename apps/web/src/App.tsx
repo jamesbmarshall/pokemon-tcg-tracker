@@ -13,6 +13,9 @@ import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
 import AccountPage from './pages/AccountPage';
 import AdminPage from './pages/AdminPage';
+import { ListPage, ListsPage } from './pages/ListsPage';
+import SharingPage from './pages/SharingPage';
+import PublicSharePage from './pages/PublicSharePage';
 import { AuthShell, InvitePage, LoginPage, ResetPage, SetupPage } from './pages/AuthPages';
 import { useAuth } from './store/authStore';
 import { Logo } from './components/ui';
@@ -48,6 +51,10 @@ function SignedInApp() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="admin" element={<AdminPage />} />
+        <Route path="lists" element={<ListsPage />} />
+        <Route path="lists/:listId" element={<ListPage />} />
+        <Route path="sharing" element={<SharingPage />} />
+        <Route path="shared" element={<Navigate to="/sharing" replace />} />
         <Route path="browse" element={<Navigate to="/sets" replace />} />
         <Route path="browse/:setId" element={<LegacySetRedirect />} />
         <Route path="binder" element={<Navigate to="/collection?view=binder" replace />} />
@@ -104,6 +111,7 @@ function AppInner() {
     <Routes>
       <Route path="invite/:token" element={<InvitePage />} />
       <Route path="reset/:token" element={<ResetPage />} />
+      <Route path="s/:token" element={<PublicSharePage />} />
       <Route path="*" element={<Gate />} />
     </Routes>
   );

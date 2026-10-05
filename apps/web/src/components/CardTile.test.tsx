@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CardTile from './CardTile';
 import Toaster from './Toaster';
+import { PublicShareContext } from './shareContext';
 import { renderWithProviders } from '../test/render';
 import { resetStores, seedCollection } from '../test/ui-helpers';
 import { makeCard, makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
@@ -141,5 +142,25 @@ describe('CardTile', () => {
     renderWithProviders(<CardTile card={makeSnapshot()} dimMissing />);
     expect(screen.getByRole('link', { name: 'Charmander 1, owned ×1, graded PSA 10' })).toBeInTheDocument();
     expect(screen.getByText('PSA 10')).toHaveAttribute('title', expect.stringContaining('kept out of set progress'));
+  });
+
+  it('is display-only when the collection is read-only', () => {
+    seedCollection({ entries: [makeEntry({ cardId: 'sv03-001', variant: 'normal', quantity: 2 })] });
+    useCollectionStore.setState({ readOnly: true, role: 'viewer' });
+    renderWithProviders(<CardTile card={makeSnapshot()} />);
+    expect(screen.getByRole('link', { name: /Charmander 1/ })).toHaveAttribute('href', '/card/sv03-001');
+    expect(screen.getByText('×2')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^(Add|Remove)/ })).not.toBeInTheDocument();
+  });
+
+  it('does not link into the app on a public share page', () => {
+    useCollectionStore.setState({ readOnly: true, role: 'viewer' });
+    renderWithProviders(
+      <PublicShareContext.Provider value={{ token: 'tok' }}>
+        <CardTile card={makeSnapshot()} />
+      </PublicShareContext.Provider>,
+    );
+    expect(screen.getByRole('img', { name: 'Charmander 1, not owned' })).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });

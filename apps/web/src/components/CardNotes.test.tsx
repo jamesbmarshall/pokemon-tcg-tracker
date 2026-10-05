@@ -29,7 +29,7 @@ describe('CardNotes', () => {
     expect(screen.getByRole('heading', { name: 'Notes' })).toBeInTheDocument();
     expect(box()).toHaveValue('Bought at a card fair');
     expect(box()).toHaveAttribute('maxLength', String(NOTE_MAX));
-    expect(screen.getByText('Only you can see this')).toBeInTheDocument();
+    expect(screen.getByText('Private unless you share it')).toBeInTheDocument();
   });
 
   it('autosaves after a pause in typing and confirms', async () => {
@@ -71,5 +71,16 @@ describe('CardNotes', () => {
     render(<CardNotes cardId="sv03-002" />);
     type('x'.repeat(NOTE_MAX - 12));
     expect(screen.getByText('12 left')).toBeInTheDocument();
+  });
+
+  it('shows the note as text when read-only, and nothing when there is none', () => {
+    useCollectionStore.setState({ readOnly: true, role: 'viewer' });
+    const { container, unmount } = render(<CardNotes cardId="sv03-001" />);
+    expect(screen.getByText('Bought at a card fair')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    unmount();
+    render(<CardNotes cardId="sv03-002" />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole('heading', { name: 'Notes' })).not.toBeInTheDocument();
   });
 });

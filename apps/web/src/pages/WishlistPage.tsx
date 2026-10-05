@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { ShareButton } from '../components/ShareDialog';
 import { Check, Heart, X } from 'lucide-react';
-import { useCollectionStore } from '../store/collectionStore';
+import { useCollectionStore, useReadOnly } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { useViewPref } from '../hooks/useViewPrefs';
 import { EmptyState, PageHeader, Segmented } from '../components/ui';
@@ -23,6 +24,7 @@ export default function WishlistPage() {
   const slabs = useCollectionStore((s) => s.gradedByCard);
   const toggleWishlist = useCollectionStore((s) => s.toggleWishlist);
   const adjust = useCollectionStore((s) => s.adjust);
+  const readOnly = useReadOnly();
   const money = useMoney();
   const [sort, setSort] = useViewPref<'added' | 'price'>('wishlist.sort', 'added', ['added', 'price']);
 
@@ -52,6 +54,7 @@ export default function WishlistPage() {
         title="Wishlist"
         actions={
           <div className="flex items-center gap-4">
+            <ShareButton scope="wishlist" what="your wishlist" compact />
             <Segmented
               size="sm"
               value={sort}
@@ -94,7 +97,7 @@ export default function WishlistPage() {
                   <span className="text-faint">No price</span>
                 )}
               </p>
-              <div className="mt-2 flex gap-1.5">
+              <div hidden={readOnly} className="mt-2 flex gap-1.5">
                 <button
                   onClick={async () => {
                     const v = best?.[0] ?? card.variants[0];

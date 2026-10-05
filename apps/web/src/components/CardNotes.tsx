@@ -1,11 +1,27 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Check, NotebookPen } from 'lucide-react';
-import { NOTE_MAX, useCollectionStore, useNote } from '../store/collectionStore';
+import { NOTE_MAX, useCollectionStore, useNote, useReadOnly } from '../store/collectionStore';
 
 const SAVE_DELAY = 700;
 
-/** Free-text note for a card. Saves as you type, and on leaving the page. */
+/** Free-text note for a card. Saves as you type, and on leaving the page. Read-only viewers just see it. */
 export default function CardNotes({ cardId }: { cardId: string }) {
+  const readOnly = useReadOnly();
+  const saved = useNote(cardId);
+  if (readOnly) {
+    return saved ? (
+      <section className="panel px-5 py-4">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <NotebookPen size={15} className="text-volt" /> Notes
+        </h2>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted">{saved}</p>
+      </section>
+    ) : null;
+  }
+  return <NotesEditor cardId={cardId} />;
+}
+
+function NotesEditor({ cardId }: { cardId: string }) {
   const saved = useNote(cardId);
   const setNote = useCollectionStore((s) => s.setNote);
   const [draft, setDraft] = useState(saved);
@@ -56,7 +72,7 @@ export default function CardNotes({ cardId }: { cardId: string }) {
           ) : left <= 80 ? (
             `${left} left`
           ) : (
-            'Only you can see this'
+            "Private unless you share it"
           )}
         </span>
       </div>

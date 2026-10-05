@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
+import { ShareButton } from '../components/ShareDialog';
 import { ArrowUpDown, ChevronLeft, Grid3x3, LayoutGrid, Search, X, Zap } from 'lucide-react';
 import { useSet, useSetCards } from '../api/hooks';
 import { cardVariants, imageSrc, toSnapshot } from '../api/client';
-import { gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
+import { gradedValue, priceOf, useCollectionStore, useReadOnly } from '../store/collectionStore';
 import { SetLogo, SetSymbol } from '../components/SetArt';
 import { useSettings } from '../store/settingsStore';
 import { useMoney } from '../hooks/useMoney';
@@ -43,6 +44,7 @@ export default function SetPage() {
   const entries = useCollectionStore((s) => s.entries);
   const snapshots = useCollectionStore((s) => s.cards);
   const { setView, setSetView, setMode, setSetMode, quickAdd, setQuickAdd, pocketSize } = useSettings();
+  const readOnly = useReadOnly();
   const money = useMoney();
 
   const [show, setShow] = useViewPref<Show>('set.show', 'all', ['all', 'owned', 'missing', 'wishlist']);
@@ -166,6 +168,9 @@ export default function SetPage() {
                     Your copies are worth <span className="font-mono text-fg">{money(ownedValue)}</span>
                   </p>
                 )}
+                <div className="mt-3">
+                  <ShareButton scope="set" target={set.id} what={`your ${set.name} cards`} compact />
+                </div>
               </div>
             </div>
             <div className="flex gap-2 sm:gap-3">
@@ -231,6 +236,7 @@ export default function SetPage() {
           </label>
           <div className="ml-auto flex items-center gap-2">
             <button
+              hidden={readOnly}
               onClick={() => setQuickAdd(!quickAdd)}
               aria-pressed={quickAdd}
               title="Quick add: variant buttons always visible, with − to remove. Ideal while opening packs."

@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Award, Copy, ExternalLink, ImageIcon, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { GradedCopy, PokemonCard } from '../api/types';
-import { gradedValue, useCollectionStore, useGradedFor } from '../store/collectionStore';
+import { gradedValue, useCollectionStore, useGradedFor, useReadOnly } from '../store/collectionStore';
 import { useGradedPhotos } from '../db/gradedPhotos';
 import { useFx, useMoney } from '../hooks/useMoney';
 import { Gain } from './Paid';
@@ -26,6 +26,8 @@ const STRIP: Record<string, string> = {
 export default function GradedSection({ card }: { card: PokemonCard }) {
   const slabs = useGradedFor(card.id);
   const [editing, setEditing] = useState<GradedCopy | 'new' | null>(null);
+  const readOnly = useReadOnly();
+  if (readOnly && !slabs.length) return null;
 
   return (
     <section className="panel overflow-hidden" aria-labelledby="graded-heading">
@@ -36,9 +38,11 @@ export default function GradedSection({ card }: { card: PokemonCard }) {
             {slabs.length ? `${slabs.length} slab${slabs.length > 1 ? 's' : ''}` : <span className="text-muted">No graded copies</span>}
           </h2>
         </div>
-        <button onClick={() => setEditing('new')} className="btn btn-ghost !h-9 !text-xs">
-          <Plus size={14} /> Add graded copy
-        </button>
+        {!readOnly && (
+          <button onClick={() => setEditing('new')} className="btn btn-ghost !h-9 !text-xs">
+            <Plus size={14} /> Add graded copy
+          </button>
+        )}
       </div>
 
       {slabs.length ? (
@@ -65,6 +69,7 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
   const saveGraded = useCollectionStore((s) => s.saveGraded);
   const removeGraded = useCollectionStore((s) => s.removeGraded);
   const restoreGraded = useCollectionStore((s) => s.restoreGraded);
+  const readOnly = useReadOnly();
   const photos = useGradedPhotos(g.id);
   const money = useMoney();
   const { rates } = useFx();
@@ -141,20 +146,22 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
         )}
         {g.notes && <p className="mt-1.5 line-clamp-2 text-xs text-faint">{g.notes}</p>}
 
-        <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
-          <input
-            type="checkbox"
-            checked={g.countsTowardSet}
-            onChange={async (e) => {
-              const on = e.target.checked;
-              await saveGraded(card, { ...g, countsTowardSet: on });
-              toast(on ? 'Now counts towards set completion' : 'Kept out of set completion');
-            }}
-            className="peer sr-only"
-          />
-          <span aria-hidden className="relative h-4 w-7 rounded-full bg-surface-3 transition-colors peer-checked:bg-volt peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-volt after:absolute after:left-0.5 after:top-0.5 after:h-3 after:w-3 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-3 peer-checked:after:bg-ink" />
-          Counts towards set
-        </label>
+        {!readOnly && (
+          <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
+            <input
+              type="checkbox"
+              checked={g.countsTowardSet}
+              onChange={async (e) => {
+                const on = e.target.checked;
+                await saveGraded(card, { ...g, countsTowardSet: on });
+                toast(on ? 'Now counts towards set completion' : 'Kept out of set completion');
+              }}
+              className="peer sr-only"
+            />
+            <span aria-hidden className="relative h-4 w-7 rounded-full bg-surface-3 transition-colors peer-checked:bg-volt peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-volt after:absolute after:left-0.5 after:top-0.5 after:h-3 after:w-3 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-3 peer-checked:after:bg-ink" />
+            Counts towards set
+          </label>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col items-end justify-between gap-2">
@@ -163,22 +170,24 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
           <p className="text-[10px] text-faint">{g.valueUsd != null ? 'your value' : 'raw price'}</p>
           {paidCost != null && <Gain valueUsd={gradedValue(g, cards)} costUsd={paidCost} className="text-[10px]" />}
         </div>
-        <div className="flex gap-1">
-          <button onClick={onEdit} className="btn btn-ghost !h-8 !w-8 !p-0" aria-label={`Edit ${name} ${g.grade}`} title="Edit">
-            <Pencil size={13} />
-          </button>
-          <button
-            onClick={async () => {
-              const removed = await removeGraded(g.id);
-              if (removed) toast(`Removed ${name} ${g.grade}`, { action: { label: 'Undo', run: () => restoreGraded(removed.copy, removed.photos) } });
-            }}
-            className="btn btn-ghost !h-8 !w-8 !p-0 hover:!text-loss"
-            aria-label={`Remove ${name} ${g.grade}`}
-            title="Remove"
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="flex gap-1">
+            <button onClick={onEdit} className="btn btn-ghost !h-8 !w-8 !p-0" aria-label={`Edit ${name} ${g.grade}`} title="Edit">
+              <Pencil size={13} />
+            </button>
+            <button
+              onClick={async () => {
+                const removed = await removeGraded(g.id);
+                if (removed) toast(`Removed ${name} ${g.grade}`, { action: { label: 'Undo', run: () => restoreGraded(removed.copy, removed.photos) } });
+              }}
+              className="btn btn-ghost !h-8 !w-8 !p-0 hover:!text-loss"
+              aria-label={`Remove ${name} ${g.grade}`}
+              title="Remove"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
       </div>
 
       {viewer !== null && photos[viewer] && <Lightbox photos={photos} index={viewer} onIndex={setViewer} onClose={() => setViewer(null)} title={`${card.name} · ${name} ${g.grade}`} />}

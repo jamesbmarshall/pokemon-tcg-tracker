@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import Layout from './Layout';
@@ -157,5 +157,40 @@ describe('Layout', () => {
     scrollTo.mockClear();
     await userEvent.click(screen.getAllByRole('link', { name: /^Sets/ })[0]);
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('offers a collection switcher only when there is more than one collection', async () => {
+    const { unmount } = renderLayout();
+    expect(screen.queryByRole('combobox', { name: 'Collection' })).not.toBeInTheDocument();
+    unmount();
+
+    const load = vi.fn(async () => {});
+    useCollectionStore.setState({
+      load,
+      collections: [
+        { id: 'c-personal', name: 'My collection', kind: 'personal', role: 'owner', ownerName: 'Ash', mine: true },
+        { id: 'c-gym', name: 'Gym stash', kind: 'shared', role: 'viewer', ownerName: 'Brock', mine: false },
+      ],
+    });
+    renderLayout();
+    const [sidebar] = screen.getAllByRole('combobox', { name: 'Collection' });
+    expect(within(sidebar).getAllByRole('option').map((o) => o.textContent)).toEqual(['My collection (yours)', 'Gym stash · Brock']);
+    await userEvent.selectOptions(sidebar, 'c-gym');
+    expect(load).toHaveBeenCalledWith('c-gym');
+  });
+
+  it('marks a view-only collection and links to Lists and Sharing', () => {
+    useCollectionStore.setState({
+      readOnly: true,
+      role: 'viewer',
+      collections: [
+        { id: 'c-personal', name: 'My collection', kind: 'personal', role: 'owner', ownerName: 'Ash', mine: true },
+        { id: 'c-gym', name: 'Gym stash', kind: 'shared', role: 'viewer', ownerName: 'Brock', mine: false },
+      ],
+    });
+    renderLayout();
+    expect(screen.getAllByText('View only').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: /^Lists/ })[0]).toHaveAttribute('href', '/lists');
+    expect(screen.getAllByRole('link', { name: /Sharing/ })[0]).toHaveAttribute('href', '/sharing');
   });
 });

@@ -1,10 +1,11 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Heart, Minus, Plus } from 'lucide-react';
 import type { CardSnapshot, PokemonCard } from '../api/types';
 import { toSnapshot } from '../api/client';
 import CardImage from './CardImage';
-import { ownedTotal, useCollectionStore, useGradedFor, useOwned, useWished } from '../store/collectionStore';
+import { ownedTotal, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
+import { usePublicShare } from './shareContext';
 import { formatGrade } from '../utils/grading';
 import { useMoney } from '../hooks/useMoney';
 import { isFoil, variantLabel, variantShort } from '../utils/variants';
@@ -30,6 +31,8 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
   const slabs = useMemo(() => (variant ? allSlabs.filter((g) => g.variant === variant) : allSlabs), [allSlabs, variant]);
   const wished = useWished(s.id);
   const adjust = useCollectionStore((st) => st.adjust);
+  const readOnly = useReadOnly();
+  const shared = usePublicShare();
   const money = useMoney();
 
   const qty = variant ? (owned?.[variant] ?? 0) : ownedTotal(owned);
@@ -56,10 +59,10 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
       className="group relative animate-rise scroll-mt-24"
       style={{ animationDelay: `${Math.min(index, 24) * 18}ms` }}
     >
-      <Link
-        to={`/card/${s.id}`}
+      <CardLink
+        to={shared ? undefined : `/card/${s.id}`}
         className="block focus-visible:outline-offset-4"
-        aria-label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
+        label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
       >
         <div
           onPointerMove={foilMove}
@@ -98,13 +101,17 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
             </span>
           )}
         </div>
-      </Link>
+      </CardLink>
 
       <div className="mt-2 flex items-start justify-between gap-2 px-0.5">
         <div className="min-w-0">
-          <Link to={`/card/${s.id}`} className={`block truncate text-[13px] font-medium leading-tight hover:text-volt ${dimMissing && !isOwned ? 'text-muted' : ''}`}>
-            {s.name}
-          </Link>
+          {shared ? (
+            <p className={`truncate text-[13px] font-medium leading-tight ${dimMissing && !isOwned ? 'text-muted' : ''}`}>{s.name}</p>
+          ) : (
+            <Link to={`/card/${s.id}`} className={`block truncate text-[13px] font-medium leading-tight hover:text-volt ${dimMissing && !isOwned ? 'text-muted' : ''}`}>
+              {s.name}
+            </Link>
+          )}
           <p className="mt-0.5 truncate font-mono text-[10.5px] text-faint">
             {showSet ? `${s.setName} · ` : ''}#{s.number}
             {variant && <span className={isOwned ? 'text-muted' : ''}> · {label}</span>}
@@ -113,7 +120,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
         {price !== undefined && <span className="shrink-0 font-mono text-[11px] text-muted tabular">{money(price, { compact: true })}</span>}
       </div>
 
-      {variant ? (
+      {readOnly ? null : variant ? (
         <div
           className={`mt-1.5 flex px-0.5 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100'}`}
         >
@@ -188,6 +195,16 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
         </div>
       )}
     </div>
+  );
+}
+
+/** The tile's image link; a plain block on public share pages, which have no card page to go to. */
+function CardLink({ to, label, className, children }: { to?: string; label: string; className: string; children: ReactNode }) {
+  if (!to) return <div role="img" aria-label={label} className={className}>{children}</div>;
+  return (
+    <Link to={to} className={className} aria-label={label}>
+      {children}
+    </Link>
   );
 }
 

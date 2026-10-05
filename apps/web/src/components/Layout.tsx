@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BookOpen, Heart, Layers, LayoutDashboard, RefreshCw, Search, Settings, ShieldCheck, UserRound } from 'lucide-react';
+import { BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
@@ -42,6 +42,38 @@ function ValueBadge() {
           {syncing ? 'Syncing' : lastSync ? relativeTime(lastSync) : 'Sync'}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Picks which collection the whole app shows. Hidden until there's more than one. */
+function CollectionSwitcher({ className = '' }: { className?: string }) {
+  const collections = useCollectionStore((s) => s.collections);
+  const current = useCollectionStore((s) => s.collectionId);
+  const readOnly = useCollectionStore((s) => s.readOnly);
+  const load = useCollectionStore((s) => s.load);
+  if (collections.length < 2) return null;
+  return (
+    <div className={className}>
+      <label className="relative block">
+        <span className="sr-only">Collection</span>
+        <select
+          value={current ?? ''}
+          onChange={(e) => void load(e.target.value)}
+          className="input !h-9 w-full truncate !pr-8 !text-sm font-medium"
+        >
+          {collections.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.kind === 'personal' && c.mine ? `${c.name} (yours)` : c.mine ? c.name : `${c.name} · ${c.ownerName}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      {readOnly && (
+        <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] text-muted">
+          <Eye size={11} /> View only
+        </p>
+      )}
     </div>
   );
 }
@@ -112,6 +144,8 @@ export default function Layout() {
           <kbd className="rounded-md border border-line px-1.5 font-mono text-[10px]">{isMac ? '⌘' : 'Ctrl'} K</kbd>
         </button>
 
+        <CollectionSwitcher className="mt-4" />
+
         <nav className="mt-6 space-y-0.5">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
@@ -134,11 +168,19 @@ export default function Layout() {
               )}
             </NavLink>
           ))}
+          <NavLink to="/lists" className={({ isActive }) => `${sideLink({ isActive })} ${isActive ? '' : 'hover:bg-surface'}`}>
+            <ListChecks size={17} />
+            Lists
+          </NavLink>
         </nav>
 
         <div className="mt-auto space-y-3">
           <ValueBadge />
           <div className="space-y-0.5">
+            <NavLink to="/sharing" className={sideLink}>
+              <Share2 size={17} />
+              Sharing
+            </NavLink>
             <NavLink to="/settings" className={sideLink}>
               <Settings size={17} />
               Settings
@@ -168,6 +210,9 @@ export default function Layout() {
           <button onClick={() => setPalette(true)} className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Search">
             <Search size={19} />
           </button>
+          <Link to="/sharing" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Sharing">
+            <Share2 size={19} />
+          </Link>
           <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Settings">
             <Settings size={19} />
           </Link>
@@ -178,6 +223,7 @@ export default function Layout() {
       </header>
 
       <main className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
+        <CollectionSwitcher className="mb-5 lg:hidden" />
         <Outlet />
         <footer className="mt-20 border-t border-line pt-6 text-xs text-faint">
           Card data, images & prices from{' '}

@@ -122,4 +122,11 @@ describe('WishlistPage', () => {
     renderWithProviders(<WishlistPage />);
     expect(screen.getByRole('radio', { name: 'Price' })).toHaveAttribute('aria-checked', 'true');
   });
+
+  it('offers no Got it, remove or share buttons when read-only', () => {
+    seedCollection({ cards: [CHEAP], wishlist: [{ cardId: 'sv03-001', addedAt: '2025-01-01' }] });
+    useCollectionStore.setState({ readOnly: true, role: 'viewer' });
+    renderWithProviders(<WishlistPage />);
+    expect(screen.queryByRole('button', { name: /Got it|Remove from wishlist|Share/ })).not.toBeInTheDocument();
+  });
 });

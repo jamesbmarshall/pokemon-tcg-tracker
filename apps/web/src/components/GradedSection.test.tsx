@@ -172,4 +172,17 @@ describe('GradedSection', () => {
     expect(await screen.findByText(/\+£20\.00/)).toHaveTextContent('+£20.00(+25%)');
   });
 
+
+  it('hides itself when read-only with no slabs, and shows slabs without controls', () => {
+    useCollectionStore.setState({ readOnly: true, role: 'viewer' });
+    const { unmount } = renderWithProviders(<GradedSection card={card} />);
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    unmount();
+    seedCollection({ cards: [makeSnapshot({ id: 'sv03-001' })], graded: [makeGraded({ id: 'a', grade: '9' })] });
+    renderWithProviders(<GradedSection card={card} />);
+    expect(screen.getByRole('heading', { name: '1 slab' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add graded copy|edit|remove|delete/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
 });

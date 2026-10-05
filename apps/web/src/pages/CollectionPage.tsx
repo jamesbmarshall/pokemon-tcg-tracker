@@ -4,7 +4,8 @@ import { useRememberedParams } from '../hooks/useViewPrefs';
 import { langOf, language } from '../api/languages';
 import { Gain } from '../components/Paid';
 import { LanguageBadge } from '../components/Language';
-import { ArrowUpDown, Award, BookOpen, Grid3x3, LayoutGrid, NotebookPen, Rows3, Search, X } from 'lucide-react';
+import { ArrowUpDown, Award, BookOpen, Grid3x3, LayoutGrid, ListChecks, NotebookPen, Rows3, Search, X } from 'lucide-react';
+import { ShareButton } from '../components/ShareDialog';
 import { useCollectionStats, type OwnedCard } from '../hooks/useCollectionStats';
 import { useCollectionStore } from '../store/collectionStore';
 import { useSettings } from '../store/settingsStore';
@@ -84,10 +85,17 @@ export default function CollectionPage() {
         eyebrow={`${stats.count.toLocaleString('en-GB')} cards · ${stats.unique.toLocaleString('en-GB')} unique · ${stats.sets.length} sets`}
         title="Collection"
         actions={
-          <div className="text-right">
-            <p className="eyebrow">{setFilter || q ? 'Filtered value' : 'Total value'}</p>
-            <p className="font-display text-2xl font-bold tabular">{money(filteredValue)}</p>
-          </div>
+          <>
+            <Link to="/lists" className="btn btn-ghost !h-9 !text-xs">
+              <ListChecks size={14} /> Lists
+            </Link>
+            <ShareButton scope="collection" what="your collection" compact />
+            <ShareButton scope="graded" what="your graded cards" compact />
+            <div className="ml-2 text-right">
+              <p className="eyebrow">{setFilter || q ? 'Filtered value' : 'Total value'}</p>
+              <p className="font-display text-2xl font-bold tabular">{money(filteredValue)}</p>
+            </div>
+          </>
         }
       />
 

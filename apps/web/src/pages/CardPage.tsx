@@ -5,7 +5,8 @@ import { useCard, usePrintings, useSetCards } from '../api/hooks';
 import { langOf } from '../api/languages';
 import { LanguageBadge } from '../components/Language';
 import { cardVariants, compareCardNumber, toSnapshot, usdPrices } from '../api/client';
-import { costBasis, ownedTotal, priceOf, useCollectionStore, useGradedFor, useOwned, useWished } from '../store/collectionStore';
+import { costBasis, ownedTotal, priceOf, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
+import AddToList from '../components/AddToList';
 import { useFx, useMoney, useRates } from '../hooks/useMoney';
 import { useSwipe } from '../hooks/useSwipe';
 import { Gain, PaidInput } from '../components/Paid';
@@ -28,6 +29,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const entry = useCollectionStore((s) => s.entries.get(`${card.id}::${variant}`));
   const adjust = useCollectionStore((s) => s.adjust);
   const updateEntry = useCollectionStore((s) => s.updateEntry);
+  const readOnly = useReadOnly();
   const money = useMoney();
   const { rates } = useFx();
   const n = owned?.[variant] ?? 0;
@@ -46,6 +48,15 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
         </p>
         {paidEach != null && market != null && <Gain valueUsd={market * n} costUsd={paidEach * n} className="text-[11px]" />}
       </div>
+      {readOnly ? (
+        n > 0 && (
+          <span className="font-mono text-sm font-bold tabular">
+            ×{n}
+            {entry?.condition && <span className="ml-2 text-xs font-normal text-muted">{entry.condition}</span>}
+          </span>
+        )
+      ) : (
+        <>
       {n > 0 && entry && (
         <PaidInput
           value={entry.paid}
@@ -92,6 +103,8 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
           <Plus size={14} /> Add
         </button>
       )}
+        </>
+      )}
     </div>
   );
 }
@@ -133,6 +146,11 @@ export default function CardPage() {
   const owned = useOwned(cardId);
   const slabs = useGradedFor(cardId);
   const wished = useWished(cardId);
+  const readOnly = useReadOnly();
+  const collectionLabel = useCollectionStore((s) => {
+    const c = s.collections.find((x) => x.id === s.collectionId);
+    return c && !(c.kind === 'personal' && c.mine) ? `In ${c.name}` : 'In your collection';
+  });
   const toggleWishlist = useCollectionStore((s) => s.toggleWishlist);
   const removeCard = useCollectionStore((s) => s.removeCard);
   const restoreEntries = useCollectionStore((s) => s.restoreEntries);
@@ -282,7 +300,7 @@ export default function CardPage() {
           <section className="panel overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
               <div>
-                <p className="eyebrow">In your collection</p>
+                <p className="eyebrow">{collectionLabel}</p>
                 <p className="mt-1 font-display text-xl font-semibold">
                   {total ? (
                     <>
@@ -305,7 +323,9 @@ export default function CardPage() {
                   </p>
                 )}
               </div>
+              {!readOnly && (
               <div className="flex gap-2">
+                <AddToList card={card} />
                 <button
                   onClick={async () => {
                     const on = await toggleWishlist(card);
@@ -330,6 +350,7 @@ export default function CardPage() {
                   </button>
                 )}
               </div>
+              )}
             </div>
             <div className="p-2">
               {variants.map((v) => (
