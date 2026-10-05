@@ -161,6 +161,22 @@ npm run build      # web app + bundled server
 
 In development the server prints a setup token on first start, and data goes to `apps/server/data`.
 
+To build and run the Docker image locally:
+
+```bash
+docker build -t poketracker .
+docker run -d --name poketracker -p 3000:3000 -v poketracker-data:/data poketracker
+docker logs poketracker      # shows the setup token
+```
+
+If your machine uses a company npm mirror and can't reach registry.npmjs.org, the build inside Docker won't see your npm settings. Pass the mirror in:
+
+```bash
+docker build --build-arg NPM_REGISTRY="$(npm config get registry)" -t poketracker .
+```
+
+If the mirror needs a login, add `--secret id=npmrc,src=$HOME/.npmrc` as well. The file is only mounted for `npm ci` and never stored in the image.
+
 ### Project layout
 
 ```

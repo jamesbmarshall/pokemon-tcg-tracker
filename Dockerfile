@@ -6,6 +6,11 @@
 #
 # The image ships one release bundle (/app/bundle). In-app updates download newer signed bundles
 # into /data/app/<version>, and the launcher runs, health-checks and, if needed, rolls them back.
+#
+# Behind a corporate npm mirror (registry.npmjs.org blocked), point the build at the mirror:
+#   docker build --build-arg NPM_REGISTRY="$(npm config get registry)" -t poketracker .
+# If the mirror needs credentials, pass your .npmrc as a build secret so it never lands in a layer:
+#   docker build --secret id=npmrc,src=$HOME/.npmrc -t poketracker .
 
 ARG NODE_VERSION=24
 
@@ -18,7 +23,12 @@ COPY apps/web/package.json apps/web/
 COPY apps/server/package.json apps/server/
 COPY apps/launcher/package.json apps/launcher/
 COPY packages/shared/package.json packages/shared/
-RUN --mount=type=cache,target=/root/.npm npm ci
+# npm swaps the registry.npmjs.org host in the lockfile's resolved URLs for the configured
+# registry, so a mirror works without editing package-lock.json.
+ARG NPM_REGISTRY=""
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \
+    npm ci ${NPM_REGISTRY:+--registry="$NPM_REGISTRY"}
 COPY . .
 ARG VERSION=""
 ARG GIT_SHA=""
