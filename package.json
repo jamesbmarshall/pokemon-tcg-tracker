@@ -16,7 +16,7 @@
     "bundle": "node scripts/make-bundle.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b apps/web && tsc -p apps/server --noEmit && tsc -p packages/shared --noEmit",
-    "test": "npm test -w @poketracker/shared -w @poketracker/server -w @poketracker/web"
+    "test": "npm test -w @poketracker/shared -w @poketracker/server -w @poketracker/launcher -w @poketracker/web"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
