@@ -131,7 +131,7 @@ Everything has a sensible default. These are the settings you're most likely to 
 | `PUID` / `PGID` | `1000` | Who owns `/data` and runs the app. |
 | `IMAGE_CACHE_MB` | `2048` | Disk space for cached card images. |
 | `BACKUPS_TO_KEEP` | `7` | Nightly database backups to keep. |
-| `TRUST_PROXY` | `true` | Trust `X-Forwarded-*` from a reverse proxy. Set `false` if the container is exposed directly to the internet. |
+| `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
 | `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 
@@ -185,7 +185,9 @@ Migrations live in `apps/server/src/migrations.ts` and are append-only: never ed
 One-off setup:
 
 1. `node scripts/gen-update-key.mjs ~/poketracker-update-key.pem` writes the public key to `deploy/update-public-key.pem` (commit it) and the private key to the path you give.
-2. Add the private key as the `UPDATE_SIGNING_KEY` Actions secret, then delete the local copy or keep it somewhere safe offline. Anyone holding it can push updates to every instance.
+2. In **Settings → Environments**, create an environment called `release`. Under deployment branches and tags, allow only tags matching `v*`. If your plan allows it, add yourself as a required reviewer.
+3. Add the private key as an **environment** secret called `UPDATE_SIGNING_KEY` in `release`, not as a repository secret. Then delete the local copy or keep it somewhere safe offline. Anyone holding it can push updates to every instance.
+4. Protect `main` (require pull requests) and add a tag ruleset so only you can create `v*` tags. The workflow refuses to sign a tag that isn't on `main`, so these rules decide who can ship code.
 
 To release, push a tag:
 

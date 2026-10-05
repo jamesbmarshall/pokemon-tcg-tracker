@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     environment:
       PUBLIC_URL: https://${DOMAIN:?Set DOMAIN in .env, e.g. DOMAIN=cards.example.com}
-      TRUST_PROXY: "true"
+      TRUST_PROXY: "1"
       # Optional: pick the first-run setup token yourself instead of reading it from the logs.
       SETUP_TOKEN: ${SETUP_TOKEN:-}
       TZ: ${TZ:-UTC}

@@ -65,8 +65,11 @@ describe('sessions and CSRF', () => {
     const unknown = await c.post('/api/auth/login', { username: 'nobody', password: 'wrong password!' });
     expect(unknown.json().error).toBe(bad.json().error);
     for (let i = 0; i < 7; i++) await c.post('/api/auth/login', { username: 'ash', password: 'wrong password!' });
+    // Once locked, even the right password gets the same answer as an unknown username, so the
+    // lockout can't be used to probe which accounts exist.
     const locked = await c.post('/api/auth/login', { username: 'ash', password: PASSWORD });
-    expect(locked.statusCode).toBe(429);
+    expect(locked.statusCode).toBe(401);
+    expect(locked.json().error).toBe(unknown.json().error);
   });
 });
 

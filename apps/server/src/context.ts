@@ -134,6 +134,9 @@ export class Limiter {
 
   /** Returns false when the key has exceeded its budget. */
   take(key: string): boolean {
+    // Azure App Service forwards the client as "ip:port". Drop the port, or every new connection
+    // would get a fresh budget.
+    key = key.replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/, '$1');
     const t = Date.now();
     let h = this.hits.get(key);
     if (!h || h.reset < t) {

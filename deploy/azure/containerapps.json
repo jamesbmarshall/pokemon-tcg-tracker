@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "14149486207549613783"
+      "templateHash": "7239510847885482284"
     }
   },
   "parameters": {
@@ -176,7 +176,7 @@
                 },
                 {
                   "name": "TRUST_PROXY",
-                  "value": "true"
+                  "value": "1"
                 },
                 {
                   "name": "SQLITE_JOURNAL_MODE",

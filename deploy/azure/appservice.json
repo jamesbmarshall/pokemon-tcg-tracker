@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "13586941632561844598"
+      "templateHash": "6014606303575787910"
     }
   },
   "parameters": {
@@ -109,7 +109,7 @@
           "ftpsState": "Disabled",
           "minTlsVersion": "1.2",
           "healthCheckPath": "/health",
-          "appSettings": "[concat(createArray(createObject('name', 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', 'value', 'true'), createObject('name', 'WEBSITES_PORT', 'value', '3000'), createObject('name', 'WEBSITES_CONTAINER_START_TIME_LIMIT', 'value', '600'), createObject('name', 'DATA_DIR', 'value', '/home/poketracker'), createObject('name', 'PUBLIC_URL', 'value', format('https://{0}.azurewebsites.net', parameters('appName'))), createObject('name', 'TRUST_PROXY', 'value', 'true'), createObject('name', 'SQLITE_JOURNAL_MODE', 'value', 'delete'), createObject('name', 'SETUP_TOKEN', 'value', parameters('setupToken')), createObject('name', 'TZ', 'value', parameters('timeZone'))), if(variables('usePrivateRegistry'), createArray(createObject('name', 'DOCKER_REGISTRY_SERVER_URL', 'value', 'https://ghcr.io'), createObject('name', 'DOCKER_REGISTRY_SERVER_USERNAME', 'value', parameters('registryUsername')), createObject('name', 'DOCKER_REGISTRY_SERVER_PASSWORD', 'value', parameters('registryPassword'))), createArray()))]"
+          "appSettings": "[concat(createArray(createObject('name', 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', 'value', 'true'), createObject('name', 'WEBSITES_PORT', 'value', '3000'), createObject('name', 'WEBSITES_CONTAINER_START_TIME_LIMIT', 'value', '600'), createObject('name', 'DATA_DIR', 'value', '/home/poketracker'), createObject('name', 'PUBLIC_URL', 'value', format('https://{0}.azurewebsites.net', parameters('appName'))), createObject('name', 'TRUST_PROXY', 'value', '1'), createObject('name', 'SQLITE_JOURNAL_MODE', 'value', 'delete'), createObject('name', 'SETUP_TOKEN', 'value', parameters('setupToken')), createObject('name', 'TZ', 'value', parameters('timeZone'))), if(variables('usePrivateRegistry'), createArray(createObject('name', 'DOCKER_REGISTRY_SERVER_URL', 'value', 'https://ghcr.io'), createObject('name', 'DOCKER_REGISTRY_SERVER_USERNAME', 'value', parameters('registryUsername')), createObject('name', 'DOCKER_REGISTRY_SERVER_PASSWORD', 'value', parameters('registryPassword'))), createArray()))]"
         }
       },
       "dependsOn": [

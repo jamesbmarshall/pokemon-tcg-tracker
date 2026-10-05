@@ -128,7 +128,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
             { name: 'PUBLIC_URL', value: 'https://${appName}.${env.properties.defaultDomain}' }
-            { name: 'TRUST_PROXY', value: 'true' }
+            { name: 'TRUST_PROXY', value: '1' }
             { name: 'SQLITE_JOURNAL_MODE', value: 'delete' }
             { name: 'SETUP_TOKEN', secretRef: 'setup-token' }
             { name: 'TZ', value: timeZone }

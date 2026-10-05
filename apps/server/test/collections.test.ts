@@ -238,3 +238,33 @@ describe('custom lists', () => {
     expect(st.lists).toEqual([expect.objectContaining({ name: 'Trade binder', cards: ['sv1-002', 'sv1-001'] })]);
   });
 });
+
+describe('set totals', () => {
+  it('are counted on the server and ignore whatever the client claims', async () => {
+    const cards = [1, 2, 3].map((n) => ({ id: `sv1-00${n}`, localId: String(n), name: `Card ${n}` }));
+    const fetchMock = vi.fn(async (url: string | URL) =>
+      String(url).includes('graphql')
+        ? Response.json({ data: { cards } })
+        : Response.json({ id: 'sv1', name: 'Scarlet & Violet', cardCount: { total: 3, official: 3 } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const c = await setupOwner(s.app);
+    const res = await c.put('/api/set-stats/sv1', { masterTotal: 4999 });
+    expect(res.statusCode).toBe(200);
+    const total = res.json().masterTotal;
+    expect(total).toBeGreaterThanOrEqual(3);
+    expect(total).toBeLessThan(4999);
+    const id = await personalId(c);
+    expect((await c.get(`/api/collections/${id}/state`)).json().setStats).toEqual([expect.objectContaining({ setId: 'sv1', masterTotal: total })]);
+
+    // Within the cache window the stored figure is returned without asking TCGdex again.
+    const calls = fetchMock.mock.calls.length;
+    expect((await c.put('/api/set-stats/sv1', { masterTotal: 1 })).json().masterTotal).toBe(total);
+    expect(fetchMock.mock.calls.length).toBe(calls);
+  });
+
+  it('rejects malformed set ids', async () => {
+    const c = await setupOwner(s.app);
+    expect((await c.put('/api/set-stats/' + encodeURIComponent('../../x'), {})).statusCode).toBe(400);
+  });
+});

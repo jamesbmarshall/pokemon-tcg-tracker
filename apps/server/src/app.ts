@@ -20,6 +20,8 @@ import { systemRoutes } from './system.ts';
 /** Methods that must not change state, so they skip the CSRF checks below. */
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+const hopsTrust = (hops: number) => (_addr: string, i: number) => i < hops;
+
 /**
  * Creates the app with every route registered. Registration order matters: plugins and the
  * onRequest hook first, then the API routes, then the /api/* catch-all, and the SPA last so its
@@ -28,7 +30,9 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: opts.logger === false ? false : { level: ctx.config.logLevel, redact: ['req.headers.cookie', 'req.headers.authorization'] },
-    trustProxy: ctx.config.trustProxy,
+    // A hop count becomes the same function proxy-addr builds internally (trust the nearest n
+    // hops); Fastify's typings omit the numeric form.
+    trustProxy: typeof ctx.config.trustProxy === 'number' ? hopsTrust(ctx.config.trustProxy) : ctx.config.trustProxy,
     // Sized for collection imports; uploads go through multipart with their own limits.
     bodyLimit: 20 * 1024 * 1024,
     // Per-request logs are noise for a home server; errors and job outcomes are logged explicitly.

@@ -73,7 +73,7 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'WEBSITES_CONTAINER_START_TIME_LIMIT', value: '600' }
         { name: 'DATA_DIR', value: '/home/poketracker' }
         { name: 'PUBLIC_URL', value: 'https://${appName}.azurewebsites.net' }
-        { name: 'TRUST_PROXY', value: 'true' }
+        { name: 'TRUST_PROXY', value: '1' }
         { name: 'SQLITE_JOURNAL_MODE', value: 'delete' }
         { name: 'SETUP_TOKEN', value: setupToken }
         { name: 'TZ', value: timeZone }

@@ -147,3 +147,33 @@ describe('catalogue proxy', () => {
     expect((await owner.get('/api/img?u=' + encodeURIComponent('https://evil.example/x.png'))).statusCode).toBe(400);
   });
 });
+
+describe('sharing: audit fixes', () => {
+  it('hiding notes also hides list descriptions', async () => {
+    const { owner, id } = await seeded();
+    const list = (await owner.post(`/api/collections/${id}/lists`, { name: 'Trades', description: 'only to Brock, not Misty' })).json();
+    await owner.put(`/api/collections/${id}/lists/${list.id}/cards/sv1-001`);
+    for (const scope of ['collection', 'list']) {
+      const share = (await owner.post('/api/shares', { collectionId: id, scope, target: scope === 'list' ? list.id : undefined, audience: 'public' })).json();
+      const body = (await new Client(s.app).get(`/api/public/${tokenOf(share.url)}`)).json();
+      expect(body.lists[0].name).toBe('Trades');
+      expect(JSON.stringify(body)).not.toContain('Brock');
+    }
+  });
+
+  it("a disabled user's shares stop working", async () => {
+    const owner = await setupOwner(s.app);
+    const misty = await invite(owner, s.app, 'misty');
+    const mistyId = (await misty.get('/api/auth/me')).json().user.id;
+    const cid = await personalId(misty);
+    const pub = (await misty.post('/api/shares', { collectionId: cid, scope: 'collection', audience: 'public' })).json();
+    await misty.post('/api/shares', { collectionId: cid, scope: 'collection', audience: 'instance' });
+    const anon = new Client(s.app);
+    expect((await anon.get(`/api/public/${tokenOf(pub.url)}`)).statusCode).toBe(200);
+    expect((await owner.get('/api/shared-with-me')).json()).toHaveLength(1);
+
+    expect((await owner.patch(`/api/admin/users/${mistyId}`, { disabled: true })).statusCode).toBe(200);
+    expect((await anon.get(`/api/public/${tokenOf(pub.url)}`)).statusCode).toBe(404);
+    expect((await owner.get('/api/shared-with-me')).json()).toHaveLength(0);
+  });
+});

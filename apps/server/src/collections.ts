@@ -12,13 +12,17 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { setIdFromCardId } from '@poketracker/shared/catalog';
+import { cardVariants, getSetCards, setIdFromCardId } from '@poketracker/shared/catalog';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { CardNote, CollectionEntry, GradedCopy, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
-import { audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
+import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
 import { hydrateMissing, readCards, readEntries, readGraded, readHistory, recordValue } from './cards.ts';
 import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
+
+/** Set ids as TCGdex issues them, optionally prefixed with a language (e.g. `sv01`, `ja:SV1a`). */
+const SET_ID = /^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,40}$/;
+const SET_STAT_TTL_MS = 12 * 60 * 60_000;
 
 export type Access = 'owner' | 'editor' | 'viewer';
 
@@ -187,14 +191,15 @@ export interface StateOptions {
  * the matching fields are removed before serialisation rather than left for the client to hide:
  *  - hidePaid: purchase prices on entries and slabs, plus cost-basis figures in value history.
  *  - hideValue: slab valuations, card market prices and the whole value history.
- *  - hideNotes: per-card notes and the notes field on entries and slabs.
+ *  - hideNotes: per-card notes, the notes field on entries and slabs, and list descriptions.
  */
 export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptions = {}) {
   let entries = readEntries(ctx.db, collectionId);
   let graded = readGraded(ctx.db, collectionId);
   const wishlist = ctx.db.all<{ card_id: string; added_at: string }>('SELECT card_id, added_at FROM wishlist WHERE collection_id = ?', collectionId).map((w) => ({ cardId: w.card_id, addedAt: w.added_at }));
   const notes = opts.hideNotes ? [] : ctx.db.all<{ card_id: string; text: string; updated_at: string }>('SELECT * FROM notes WHERE collection_id = ?', collectionId).map((n) => ({ cardId: n.card_id, text: n.text, updatedAt: n.updated_at }));
-  const lists = readLists(ctx, collectionId);
+  let lists = readLists(ctx, collectionId);
+  if (opts.hideNotes) lists = lists.map((l) => ({ ...l, description: undefined }));
   if (opts.hidePaid || opts.hideNotes || opts.hideValue) {
     entries = entries.map((e) => ({ ...e, paid: opts.hidePaid ? undefined : e.paid, notes: opts.hideNotes ? undefined : e.notes }));
     graded = graded.map((g) => ({ ...g, paid: opts.hidePaid ? undefined : g.paid, notes: opts.hideNotes ? undefined : g.notes, valueUsd: opts.hideValue ? undefined : g.valueUsd }));
@@ -674,16 +679,38 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   /**
-   * Records a set's master-set size as counted by the client from the catalogue, so completion
-   * percentages work for every user without each one re-counting. The bounds keep obviously
-   * bogus totals out.
+   * Refreshes a set's master-set size (every variant of every card), which completion
+   * percentages use for every user. The server counts it from the catalogue itself rather than
+   * trusting a number from the client, because the table is shared across the whole instance and
+   * one member could otherwise skew everyone's progress. The client's figure is ignored.
+   *
+   * Recounts are cached for SET_STAT_TTL_MS and deduplicated while in flight, and each user is
+   * rate-limited, so this can't be turned into a way to hammer TCGdex.
    */
-  app.put('/api/set-stats/:setId', async (req) => {
-    requireUser(req);
+  const setStatLimiter = new Limiter(60, 10 * 60_000);
+  const counting = new Map<string, Promise<number>>();
+  app.put('/api/set-stats/:setId', async (req, reply) => {
+    const u = requireUser(req);
     const setId = str((req.params as { setId: string }).setId, 100);
-    const total = Math.floor(Number((req.body as Record<string, unknown>)?.masterTotal));
-    if (!setId || !Number.isFinite(total) || total < 1 || total > 5000) throw bad('Invalid set total');
+    if (!setId || !SET_ID.test(setId)) throw bad('Invalid set id');
+    const existing = ctx.db.get<{ master_total: number; synced_at: string }>('SELECT master_total, synced_at FROM set_stats WHERE set_id = ?', setId);
+    if (existing && Date.now() - Date.parse(existing.synced_at) < SET_STAT_TTL_MS) return { ok: true, masterTotal: existing.master_total };
+    setStatLimiter.check(u.id, reply);
+    let job = counting.get(setId);
+    if (!job) {
+      job = getSetCards(setId)
+        .then((cards) => cards.reduce((n, c) => n + cardVariants(c).length, 0))
+        .finally(() => counting.delete(setId));
+      counting.set(setId, job);
+    }
+    let total: number;
+    try {
+      total = await job;
+    } catch {
+      throw new HttpError(502, 'Could not reach the card catalogue', 'upstream');
+    }
+    if (total < 1) throw notFound('Unknown set');
     ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, synced_at) VALUES (?, ?, ?)', setId, total, now());
-    return { ok: true };
+    return { ok: true, masterTotal: total };
   });
 }

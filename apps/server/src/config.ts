@@ -14,7 +14,8 @@ export interface Config {
   webDir: string;
   /** Public origin, e.g. https://cards.example.com. Used for invite/share links and origin checks. */
   publicUrl: string;
-  trustProxy: boolean;
+  /** Passed straight to Fastify: false, true, a hop count, or a comma-separated list of proxy IPs/CIDRs. */
+  trustProxy: boolean | number | string;
   version: string;
   /** Set by the launcher; self-update is only possible when it supervises us. */
   supervised: boolean;
@@ -64,6 +65,20 @@ function readKey(): string {
 
 const bool = (v: string | undefined, dflt: boolean) => (v == null || v === '' ? dflt : /^(1|true|yes|on)$/i.test(v));
 
+/**
+ * TRUST_PROXY accepts true/false, a hop count ("1" = trust only the nearest proxy, so the
+ * client IP is the address that proxy saw), or proxy addresses/CIDRs. A hop count or address
+ * list is safer than `true`, which believes the left-most X-Forwarded-For entry and so lets a
+ * client choose its own IP whenever the proxy appends rather than replaces the header.
+ */
+export function parseTrustProxy(v: string | undefined): boolean | number | string {
+  const t = (v ?? '').trim();
+  if (t === '' || /^(0|false|no|off)$/i.test(t)) return false;
+  if (/^(true|yes|on)$/i.test(t)) return true;
+  if (/^\d+$/.test(t)) return Number(t);
+  return t;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port: Number(env.PORT ?? 3000),
@@ -71,8 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dataDir: resolve(env.DATA_DIR ?? './data'),
     webDir: env.WEB_DIR ? resolve(env.WEB_DIR) : '',
     publicUrl: (env.PUBLIC_URL ?? '').replace(/\/$/, ''),
-    // On by default because most installs sit behind a reverse proxy or Azure ingress.
-    trustProxy: bool(env.TRUST_PROXY, true),
+    // Off by default: trusting X-Forwarded-For from the open internet lets anyone pick their own
+    // IP and walk around the rate limits. The bundled deploys set it to 1 (one proxy hop).
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
     version: readVersion(),
     supervised: env.POKETRACKER_LAUNCHER === '1',
     launcherVersion: env.POKETRACKER_LAUNCHER_VERSION ?? '',

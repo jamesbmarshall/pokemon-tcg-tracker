@@ -56,13 +56,27 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # The only job that can read the signing key. Anything this job signs is trusted by every
+  # install, so it is gated twice:
+  #  - the `release` environment holds UPDATE_SIGNING_KEY (not a repo-wide secret), limited to
+  #    v* tags and, ideally, a required reviewer, so a pushed tag can't sign on its own;
+  #  - the tagged commit must already be on main, so code has to get through main's branch
+  #    protection before it can be signed, not just be tagged on a side branch.
   bundle:
     needs: [meta, test]
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.meta.outputs.tag }}
+          fetch-depth: 0
+      - name: Refuse to sign commits that aren't on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::${{ needs.meta.outputs.tag }} is not on main; refusing to sign"; exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

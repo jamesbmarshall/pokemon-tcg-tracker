@@ -49,7 +49,11 @@ const live = (s: ShareRow) => !s.revoked_at && (!s.expires_at || s.expires_at > 
 function findByToken(ctx: Ctx, token: string | undefined): ShareRow | undefined {
   // Real tokens are ~22 chars; refuse oversized input before hashing it.
   if (!token || token.length > 64) return undefined;
-  const s = ctx.db.get<ShareRow>('SELECT * FROM shares WHERE token_hash = ?', sha256(token));
+  // A disabled owner's shares stop working at once, without having to revoke each one.
+  const s = ctx.db.get<ShareRow>(
+    'SELECT s.* FROM shares s JOIN users u ON u.id = s.owner_id WHERE s.token_hash = ? AND u.disabled = 0',
+    sha256(token),
+  );
   return s && live(s) ? s : undefined;
 }
 
@@ -317,7 +321,7 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     const u = requireUser(req);
     const rows = ctx.db.all<ShareRow & { owner_name: string }>(
       `SELECT s.*, u.display_name AS owner_name FROM shares s JOIN users u ON u.id = s.owner_id
-        WHERE s.owner_id != ? AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > ?)
+        WHERE s.owner_id != ? AND u.disabled = 0 AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > ?)
           AND (s.audience = 'instance' OR EXISTS (SELECT 1 FROM share_users su WHERE su.share_id = s.id AND su.user_id = ?))
         ORDER BY s.created_at DESC`,
       u.id,

@@ -302,8 +302,15 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
       await dummyVerify(password);
       throw fail();
     }
-    if (user.locked_until && user.locked_until > now()) throw new HttpError(429, 'Too many failed sign-ins. Try again in a few minutes.', 'locked');
-    if (!(await verifyPassword(password, user.password_hash))) {
+    // A locked account answers exactly like a wrong password (and still pays for the hash), so the
+    // lockout can't be used to discover which usernames exist. Even the right password is refused.
+    const locked = !!user.locked_until && user.locked_until > now();
+    const ok = await verifyPassword(password, user.password_hash);
+    if (locked) {
+      audit(ctx, req, 'auth.login_locked', user.id);
+      throw fail();
+    }
+    if (!ok) {
       const n = user.failed_logins + 1;
       const lock = n >= LOCK_AFTER ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : null;
       // The counter restarts after a lock, so each subsequent lock needs another full run of failures.
