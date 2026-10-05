@@ -268,3 +268,39 @@ describe('set totals', () => {
     expect((await c.put('/api/set-stats/' + encodeURIComponent('../../x'), {})).statusCode).toBe(400);
   });
 });
+
+describe('pricing a newly added card', () => {
+  it('a hydrate request made while the background fetch is running waits for it', async () => {
+    // A card id no other test touches: inFlight is module-level, so a background fetch left over
+    // from an earlier test could otherwise be the one this request waits on.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes('/cards/sv2-077')) {
+        await gate;
+        return Response.json({
+          id: 'sv2-077',
+          localId: '77',
+          name: 'Sprigatito',
+          set: { id: 'sv02', name: 'Paldea Evolved' },
+          variants: { normal: true },
+          pricing: { tcgplayer: { updated: '2026-10-01', normal: { marketPrice: 4.5 } } },
+        });
+      }
+      return Response.json([]);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const c = await setupOwner(s.app);
+    const id = await personalId(c);
+    // Adding the card starts a background fetch; the client asks for the priced card straight away.
+    await c.put(`/api/collections/${id}/entries`, { entries: [{ cardId: 'sv2-077', variant: 'normal', quantity: 1, addedAt: new Date().toISOString() }] });
+    const pending = c.post('/api/cards/hydrate', { ids: ['sv2-077'] });
+    setTimeout(release, 50);
+    const cards = (await pending).json();
+    expect(cards).toHaveLength(1);
+    expect(cards[0].prices.normal).toBe(4.5);
+    // One fetch for the card, not two.
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/cards/sv2-077'))).toHaveLength(1);
+  });
+});

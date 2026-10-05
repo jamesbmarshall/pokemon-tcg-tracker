@@ -97,21 +97,37 @@ export function trackedCardIds(db: Db): string[] {
     .map((r) => r.id);
 }
 
-/** Ids being hydrated right now, so rapid repeated mutations don't fetch the same card twice. */
-const inFlight = new Set<string>();
+/**
+ * Fetches in progress, keyed by card id. Callers that ask for a card already being fetched wait
+ * on the same promise rather than skipping it: adding a card fires a background hydrate and the
+ * client immediately asks /api/cards/hydrate for the priced card, and that request must not
+ * return before the price has landed.
+ */
+const inFlight = new Map<string, Promise<number>>();
 
 /**
  * Fetches snapshots for ids we have never priced, so a newly added card shows a value without
- * waiting for the next prices job. Fire-and-forget from mutations: it never rejects.
+ * waiting for the next prices job. Resolves once every requested card has been fetched (by this
+ * call or one already running). Fire-and-forget from mutations: it never rejects.
  */
-export function hydrateMissing(ctx: Ctx, ids: string[]) {
+export function hydrateMissing(ctx: Ctx, ids: string[]): Promise<number> {
   const known = readCards(ctx.db, ids);
-  const missing = ids.filter((id) => !inFlight.has(id) && !Object.keys(known.get(id)?.prices ?? {}).length);
-  if (!missing.length) return Promise.resolve(0);
-  for (const id of missing) inFlight.add(id);
-  return refreshCards(ctx, missing)
-    .catch(() => 0)
-    .finally(() => missing.forEach((id) => inFlight.delete(id)));
+  const waits = new Set<Promise<number>>();
+  const missing: string[] = [];
+  for (const id of new Set(ids)) {
+    if (Object.keys(known.get(id)?.prices ?? {}).length) continue;
+    const running = inFlight.get(id);
+    if (running) waits.add(running);
+    else missing.push(id);
+  }
+  if (missing.length) {
+    const job: Promise<number> = refreshCards(ctx, missing)
+      .catch(() => 0)
+      .finally(() => missing.forEach((id) => inFlight.get(id) === job && inFlight.delete(id)));
+    for (const id of missing) inFlight.set(id, job);
+    waits.add(job);
+  }
+  return Promise.all(waits).then(() => missing.length);
 }
 
 // ---------------------------------------------------------------- collection data
