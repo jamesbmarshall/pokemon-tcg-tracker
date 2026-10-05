@@ -8,7 +8,6 @@ import { makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
 import { useCollectionStore } from '../store/collectionStore';
 import { useSettings } from '../store/settingsStore';
 import { useToasts } from '../store/toastStore';
-import { db } from '../db/dexie';
 
 interface Download {
   name: string;
@@ -29,7 +28,7 @@ function captureDownloads() {
 }
 
 const toasts = () => useToasts.getState().toasts;
-const backupText = () => screen.getByText(/Your collection lives in this browser only/).textContent;
+const backupText = () => screen.getByText(/Your collection is stored on your PokéTracker server/).textContent;
 
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -85,21 +84,21 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
     expect(syncPrices).toHaveBeenCalledWith(true);
-    await waitFor(() => expect(toasts()[0]).toMatchObject({ message: 'Refreshed prices for 3 cards', tone: 'success' }));
+    await waitFor(() => expect(toasts()[0]).toMatchObject({ message: 'Prices up to date for 3 cards', tone: 'success' }));
   });
 
   it('uses the singular for one refreshed card', async () => {
     useCollectionStore.setState({ syncPrices: vi.fn(async () => 1) });
     renderWithProviders(<SettingsPage />);
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
-    await waitFor(() => expect(toasts()[0].message).toBe('Refreshed prices for 1 card'));
+    await waitFor(() => expect(toasts()[0].message).toBe('Prices up to date for 1 card'));
   });
 
   it('reports a failed refresh', async () => {
     useCollectionStore.setState({ syncPrices: vi.fn(async () => -1) });
     renderWithProviders(<SettingsPage />);
     await userEvent.click(screen.getByRole('button', { name: 'Refresh now' }));
-    await waitFor(() => expect(toasts()[0]).toMatchObject({ message: "Couldn't reach the card API. Try again in a minute.", tone: 'error' }));
+    await waitFor(() => expect(toasts()[0]).toMatchObject({ message: "Couldn't refresh prices. Try again in a minute.", tone: 'error' }));
   });
 
   it('disables refresh while syncing', () => {
@@ -116,8 +115,9 @@ describe('SettingsPage', () => {
     expect(downloads[0].name).toMatch(/^poketracker-\d{4}-\d{2}-\d{2}\.json$/);
     expect(downloads[0].blob.type).toBe('application/json');
     const data = JSON.parse(await downloads[0].blob.text());
-    expect(data).toMatchObject({ app: 'poketracker', version: 3, wishlist: [{ cardId: 'sv03-009' }] });
+    expect(data).toMatchObject({ app: 'poketracker', version: 4, wishlist: [{ cardId: 'sv03-009' }] });
     expect(data.collection).toHaveLength(3);
+    expect(data).toMatchObject({ history: [], lists: [] });
   });
 
   it('exports CSV with converted prices and escaped cells', async () => {
@@ -191,20 +191,25 @@ describe('SettingsPage', () => {
     expect(toasts()).toHaveLength(0);
   });
 
-  it('mentions cached images when there are some', async () => {
-    await db.images.bulkPut([
-      { id: 'a', blob: new Blob(['x']), savedAt: '2025-01-01' },
-      { id: 'b', blob: new Blob(['x']), savedAt: '2025-01-01' },
-    ]);
+  it('describes the server-side image cache', () => {
     renderWithProviders(<SettingsPage />);
-    expect(await screen.findByText('2')).toBeInTheDocument();
-    expect(screen.getByText(/card images stored on this device/)).toBeInTheDocument();
+    expect(screen.getByText(/Your server keeps its own copy of every owned and wishlisted card/)).toBeInTheDocument();
   });
 
-  it('omits the image count when none are cached', async () => {
+  it('hides import and the danger zone from viewers', () => {
+    useCollectionStore.setState({ readOnly: true, role: 'viewer' });
+    const { container } = renderWithProviders(<SettingsPage />);
+    expect(screen.getByRole('button', { name: 'Export JSON' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Import JSON' })).not.toBeInTheDocument();
+    expect(container.querySelector('input[type=file]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear everything' })).not.toBeInTheDocument();
+  });
+
+  it('keeps import but hides the danger zone for editors', () => {
+    useCollectionStore.setState({ readOnly: false, role: 'editor' });
     renderWithProviders(<SettingsPage />);
-    await screen.findByText(/so it still works offline/);
-    expect(screen.queryByText(/card images stored/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import JSON' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear everything' })).not.toBeInTheDocument();
   });
 
   it('requires typing "delete", then backs up and clears everything', async () => {

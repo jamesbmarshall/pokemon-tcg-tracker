@@ -1,21 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PokemonCard } from './types';
 
 const getSetCards = vi.hoisted(() => vi.fn());
-vi.mock('./client', async (orig) => ({ ...(await orig<typeof import('./client')>()), getSetCards }));
+vi.mock('./catalog', async (orig) => ({ ...(await orig<typeof import('./catalog')>()), getSetCards }));
 
-import { markMigrated, migrateVariant, needsMigration, resolveLegacyIds } from './migrate';
+import { isLegacyId, migrateVariant, resolveLegacyIds } from './migrate';
 
-const c = (id: string, number: string, name = 'Card') => ({ id, number, name }) as unknown as PokemonCard;
+const c = (id: string, number: string, name = 'Card') => ({ id, number, name });
 
 beforeEach(() => getSetCards.mockReset());
 
-describe('provider flag', () => {
-  it('needs migration until marked', () => {
-    expect(needsMigration()).toBe(true);
-    markMigrated();
-    expect(localStorage.getItem('poketracker-provider')).toBe('tcgdex');
-    expect(needsMigration()).toBe(false);
+describe('isLegacyId', () => {
+  it('flags pokemontcg.io set codes that TCGdex renamed', () => {
+    expect(isLegacyId('sv3pt5-6')).toBe(true);
+    expect(isLegacyId('sv03.5-006')).toBe(false);
   });
 });
 

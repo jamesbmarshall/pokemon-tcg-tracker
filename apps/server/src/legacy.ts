@@ -8,7 +8,7 @@ type Remap = (raw: unknown) => unknown;
  * function that rewrites a raw imported record onto TCGdex ids. Only legacy-looking
  * set prefixes trigger network lookups, so modern exports import without any.
  */
-export async function migrateImport(ctx: Ctx, entries: unknown[], wishlist: unknown[]): Promise<{ remap: Remap; remapped: number }> {
+export async function migrateImport(ctx: Ctx, entries: unknown[], wishlist: unknown[]): Promise<{ remap: Remap; readonly remapped: number }> {
   const ids = new Set<string>();
   const names = new Map<string, string>();
   for (const r of [...entries, ...wishlist]) {
@@ -36,5 +36,11 @@ export async function migrateImport(ctx: Ctx, entries: unknown[], wishlist: unkn
     remapped++;
     return { ...o, cardId, variant };
   };
-  return { remap, remapped };
+  return {
+    remap,
+    /** Live count: grows as records pass through remap(). */
+    get remapped() {
+      return remapped;
+    },
+  };
 }

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { createReadStream, rmSync, statSync } from 'node:fs';
-import { audit, bad, notFound, requireRole, requireUser, type Ctx } from './context.ts';
+import { audit, bad, HttpError, notFound, requireRole, requireUser, type Ctx } from './context.ts';
 import { backupNow, backupPath, jobStatus, JOBS, listBackups, runJob } from './jobs.ts';
 import { imageCacheStats } from './catalog.ts';
 import {
@@ -39,7 +39,16 @@ export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
     // Updates go through the update endpoints so they stay owner-only.
     if (name === 'update-check' && req.user!.role !== 'owner') throw bad('Only the owner can check for updates');
     audit(ctx, req, 'job.run', name);
-    void runJob(ctx, name).catch(() => undefined);
+    const job = runJob(ctx, name);
+    // ?wait=1 lets the UI show the outcome of quick jobs such as a price refresh.
+    if ((req.query as { wait?: string }).wait === '1') {
+      try {
+        return { started: true, result: await job };
+      } catch (err) {
+        throw new HttpError(502, (err as Error).message, 'job_failed');
+      }
+    }
+    void job.catch(() => undefined);
     return { started: true };
   });
 

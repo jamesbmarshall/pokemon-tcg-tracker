@@ -1,39 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CardSnapshot } from '../api/types';
-import { makeCard, makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
-
-const m = vi.hoisted(() => ({
-  getCardsByIds: vi.fn(),
-  resolveLegacyIds: vi.fn(),
-  cacheImages: vi.fn(),
-  pruneImages: vi.fn(),
-}));
-vi.mock('../api/client', async (orig) => ({ ...(await orig<typeof import('../api/client')>()), getCardsByIds: m.getCardsByIds }));
-vi.mock('../api/migrate', async (orig) => ({ ...(await orig<typeof import('../api/migrate')>()), resolveLegacyIds: m.resolveLegacyIds }));
-vi.mock('../db/imageCache', () => ({ cacheImages: m.cacheImages, pruneImages: m.pruneImages }));
-
-import { costBasis, computeValue, gradedValue, indexGraded, indexHoldings, NOTE_MAX, ownedTotal, priceOf, useCollectionStore, useGradedFor, useHoldings, useNote, useOwned, useWished, type GradedInput } from './collectionStore';
-import { db } from '../db/dexie';
 import { renderHook } from '@testing-library/react';
+import type { CardSnapshot } from '../api/types';
+import { ApiError } from '../api/http';
+import { setBackend } from '../api/backend';
+import { makeCard, makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
+import { MemoryBackend, TEST_COLLECTION } from '../test/memoryBackend';
+import { useToasts } from './toastStore';
+
+const m = { getCardsByIds: vi.fn() };
+
+import { ACTIVE_COLLECTION_KEY, costBasis, computeValue, gradedValue, indexGraded, indexHoldings, NOTE_MAX, ownedTotal, priceOf, useCollectionStore, useGradedFor, useHoldings, useNote, useOwned, useReadOnly, useWished, type GradedInput } from './collectionStore';
 
 const initial = useCollectionStore.getState();
 const store = () => useCollectionStore.getState();
 const priced = (id: string, prices: Record<string, number> = { normal: 1, reverseHolofoil: 2 }, over: Partial<CardSnapshot> = {}) => makeSnapshot({ id, prices, ...over });
 const flush = () => new Promise((r) => setTimeout(r, 0));
+const toasts = () => useToasts.getState().toasts;
 
-beforeEach(async () => {
-  await Promise.all(db.tables.map((t) => t.clear()));
-  useCollectionStore.setState({ ...initial, isLoaded: true }, true);
+/** The server for this test; a fresh one per test. */
+let mem: MemoryBackend;
+
+beforeEach(() => {
+  mem = new MemoryBackend();
+  mem.catalog = m.getCardsByIds;
+  setBackend(mem);
+  useCollectionStore.setState({ ...initial, isLoaded: true, collectionId: TEST_COLLECTION, role: 'owner', readOnly: false }, true);
+  useToasts.setState({ toasts: [] });
   m.getCardsByIds.mockReset().mockResolvedValue([]);
-  m.resolveLegacyIds.mockReset().mockResolvedValue({ map: new Map(), failedSets: 0 });
-  m.cacheImages.mockReset().mockResolvedValue(undefined);
-  m.pruneImages.mockReset().mockResolvedValue(undefined);
-  localStorage.setItem('poketracker-provider', 'tcgdex');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
 afterEach(async () => {
-  // let any fire-and-forget hydrate()/sync settle before the next test clears the db
+  // let any fire-and-forget hydrate()/recordValue settle before the next test
   await flush();
 });
 
@@ -62,17 +60,16 @@ describe('pure helpers', () => {
 });
 
 describe('adjust', () => {
-  it('adds a new card, persists the entry and snapshot, and indexes by card', async () => {
+  it('adds a new card, persists the entry, and indexes by card', async () => {
     const card = priced('sv03-001');
     await store().adjust(card, 'normal', 1);
     const e = store().entries.get('sv03-001::normal')!;
     expect(e).toMatchObject({ cardId: 'sv03-001', setId: 'sv03', variant: 'normal', quantity: 1, condition: 'NM' });
     expect(store().byCard.get('sv03-001')).toEqual({ normal: 1 });
-    expect(await db.collection.get('sv03-001::normal')).toMatchObject({ quantity: 1 });
-    expect(await db.cards.get('sv03-001')).toMatchObject({ name: 'Charmander' });
-    // priced snapshot: just cache the image, no network hydrate
-    expect(m.cacheImages).toHaveBeenCalledWith([expect.objectContaining({ id: 'sv03-001' })]);
-    expect(m.getCardsByIds).not.toHaveBeenCalled();
+    expect(mem.collection.get('sv03-001::normal')).toMatchObject({ quantity: 1 });
+    expect(store().cards.get('sv03-001')).toMatchObject({ name: 'Charmander' });
+    // priced snapshot: no hydrate round-trip
+    expect(mem.calls).not.toContain('hydrate');
   });
 
   it('accepts a full PokemonCard and converts it to a snapshot', async () => {
@@ -81,11 +78,11 @@ describe('adjust', () => {
     expect(store().byCard.get('sv03-223')).toEqual({ holofoil: 1 });
   });
 
-  it('hydrates unpriced cards with full details and records value', async () => {
+  it('asks the server to hydrate unpriced cards', async () => {
     m.getCardsByIds.mockResolvedValue([makeCard({ id: 'sv03-002', tcgplayer: { url: 'u', updatedAt: '', prices: { normal: { market: 7 } } } })]);
     await store().adjust(priced('sv03-002', {}), 'normal', 1);
     await vi.waitFor(() => expect(store().cards.get('sv03-002')?.prices).toEqual({ normal: 7 }));
-    await vi.waitFor(() => expect(store().history.at(-1)).toMatchObject({ valueUsd: 7, cards: 1 }));
+    expect(m.getCardsByIds).toHaveBeenCalledWith(['sv03-002']);
   });
 
   it('swallows hydrate failures', async () => {
@@ -93,6 +90,7 @@ describe('adjust', () => {
     await store().adjust(priced('sv03-002', {}), 'normal', 1);
     await flush();
     expect(store().entries.size).toBe(1);
+    expect(toasts()).toHaveLength(0);
   });
 
   it('increments, decrements and removes at zero; never goes negative', async () => {
@@ -104,21 +102,26 @@ describe('adjust', () => {
     await store().adjust(card, 'normal', -5);
     expect(store().entries.has('sv03-001::normal')).toBe(false);
     expect(store().byCard.has('sv03-001')).toBe(false);
-    expect(await db.collection.count()).toBe(0);
+    expect(mem.collection.size).toBe(0);
   });
 
   it('ignores removing a card that is not owned', async () => {
     await store().adjust(priced('sv03-001'), 'normal', -1);
     expect(store().entries.size).toBe(0);
+    expect(mem.calls).not.toContain('deleteEntries');
   });
 
-  it('records the collection value 1.5s after the last change', async () => {
+  it('asks the server to record the value 1.5s after the last change', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    await store().adjust(priced('sv03-001'), 'normal', 2);
+    mem.cards.set('sv03-001', priced('sv03-001'));
+    useCollectionStore.setState({ recordValue: initial.recordValue });
+    await store().adjust(priced('sv03-001'), 'normal', 1);
+    await store().adjust(priced('sv03-001'), 'normal', 1);
     expect(store().history).toEqual([]);
     await vi.advanceTimersByTimeAsync(1500);
     await vi.waitFor(() => expect(store().history).toHaveLength(1));
     expect(store().history[0]).toMatchObject({ valueUsd: 2, cards: 2, unique: 1 });
+    expect(mem.calls.filter((c) => c === 'recordValue')).toHaveLength(1);
   });
 
   it('does not let a listing snapshot wipe stored prices', async () => {
@@ -131,7 +134,7 @@ describe('adjust', () => {
 describe('remember', () => {
   it('is a no-op for an empty list', async () => {
     await store().remember([]);
-    expect(await db.cards.count()).toBe(0);
+    expect(store().cards.size).toBe(0);
   });
   it('replaces prices when the new snapshot has them', async () => {
     await store().remember([priced('a-1', { normal: 1 })]);
@@ -158,7 +161,7 @@ describe('setQuantity / updateEntry / removeCard / restoreEntries', () => {
   it('updateEntry patches condition and notes', async () => {
     await store().updateEntry('sv03-001', 'normal', { condition: 'LP', notes: 'Whitening' });
     expect(store().entries.get('sv03-001::normal')).toMatchObject({ condition: 'LP', notes: 'Whitening', quantity: 1 });
-    expect(await db.collection.get('sv03-001::normal')).toMatchObject({ condition: 'LP' });
+    expect(mem.collection.get('sv03-001::normal')).toMatchObject({ condition: 'LP' });
     await store().updateEntry('nope-1', 'normal', { notes: 'x' });
     expect(store().entries.has('nope-1::normal')).toBe(false);
   });
@@ -167,10 +170,10 @@ describe('setQuantity / updateEntry / removeCard / restoreEntries', () => {
     const removed = await store().removeCard('sv03-001');
     expect(removed).toHaveLength(2);
     expect(store().entries.size).toBe(0);
-    expect(await db.collection.count()).toBe(0);
+    expect(mem.collection.size).toBe(0);
     await store().restoreEntries(removed);
     expect(store().byCard.get('sv03-001')).toEqual({ normal: 1, reverseHolofoil: 1 });
-    expect(await db.collection.count()).toBe(2);
+    expect(mem.collection.size).toBe(2);
   });
 });
 
@@ -179,11 +182,11 @@ describe('wishlist', () => {
     const card = priced('sv03-050');
     expect(await store().toggleWishlist(card)).toBe(true);
     expect(store().wishlist.has('sv03-050')).toBe(true);
-    expect(await db.wishlist.get('sv03-050')).toBeDefined();
+    expect(mem.wishlist.get('sv03-050')).toBeDefined();
     expect(store().cards.has('sv03-050')).toBe(true);
     expect(await store().toggleWishlist(card)).toBe(false);
     expect(store().wishlist.size).toBe(0);
-    expect(await db.wishlist.count()).toBe(0);
+    expect(mem.wishlist.size).toBe(0);
   });
 
   it('useWished and useOwned reflect the store', async () => {
@@ -203,19 +206,29 @@ describe('recordSetStat', () => {
     expect(first.masterTotal).toBe(400);
     await store().recordSetStat('sv03', 400);
     expect(store().setStats.get('sv03')).toBe(first);
+    expect(mem.calls.filter((c) => c === 'putSetStat')).toHaveLength(1);
     await store().recordSetStat('sv03', 410);
-    expect((await db.setStats.get('sv03'))!.masterTotal).toBe(410);
+    expect(mem.setStats.get('sv03')!.masterTotal).toBe(410);
+  });
+
+  it('keeps the total locally but skips the server when read-only', async () => {
+    useCollectionStore.setState({ readOnly: true });
+    await store().recordSetStat('sv03', 400);
+    expect(store().setStats.get('sv03')!.masterTotal).toBe(400);
+    expect(mem.calls).not.toContain('putSetStat');
   });
 });
 
 describe('recordValue', () => {
   it('skips an empty collection with no history', async () => {
     await store().recordValue();
-    expect(await db.valueHistory.count()).toBe(0);
+    expect(mem.valueHistory.size).toBe(0);
+    expect(store().history).toEqual([]);
   });
 
   it('writes one point per day, replacing today', async () => {
     useCollectionStore.setState({ history: [{ date: '2000-01-01', valueUsd: 1, cards: 1, unique: 1 }] });
+    mem.valueHistory.set('2000-01-01', { date: '2000-01-01', valueUsd: 1, cards: 1, unique: 1 });
     await store().recordValue();
     await store().recordValue();
     expect(store().history).toHaveLength(2);
@@ -223,56 +236,64 @@ describe('recordValue', () => {
   });
 
   it('rounds to the penny', async () => {
-    await store().remember([priced('a-1', { normal: 0.333 })]);
-    useCollectionStore.setState({ entries: new Map([['a-1::normal', makeEntry({ cardId: 'a-1', quantity: 3 })]]) });
+    mem.cards.set('a-1', priced('a-1', { normal: 0.333 }));
+    mem.collection.set('a-1::normal', makeEntry({ id: 'a-1::normal', cardId: 'a-1', quantity: 3 }));
     await store().recordValue();
     expect(store().history[0].valueUsd).toBe(1);
+  });
+
+  it('leaves history alone when the server is unavailable', async () => {
+    mem.fail = new Error('offline');
+    await store().recordValue();
+    expect(store().history).toEqual([]);
+    expect(toasts()).toHaveLength(0);
   });
 });
 
 describe('syncPrices', () => {
-  it('fetches only cards without snapshots unless forced', async () => {
-    await store().remember([priced('a-1')]);
-    useCollectionStore.setState({
-      entries: new Map([['a-1::normal', makeEntry({ cardId: 'a-1' })], ['b-2::normal', makeEntry({ cardId: 'b-2' })]]),
-      wishlist: new Map([['c-3', { cardId: 'c-3', addedAt: 'x' }]]),
-    });
-    m.getCardsByIds.mockResolvedValue([makeCard({ id: 'b-2' })]);
-    expect(await store().syncPrices()).toBe(1);
-    expect(m.getCardsByIds).toHaveBeenCalledWith(['b-2', 'c-3']);
-    expect(store().lastSync).toBeNull();
-    expect(m.pruneImages).not.toHaveBeenCalled();
+  beforeEach(() => {
+    mem.collection.set('a-1::normal', makeEntry({ id: 'a-1::normal', cardId: 'a-1' }));
+    mem.wishlist.set('c-3', { cardId: 'c-3', addedAt: 'x' });
+  });
 
-    m.getCardsByIds.mockResolvedValue([makeCard({ id: 'a-1' }), makeCard({ id: 'b-2' })]);
-    expect(await store().syncPrices(true)).toBe(2);
-    expect(m.getCardsByIds).toHaveBeenLastCalledWith(['a-1', 'b-2', 'c-3']);
-    expect(store().lastSync).not.toBeNull();
-    expect(localStorage.getItem('poketracker-last-price-sync')).toBe(store().lastSync);
-    expect(m.pruneImages).toHaveBeenCalledWith(new Set(['a-1', 'b-2', 'c-3']));
-    expect(m.cacheImages).toHaveBeenCalled();
+  it('reloads from the server without asking for a refresh unless forced', async () => {
+    mem.cards.set('a-1', priced('a-1'));
+    mem.lastPriceSync = '2025-01-01T00:00:00.000Z';
+    expect(await store().syncPrices()).toBe(1);
+    expect(mem.calls).not.toContain('refreshPrices');
+    expect(store().entries.has('a-1::normal')).toBe(true);
+    expect(store().lastSync).toBe('2025-01-01T00:00:00.000Z');
     expect(store().syncing).toBe(false);
   });
 
-  it('returns 0 and still records value when nothing needs fetching', async () => {
-    expect(await store().syncPrices()).toBe(0);
-    expect(m.getCardsByIds).not.toHaveBeenCalled();
+  it('asks the server to refresh every tracked card when forced', async () => {
+    m.getCardsByIds.mockResolvedValue([makeCard({ id: 'a-1' }), makeCard({ id: 'c-3' })]);
+    expect(await store().syncPrices(true)).toBe(2);
+    expect(m.getCardsByIds).toHaveBeenCalledWith(['a-1', 'c-3']);
+    expect(store().lastSync).toBe(mem.lastPriceSync);
+    expect(store().lastSync).not.toBeNull();
+  });
+
+  it("falls back to the server's latest prices when the user can't trigger a refresh", async () => {
+    vi.spyOn(mem, 'refreshPrices').mockRejectedValue(new ApiError(403, 'Admins only', 'forbidden'));
+    mem.cards.set('a-1', priced('a-1'));
+    expect(await store().syncPrices(true)).toBe(1);
+    expect(mem.calls).toContain('state');
+  });
+
+  it("doesn't ask for a refresh on a read-only collection", async () => {
+    useCollectionStore.setState({ readOnly: true });
+    await store().syncPrices(true);
+    expect(mem.calls).not.toContain('refreshPrices');
   });
 
   it('returns 0 if a sync is already running', async () => {
-    useCollectionStore.setState({ syncing: true, entries: new Map([['a-1::normal', makeEntry({ cardId: 'a-1' })]]) });
+    useCollectionStore.setState({ syncing: true });
     expect(await store().syncPrices(true)).toBe(0);
+    expect(mem.calls).toHaveLength(0);
   });
 
-  it('batches requests in 40s and tolerates partial failures', async () => {
-    const entries = new Map(Array.from({ length: 85 }, (_, i) => [`x-${i}::normal`, makeEntry({ cardId: `x-${i}` })]));
-    useCollectionStore.setState({ entries });
-    m.getCardsByIds.mockImplementationOnce(async (ids: string[]) => ids.map((id) => makeCard({ id }))).mockRejectedValueOnce(new Error('503')).mockResolvedValueOnce([]);
-    expect(await store().syncPrices()).toBe(40);
-    expect(m.getCardsByIds.mock.calls.map(([ids]) => ids.length)).toEqual([40, 40, 5]);
-  });
-
-  it('returns -1 when the API is unreachable', async () => {
-    useCollectionStore.setState({ entries: new Map([['a-1::normal', makeEntry({ cardId: 'a-1' })]]) });
+  it('returns -1 when the server refresh fails', async () => {
     m.getCardsByIds.mockRejectedValue(new Error('offline'));
     expect(await store().syncPrices(true)).toBe(-1);
     expect(store().syncing).toBe(false);
@@ -280,122 +301,99 @@ describe('syncPrices', () => {
   });
 });
 
-describe('migrateLegacy', () => {
-  it('marks an empty collection as migrated', async () => {
-    localStorage.removeItem('poketracker-provider');
-    expect(await store().migrateLegacy()).toBe(false);
-    expect(localStorage.getItem('poketracker-provider')).toBe('tcgdex');
-    expect(m.resolveLegacyIds).not.toHaveBeenCalled();
-  });
-
-  it('remaps ids and variants, merging quantities that collide', async () => {
-    localStorage.removeItem('poketracker-provider');
-    await db.cards.put(makeSnapshot({ id: 'base1-4', name: 'Charizard' }));
-    useCollectionStore.setState({
-      cards: new Map([['base1-4', makeSnapshot({ id: 'base1-4', name: 'Charizard' })]]),
-      entries: new Map([
-        ['base1-4::holofoil', makeEntry({ cardId: 'base1-4', variant: 'holofoil', quantity: 1 })],
-        ['base1-4::unlimitedHolofoil', makeEntry({ cardId: 'base1-4', variant: 'unlimitedHolofoil', quantity: 2 })],
-        ['sv3pt5-6::normal', makeEntry({ cardId: 'sv3pt5-6', variant: 'normal', quantity: 1 })],
-      ]),
-      wishlist: new Map([['sv3pt5-7', { cardId: 'sv3pt5-7', addedAt: 'x' }]]),
-    });
-    m.resolveLegacyIds.mockResolvedValue({ map: new Map([['base1-4', 'base1-4'], ['sv3pt5-6', 'sv03.5-006'], ['sv3pt5-7', 'sv03.5-007']]), failedSets: 0 });
-
-    expect(await store().migrateLegacy()).toBe(true);
-    expect(m.resolveLegacyIds.mock.calls[0][1].get('base1-4')).toBe('Charizard');
-    const rows = await db.collection.toArray();
-    expect(rows.map((r) => [r.id, r.quantity, r.setId]).sort()).toEqual([
-      ['base1-4::holofoil', 3, 'base1'],
-      ['sv03.5-006::normal', 1, 'sv03.5'],
-    ]);
-    expect((await db.wishlist.toArray()).map((w) => w.cardId)).toEqual(['sv03.5-007']);
-    expect(await db.cards.get('base1-4')).toBeDefined();
-    expect(localStorage.getItem('poketracker-provider')).toBe('tcgdex');
-  });
-
-  it('leaves the flag unset when some sets failed so it retries', async () => {
-    localStorage.removeItem('poketracker-provider');
-    useCollectionStore.setState({ entries: new Map([['a-1::normal', makeEntry({ cardId: 'a-1' })]]) });
-    m.resolveLegacyIds.mockResolvedValue({ map: new Map(), failedSets: 1 });
-    expect(await store().migrateLegacy()).toBe(false);
-    expect(localStorage.getItem('poketracker-provider')).toBeNull();
-  });
-});
-
 describe('load', () => {
-  it('reads everything from IndexedDB', async () => {
-    await db.collection.put(makeEntry({ quantity: 2 }));
-    await db.cards.put(priced('sv03-001'));
-    await db.wishlist.put({ cardId: 'sv03-009', addedAt: 'x' });
-    await db.setStats.put({ setId: 'sv03', masterTotal: 400, syncedAt: 'x' });
-    await db.valueHistory.bulkPut([
-      { date: '2025-01-02', valueUsd: 2, cards: 1, unique: 1 },
-      { date: '2025-01-01', valueUsd: 1, cards: 1, unique: 1 },
-    ]);
-    useCollectionStore.setState({ ...initial }, true);
-    localStorage.setItem('poketracker-last-price-sync', new Date().toISOString());
-    useCollectionStore.setState({ lastSync: localStorage.getItem('poketracker-last-price-sync') });
+  beforeEach(() => useCollectionStore.setState({ ...initial }, true));
+
+  it('reads the personal collection from the server', async () => {
+    mem.collection.set('sv03-001::normal', makeEntry({ quantity: 2 }));
+    mem.cards.set('sv03-001', priced('sv03-001'));
+    mem.wishlist.set('sv03-009', { cardId: 'sv03-009', addedAt: 'x' });
+    mem.setStats.set('sv03', { setId: 'sv03', masterTotal: 400, syncedAt: 'x' });
+    mem.valueHistory.set('2025-01-02', { date: '2025-01-02', valueUsd: 2, cards: 1, unique: 1 });
+    mem.valueHistory.set('2025-01-01', { date: '2025-01-01', valueUsd: 1, cards: 1, unique: 1 });
+    mem.lastPriceSync = '2025-01-02T06:00:00.000Z';
     await store().load();
-    expect(store().isLoaded).toBe(true);
+    expect(store()).toMatchObject({ isLoaded: true, loadError: null, collectionId: TEST_COLLECTION, role: 'owner', readOnly: false });
+    expect(store().collections).toHaveLength(1);
     expect(store().byCard.get('sv03-001')).toEqual({ normal: 2 });
     expect(store().cards.size).toBe(1);
     expect(store().wishlist.has('sv03-009')).toBe(true);
     expect(store().setStats.get('sv03')!.masterTotal).toBe(400);
-    expect(store().history.slice(0, 2).map((h) => h.date)).toEqual(['2025-01-01', '2025-01-02']);
-    // recent sync → only missing cards are fetched (sv03-009 has no snapshot)
-    await vi.waitFor(() => expect(m.getCardsByIds).toHaveBeenCalledWith(['sv03-009']));
+    expect(store().history.map((h) => h.date)).toEqual(['2025-01-01', '2025-01-02']);
+    await vi.waitFor(() => expect(store().lastSync).toBe('2025-01-02T06:00:00.000Z'));
   });
 
-  it('forces a full sync when the last one is stale', async () => {
-    await db.collection.put(makeEntry());
-    await db.cards.put(priced('sv03-001'));
-    useCollectionStore.setState({ lastSync: '2000-01-01T00:00:00Z' });
+  it('opens a viewer collection read-only', async () => {
+    mem.role = 'viewer';
     await store().load();
-    await vi.waitFor(() => expect(m.getCardsByIds).toHaveBeenCalledWith(['sv03-001']));
+    expect(store()).toMatchObject({ role: 'viewer', readOnly: true });
+    expect(renderHook(() => useReadOnly()).result.current).toBe(true);
   });
 
-  it('runs the legacy migration, reloads, then force-syncs', async () => {
-    localStorage.removeItem('poketracker-provider');
-    await db.collection.put(makeEntry({ cardId: 'sv3pt5-6', id: 'sv3pt5-6::normal', setId: 'sv3pt5' }));
-    m.resolveLegacyIds.mockResolvedValue({ map: new Map([['sv3pt5-6', 'sv03.5-006']]), failedSets: 0 });
-    await store().load();
-    expect([...store().entries.keys()]).toEqual(['sv03.5-006::normal']);
-    await vi.waitFor(() => expect(m.getCardsByIds).toHaveBeenCalledWith(['sv03.5-006']));
-  });
+  it('opens the requested collection, else the last one used, else the personal one', async () => {
+    const shared = new MemoryBackend();
+    shared.catalog = m.getCardsByIds;
+    shared.collectionId = 'c-shared';
+    shared.role = 'editor';
+    shared.collection.set('sv03-001::normal', makeEntry());
+    vi.spyOn(mem, 'collections').mockResolvedValue([
+      { id: 'c-shared', name: 'Family binder', kind: 'shared', role: 'editor', ownerName: 'Misty', mine: false },
+      { id: TEST_COLLECTION, name: 'My collection', kind: 'personal', role: 'owner', ownerName: 'Ash', mine: true },
+    ]);
+    vi.spyOn(mem, 'state').mockImplementation((cid) => (cid === 'c-shared' ? shared.state(cid) : MemoryBackend.prototype.state.call(mem, cid)));
 
-  it('keeps going when migration throws', async () => {
-    localStorage.removeItem('poketracker-provider');
-    await db.collection.put(makeEntry());
-    m.resolveLegacyIds.mockRejectedValue(new Error('boom'));
     await store().load();
+    expect(store().collectionId).toBe(TEST_COLLECTION);
+
+    await store().load('c-shared');
+    expect(store()).toMatchObject({ collectionId: 'c-shared', role: 'editor', readOnly: false });
     expect(store().entries.size).toBe(1);
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('migration failed'), expect.any(Error));
+    expect(localStorage.getItem(ACTIVE_COLLECTION_KEY)).toBe('c-shared');
+
+    await store().load();
+    expect(store().collectionId).toBe('c-shared');
+
+    await store().load('gone');
+    expect(store().collectionId).toBe('c-shared');
+  });
+
+  it('only applies the latest of overlapping loads', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const real = mem.state.bind(mem);
+    vi.spyOn(mem, 'state').mockImplementationOnce(async (cid) => {
+      await gate;
+      return { ...(await real(cid)), role: 'viewer' };
+    });
+    const slow = store().load();
+    await store().load();
+    release();
+    await slow;
+    expect(store().role).toBe('owner');
+  });
+
+  it('reports a load failure instead of hanging', async () => {
+    mem.fail = new Error('offline');
+    await store().load();
+    expect(store()).toMatchObject({ isLoaded: true, loadError: 'offline' });
+  });
+
+  it('refresh() reloads the current collection', async () => {
+    await store().load();
+    mem.collection.set('sv03-001::normal', makeEntry());
+    await store().refresh();
+    expect(store().entries.size).toBe(1);
   });
 });
 
 describe('importData', () => {
-  it('imports an export file with wishlist, normalising entries', async () => {
-    const n = await store().importData({
-      collection: [
-        { cardId: 'sv03-001', variant: 'normal', quantity: '3', condition: 'LP', notes: 'n', addedAt: '2024-01-01' },
-        { cardId: 'sv03-002', variant: 'holofoil', quantity: 0 },
-        { cardId: 'sv03-003', variant: 'normal', quantity: 2.7, setId: 'custom' },
-        { cardId: 42, variant: 'normal' },
-        null,
-      ],
-      wishlist: [{ cardId: 'sv03-010' }, { nope: true }],
-    });
-    expect(n).toBe(3);
-    expect(store().entries.get('sv03-001::normal')).toMatchObject({ quantity: 3, condition: 'LP', notes: 'n', addedAt: '2024-01-01', setId: 'sv03' });
-    expect(store().entries.get('sv03-002::holofoil')!.quantity).toBe(1);
-    expect(store().entries.get('sv03-003::normal')).toMatchObject({ quantity: 2, setId: 'custom' });
+  it('sends the file to the server and reloads', async () => {
+    const file = { collection: [{ cardId: 'sv03-001', variant: 'normal', quantity: 3 }], wishlist: [{ cardId: 'sv03-010' }], graded: [{ cardId: 'sv03-002', variant: 'normal', company: 'PSA', grade: '10' }] };
+    expect(await store().importData(file)).toBe(2);
+    expect(mem.calls).toEqual(expect.arrayContaining(['importData', 'state']));
+    expect(store().entries.get('sv03-001::normal')).toMatchObject({ quantity: 3 });
     expect([...store().wishlist.keys()]).toEqual(['sv03-010']);
-  });
-
-  it('accepts a bare array and clears the provider flag so legacy ids are remapped', async () => {
-    await store().importData([{ cardId: 'sv3pt5-6', variant: 'normal' }]);
-    expect(m.resolveLegacyIds).toHaveBeenCalled();
+    expect(store().graded.size).toBe(1);
   });
 
   it('accepts a wishlist-only file', async () => {
@@ -406,19 +404,28 @@ describe('importData', () => {
   it.each([[{}], [null], [[{ foo: 1 }]], ['text']])('rejects %o', async (bad) => {
     await expect(store().importData(bad)).rejects.toThrow('No collection entries found in file');
   });
+
+  it('surfaces server errors', async () => {
+    mem.fail = new ApiError(400, 'No collection entries found in that file', 'bad_request');
+    await expect(store().importData({ collection: [] })).rejects.toThrow('No collection entries found in that file');
+  });
+
+  it("refuses to import into a collection you can only view", async () => {
+    useCollectionStore.setState({ readOnly: true });
+    await expect(store().importData({ collection: [] })).rejects.toThrow(/only view/);
+    expect(mem.calls).toHaveLength(0);
+  });
 });
 
 describe('clearAll', () => {
-  it('empties the collection, wishlist and history but keeps card snapshots', async () => {
+  it('empties the collection, wishlist and history on the server but keeps card snapshots', async () => {
     await store().adjust(priced('sv03-001'), 'normal', 1);
     await store().toggleWishlist(priced('sv03-002'));
-    await store().recordValue();
+    useCollectionStore.setState({ history: [{ date: '2025-01-01', valueUsd: 1, cards: 1, unique: 1 }] });
     await store().clearAll();
     expect(store().entries.size + store().wishlist.size + store().history.length).toBe(0);
-    expect(await db.collection.count()).toBe(0);
-    expect(await db.wishlist.count()).toBe(0);
-    expect(await db.valueHistory.count()).toBe(0);
-    expect(await db.cards.count()).toBe(2);
+    expect(mem.collection.size + mem.wishlist.size + mem.valueHistory.size).toBe(0);
+    expect(store().cards.size).toBe(2);
   });
 });
 
@@ -460,13 +467,12 @@ describe('graded copies', () => {
     expect(saved).toMatchObject({ cardId: 'sv03-001', setId: 'sv03', certNumber: '123', label: undefined, notes: undefined, companyName: undefined });
     expect(saved.id).toBeTruthy();
     expect(saved.updatedAt).toBeUndefined();
-    expect(await db.graded.get(saved.id)).toEqual(saved);
+    expect(mem.graded.get(saved.id)).toEqual(saved);
     expect(store().graded.get(saved.id)).toEqual(saved);
     expect(store().gradedByCard.get('sv03-001')).toEqual([saved]);
     expect(store().holdings.get('sv03-001')).toEqual({ normal: 1 });
     expect(store().byCard.has('sv03-001')).toBe(false);
     expect(store().cards.has('sv03-001')).toBe(true);
-    expect(m.cacheImages).toHaveBeenCalled();
   });
 
   it('excluded slabs add value but leave holdings alone', async () => {
@@ -491,66 +497,50 @@ describe('graded copies', () => {
     expect(g.companyName).toBe('GMA');
   });
 
-  it('removeGraded deletes the slab and its photos, and restoreGraded puts both back', async () => {
+  it('removeGraded soft-deletes on the server so restoreGraded brings back the slab and its photos', async () => {
     const g = await store().saveGraded(card, input());
-    await db.gradedPhotos.bulkPut([
-      { id: 'p1', gradedId: g.id, side: 'front', blob: new Blob(['x']), addedAt: 'a' },
-      { id: 'p2', gradedId: 'other', side: 'front', blob: new Blob(['y']), addedAt: 'a' },
-    ]);
+    await mem.addPhotos(TEST_COLLECTION, g.id, [new Blob(['x'])], 'front');
     const removed = await store().removeGraded(g.id);
     expect(removed?.copy).toEqual(g);
-    expect(removed?.photos.map((p) => p.id)).toEqual(['p1']);
     expect(store().graded.size).toBe(0);
     expect(store().holdings.has('sv03-001')).toBe(false);
-    expect(await db.graded.count()).toBe(0);
-    expect((await db.gradedPhotos.toArray()).map((p) => p.id)).toEqual(['p2']);
+    expect(mem.deletedGraded.has(g.id)).toBe(true);
+    expect(mem.gradedPhotos.size).toBe(1);
 
     await store().restoreGraded(removed!.copy, removed!.photos);
     expect(store().graded.get(g.id)).toEqual(g);
-    expect(await db.gradedPhotos.count()).toBe(2);
+    expect(mem.deletedGraded.size).toBe(0);
+    expect(await mem.photos(TEST_COLLECTION, g.id)).toHaveLength(1);
     expect(await store().removeGraded('missing')).toBeUndefined();
   });
 
   it('load reads slabs back and derives the indexes', async () => {
-    await db.graded.put(makeGraded({ id: 'z' }));
+    mem.graded.set('z', makeGraded({ id: 'z' }));
     await store().load();
     expect(store().graded.has('z')).toBe(true);
     expect(store().holdings.get('sv03-001')).toEqual({ normal: 1 });
   });
 
-  it('syncPrices also refreshes cards only owned as slabs', async () => {
-    await db.graded.put(makeGraded({ id: 'z', cardId: 'sv03-050' }));
-    await store().load(); // kicks off a sync for cards without snapshots
-    await vi.waitFor(() => expect(m.getCardsByIds.mock.calls.flat(2)).toContain('sv03-050'));
-  });
-
-  it('importData accepts valid slabs and skips junk', async () => {
-    const n = await store().importData({
-      collection: [],
-      graded: [
-        { cardId: 'sv03-001', variant: 'normal', company: 'CGC', grade: '9.5', valueUsd: -4 },
-        { cardId: 'sv03-002', variant: 'normal', company: 'Nope', grade: '9' },
-        { cardId: 'sv03-003', variant: 'normal', company: 'PSA', grade: '10', countsTowardSet: false, id: 'keep-id', setId: 'sv03' },
-        null,
-      ],
-    });
-    expect(n).toBe(2);
-    const rows = await db.graded.toArray();
-    expect(rows).toHaveLength(2);
-    const cgc = rows.find((r) => r.company === 'CGC')!;
-    expect(cgc).toMatchObject({ setId: 'sv03', countsTowardSet: true, valueUsd: undefined });
-    expect(rows.find((r) => r.id === 'keep-id')?.countsTowardSet).toBe(false);
-    expect(store().graded.size).toBe(2);
+  it('a forced price refresh includes cards only owned as slabs', async () => {
+    mem.graded.set('z', makeGraded({ id: 'z', cardId: 'sv03-050' }));
+    await store().syncPrices(true);
+    expect(m.getCardsByIds.mock.calls.flat(2)).toContain('sv03-050');
   });
 
   it('clearAll wipes slabs and photos too', async () => {
     const g = await store().saveGraded(card, input());
-    await db.gradedPhotos.put({ id: 'p', gradedId: g.id, side: 'front', blob: new Blob(['x']), addedAt: 'a' });
+    await mem.addPhotos(TEST_COLLECTION, g.id, [new Blob(['x'])], 'front');
     await store().clearAll();
     expect(store().graded.size).toBe(0);
     expect(store().holdings.size).toBe(0);
-    expect(await db.graded.count()).toBe(0);
-    expect(await db.gradedPhotos.count()).toBe(0);
+    expect(mem.graded.size + mem.gradedPhotos.size).toBe(0);
+  });
+
+  it('saveGraded throws (and rolls back) when the server refuses', async () => {
+    mem.fail = new ApiError(400, 'Invalid grade', 'bad_request');
+    await expect(store().saveGraded(card, input())).rejects.toThrow("Couldn't save the graded copy");
+    expect(store().graded.size).toBe(0);
+    expect(toasts()[0]).toMatchObject({ message: 'Invalid grade', tone: 'error' });
   });
 
   it('useHoldings and useGradedFor expose the per-card views', async () => {
@@ -570,12 +560,12 @@ describe('card notes', () => {
   it('saves trimmed notes, caps their length and deletes blank ones', async () => {
     await store().setNote('sv03-001', '  From a car boot sale  ');
     expect(store().notes.get('sv03-001')).toBe('From a car boot sale');
-    expect(await db.notes.get('sv03-001')).toMatchObject({ text: 'From a car boot sale' });
+    expect(mem.notes.get('sv03-001')).toMatchObject({ text: 'From a car boot sale' });
     await store().setNote('sv03-001', 'x'.repeat(NOTE_MAX + 50));
     expect(store().notes.get('sv03-001')).toHaveLength(NOTE_MAX);
     await store().setNote('sv03-001', '   ');
     expect(store().notes.has('sv03-001')).toBe(false);
-    expect(await db.notes.count()).toBe(0);
+    expect(mem.notes.size).toBe(0);
   });
 
   it('keeps a note when every copy is removed, and loads it back', async () => {
@@ -589,9 +579,8 @@ describe('card notes', () => {
     expect(renderHook(() => useNote('nope')).result.current).toBe('');
   });
 
-  it('imports valid notes (even on their own) and skips junk', async () => {
-    const n = await store().importData({ notes: [{ cardId: 'sv03-001', text: ' Trade with Sam ' }, { cardId: 'x', text: '  ' }, { text: 'orphan' }, null] });
-    expect(n).toBe(0);
+  it('imports a notes-only file', async () => {
+    expect(await store().importData({ notes: [{ cardId: 'sv03-001', text: ' Trade with Sam ' }] })).toBe(0);
     expect(Array.from(store().notes)).toEqual([['sv03-001', 'Trade with Sam']]);
   });
 
@@ -599,7 +588,7 @@ describe('card notes', () => {
     await store().setNote('sv03-001', 'gone soon');
     await store().clearAll();
     expect(store().notes.size).toBe(0);
-    expect(await db.notes.count()).toBe(0);
+    expect(mem.notes.size).toBe(0);
   });
 });
 
@@ -619,7 +608,7 @@ describe('purchase prices', () => {
     await store().adjust(priced('sv03-001'), 'normal', 1);
     await store().updateEntry('sv03-001', 'normal', { paid: gbp(2.5) });
     expect(store().entries.get('sv03-001::normal')!.paid).toEqual(gbp(2.5));
-    expect((await db.collection.get('sv03-001::normal'))!.paid).toEqual(gbp(2.5));
+    expect(mem.collection.get('sv03-001::normal')!.paid).toEqual(gbp(2.5));
     await store().updateEntry('sv03-001', 'normal', { paid: { amount: -1, currency: 'GBP' } });
     expect(store().entries.get('sv03-001::normal')!.paid).toEqual(gbp(2.5));
     await store().updateEntry('sv03-001', 'normal', { paid: undefined });
@@ -628,41 +617,124 @@ describe('purchase prices', () => {
 
   it('recordValue snapshots cost and costed value when prices are recorded', async () => {
     localStorage.setItem('poketracker-fx', JSON.stringify({ rates, at: Date.now() }));
-    await store().remember([priced('a-1', { normal: 3 }), priced('b-1', { normal: 7 })]);
-    useCollectionStore.setState({
-      entries: new Map([
-        ['a-1::normal', makeEntry({ id: 'a-1::normal', cardId: 'a-1', quantity: 2, paid: gbp(1) })],
-        ['b-1::normal', makeEntry({ id: 'b-1::normal', cardId: 'b-1' })],
-      ]),
-    });
+    mem.cards.set('a-1', priced('a-1', { normal: 3 }));
+    mem.cards.set('b-1', priced('b-1', { normal: 7 }));
+    mem.collection.set('a-1::normal', makeEntry({ id: 'a-1::normal', cardId: 'a-1', quantity: 2, paid: gbp(1) }));
+    mem.collection.set('b-1::normal', makeEntry({ id: 'b-1::normal', cardId: 'b-1' }));
     await store().recordValue();
     expect(store().history[0]).toMatchObject({ valueUsd: 13, costUsd: 4, costedValueUsd: 6 });
-    useCollectionStore.setState({ entries: new Map([['b-1::normal', makeEntry({ id: 'b-1::normal', cardId: 'b-1' })]]) });
+    mem.collection.delete('a-1::normal');
     await store().recordValue();
     expect(store().history[0]).not.toHaveProperty('costUsd');
     localStorage.removeItem('poketracker-fx');
   });
 
-  it('saveGraded and importData keep valid prices and discard bad ones', async () => {
+  it('saveGraded keeps a valid price and discards a bad one', async () => {
     const card = priced('sv03-001');
     const ok = await store().saveGraded(card, { variant: 'normal', company: 'PSA', grade: '10', countsTowardSet: true, paid: gbp(60) });
     expect(ok.paid).toEqual(gbp(60));
     const bad = await store().saveGraded(card, { variant: 'normal', company: 'PSA', grade: '9', countsTowardSet: true, paid: { amount: 5, currency: 'XYZ' as 'GBP' } });
     expect(bad.paid).toBeUndefined();
+  });
+});
 
-    await store().importData({
-      collection: [
-        { cardId: 'a-1', variant: 'normal', paid: { amount: 4, currency: 'EUR' } },
-        { cardId: 'b-1', variant: 'normal', paid: { amount: 'lots', currency: 'EUR' } },
-      ],
-      graded: [
-        { id: 'g1', cardId: 'a-1', setId: 'a', variant: 'normal', company: 'CGC', grade: '9.5', countsTowardSet: false, addedAt: 'x', paid: { amount: 30, currency: 'USD' } },
-        { id: 'g2', cardId: 'a-1', setId: 'a', variant: 'normal', company: 'CGC', grade: '9', countsTowardSet: false, addedAt: 'x', paid: 'free' },
-      ],
+describe('optimistic writes', () => {
+  it('rolls back and explains when the server rejects a change', async () => {
+    await store().adjust(priced('sv03-001'), 'normal', 1);
+    mem.fail = new ApiError(403, "You can't edit this collection", 'forbidden');
+    await store().adjust(priced('sv03-001'), 'normal', 1);
+    expect(store().entries.get('sv03-001::normal')!.quantity).toBe(1);
+    expect(store().byCard.get('sv03-001')).toEqual({ normal: 1 });
+    expect(toasts()[0]).toMatchObject({ message: "You can't edit this collection", tone: 'error' });
+  });
+
+  it('uses a generic message for network failures', async () => {
+    mem.fail = new Error('fetch failed');
+    expect(await store().toggleWishlist(priced('sv03-050'))).toBe(false);
+    expect(store().wishlist.size).toBe(0);
+    expect(toasts()[0].message).toMatch(/Couldn't save that change/);
+  });
+
+  it('removeCard returns nothing to undo when the delete fails', async () => {
+    await store().adjust(priced('sv03-001'), 'normal', 1);
+    mem.fail = new Error('offline');
+    expect(await store().removeCard('sv03-001')).toEqual([]);
+    expect(store().entries.size).toBe(1);
+  });
+
+  it('rolls back notes and list changes too', async () => {
+    const list = (await store().createList('Trade binder'))!;
+    mem.fail = new Error('offline');
+    await store().setNote('sv03-001', 'nope');
+    expect(store().notes.size).toBe(0);
+    await store().deleteList(list.id);
+    expect(store().lists).toHaveLength(1);
+  });
+});
+
+describe('read-only collections', () => {
+  beforeEach(() => useCollectionStore.setState({ readOnly: true, role: 'viewer' }));
+
+  it('ignores every write without calling the server', async () => {
+    const card = priced('sv03-001');
+    await store().adjust(card, 'normal', 1);
+    await store().setQuantity('sv03-001', 'normal', 2);
+    await store().updateEntry('sv03-001', 'normal', { condition: 'LP' });
+    expect(await store().removeCard('sv03-001')).toEqual([]);
+    await store().restoreEntries([makeEntry()]);
+    expect(await store().toggleWishlist(card)).toBe(false);
+    await store().setNote('sv03-001', 'x');
+    await store().recordValue();
+    await store().clearAll();
+    expect(await store().createList('x')).toBeUndefined();
+    expect(await store().removeGraded('x')).toBeUndefined();
+    expect(store().entries.size + store().wishlist.size + store().notes.size).toBe(0);
+    expect(mem.calls).toEqual([]);
+  });
+});
+
+describe('custom lists', () => {
+  it('creates, renames, reorders and deletes lists', async () => {
+    const list = (await store().createList('Trade binder', 'For league night'))!;
+    expect(store().lists).toEqual([expect.objectContaining({ id: list.id, name: 'Trade binder', description: 'For league night', cards: [] })]);
+    await store().updateList(list.id, { name: 'Trades', description: '' });
+    expect(store().lists[0]).toMatchObject({ name: 'Trades', description: undefined });
+    expect(mem.lists[0]).toMatchObject({ name: 'Trades', description: undefined });
+    await store().deleteList(list.id);
+    expect(store().lists).toEqual([]);
+    expect(mem.lists).toEqual([]);
+  });
+
+  it('toggles cards in and out, keeping their snapshot and server order', async () => {
+    const list = (await store().createList('Chase cards'))!;
+    expect(await store().toggleInList(list.id, priced('sv03-001'))).toBe(true);
+    expect(await store().toggleInList(list.id, makeCard({ id: 'sv03-002' }))).toBe(true);
+    expect(store().cards.has('sv03-002')).toBe(true);
+    expect(mem.lists[0].cards).toEqual(['sv03-001', 'sv03-002']);
+    await store().updateList(list.id, { order: ['sv03-002'] });
+    expect(store().lists[0].cards).toEqual(['sv03-002', 'sv03-001']);
+    expect(mem.lists[0].cards).toEqual(['sv03-002', 'sv03-001']);
+    expect(await store().toggleInList(list.id, priced('sv03-002'))).toBe(false);
+    expect(mem.lists[0].cards).toEqual(['sv03-001']);
+    expect(await store().toggleInList('missing', priced('sv03-002'))).toBe(false);
+  });
+
+  it('reports a failed create', async () => {
+    mem.fail = new ApiError(400, 'Name is required', 'bad_request');
+    expect(await store().createList('')).toBeUndefined();
+    expect(toasts()[0].message).toBe('Name is required');
+  });
+});
+
+describe('show', () => {
+  it('displays shared data read-only with derived indexes', () => {
+    store().show({
+      collectionId: 'share',
+      entries: new Map([['sv03-001::normal', makeEntry({ quantity: 2 })]]),
+      graded: new Map([['g', makeGraded({ id: 'g' })]]),
     });
-    expect(store().entries.get('a-1::normal')!.paid).toEqual({ amount: 4, currency: 'EUR' });
-    expect(store().entries.get('b-1::normal')!.paid).toBeUndefined();
-    expect(store().graded.get('g1')!.paid).toEqual({ amount: 30, currency: 'USD' });
-    expect(store().graded.get('g2')!.paid).toBeUndefined();
+    expect(store()).toMatchObject({ isLoaded: true, readOnly: true, role: 'viewer', collectionId: 'share' });
+    expect(store().holdings.get('sv03-001')).toEqual({ normal: 3 });
+    expect(store().wishlist.size).toBe(0);
   });
 });

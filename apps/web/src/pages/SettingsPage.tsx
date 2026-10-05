@@ -1,12 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Download, FileJson, FileSpreadsheet, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { computeValue, gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
 import { useSettings, type Currency } from '../store/settingsStore';
 import { useMoney, useRates } from '../hooks/useMoney';
 import { PageHeader, Segmented } from '../components/ui';
 import { toast } from '../store/toastStore';
-import { countCachedImages } from '../db/imageCache';
 import { relativeTime, todayKey } from '../utils/format';
 import { variantLabel } from '../utils/variants';
 import { formatGrade } from '../utils/grading';
@@ -50,8 +48,10 @@ export default function SettingsPage() {
   const syncPrices = useCollectionStore((s) => s.syncPrices);
   const importData = useCollectionStore((s) => s.importData);
   const clearAll = useCollectionStore((s) => s.clearAll);
+  const lists = useCollectionStore((s) => s.lists);
+  const readOnly = useCollectionStore((s) => s.readOnly);
+  const role = useCollectionStore((s) => s.role);
   const { data: rates } = useRates();
-  const { data: cachedImages } = useQuery({ queryKey: ['imageCache'], queryFn: countCachedImages });
   const money = useMoney();
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmText, setConfirmText] = useState('');
@@ -60,13 +60,15 @@ export default function SettingsPage() {
   const exportJson = () => {
     const payload = {
       app: 'poketracker',
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       collection: Array.from(entries.values()),
       wishlist: Array.from(wishlist.values()),
-      // Photos stay on-device; only slab details are exported.
+      // Slab photos stay on the server (and in its backups); only slab details are exported.
       graded: Array.from(graded.values()),
       notes: Array.from(notes, ([cardId, text]) => ({ cardId, text })),
+      history,
+      lists,
     };
     download(`poketracker-${todayKey()}.json`, JSON.stringify(payload, null, 2), 'application/json');
   };
@@ -127,12 +129,12 @@ export default function SettingsPage() {
         />
       </Section>
 
-      <Section title="Prices" description="Prices for cards you own or wishlist refresh automatically twice a day. Each day's total is saved to build your value chart.">
+      <Section title="Prices" description="Your server refreshes prices for every owned and wishlisted card twice a day, even when nobody has the app open. Each day's total is saved to build your value chart.">
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={async () => {
               const n = await syncPrices(true);
-              if (n < 0) toast("Couldn't reach the card API. Try again in a minute.", { tone: 'error' });
-              else toast(`Refreshed prices for ${n} card${n === 1 ? '' : 's'}`, { tone: 'success' });
+              if (n < 0) toast("Couldn't refresh prices. Try again in a minute.", { tone: 'error' });
+              else toast(`Prices up to date for ${n} card${n === 1 ? '' : 's'}`, { tone: 'success' });
             }} disabled={syncing} className="btn btn-ghost">
             <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Refreshing…' : 'Refresh now'}
           </button>
@@ -146,7 +148,7 @@ export default function SettingsPage() {
         title="Backup"
         description={
           <>
-            Your collection lives in this browser only. Clearing site data deletes it, so export now and then. Current total: {entries.size} entries{graded.size ? ` + ${graded.size} graded` : ''}, {money(value.valueUsd)}.
+            Your collection is stored on your PokéTracker server, which also takes nightly backups. Export a copy to keep elsewhere whenever you like. Current total: {entries.size} entries{graded.size ? ` + ${graded.size} graded` : ''}, {money(value.valueUsd)}.
           </>
         }
       >
@@ -157,14 +159,20 @@ export default function SettingsPage() {
           <button onClick={exportCsv} disabled={!entries.size && !graded.size} className="btn btn-ghost">
             <FileSpreadsheet size={15} /> Export CSV
           </button>
-          <button onClick={() => fileRef.current?.click()} className="btn btn-ghost">
-            <Upload size={15} /> Import JSON
-          </button>
-          <input ref={fileRef} type="file" accept=".json,application/json" onChange={onImport} className="hidden" />
+          {!readOnly && (
+            <>
+              <button onClick={() => fileRef.current?.click()} className="btn btn-ghost">
+                <Upload size={15} /> Import JSON
+              </button>
+              <input ref={fileRef} type="file" accept=".json,application/json" onChange={onImport} className="hidden" />
+            </>
+          )}
         </div>
-        <p className="mt-3 flex items-center gap-1.5 text-xs text-faint">
-          <Download size={12} /> Imports merge with your existing collection. Matching cards are overwritten.
-        </p>
+        {!readOnly && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-faint">
+            <Download size={12} /> Imports merge with this collection. Matching cards are overwritten. Exports from the older, browser-only PokéTracker work too.
+          </p>
+        )}
       </Section>
 
       <Section title="Data source" description="Where card data comes from.">
@@ -176,17 +184,12 @@ export default function SettingsPage() {
           , a free, open-source card database that needs no API key. Prices are TCGplayer (US) and Cardmarket (EU) figures supplied by TCGdex.
         </p>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          Your collection keeps its own copy of every owned and wishlisted card
-          {cachedImages ? (
-            <>
-              , including <span className="font-mono text-fg">{cachedImages.toLocaleString('en-GB')}</span> card images stored on this device
-            </>
-          ) : null}
-          , so it still works offline or if a data source changes.
+          Your server keeps its own copy of every owned and wishlisted card and its image, so your collection still works if a data source changes.
         </p>
       </Section>
 
-      <Section title="Danger zone" description="Permanently remove your collection, wishlist and value history from this browser.">
+      {role === 'owner' && (
+      <Section title="Danger zone" description="Permanently remove every card, slab, note, list, wishlist entry and value history point from this collection.">
         <div className="rounded-2xl border border-loss/30 bg-loss/5 p-4">
           <label className="text-xs text-muted">
             Type <b className="font-mono text-fg">delete</b> to confirm
@@ -209,6 +212,7 @@ export default function SettingsPage() {
           <p className="mt-2 text-[11px] text-faint">A JSON backup downloads automatically before anything is deleted.</p>
         </div>
       </Section>
+      )}
     </div>
   );
 }

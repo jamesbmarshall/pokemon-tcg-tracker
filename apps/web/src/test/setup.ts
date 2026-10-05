@@ -1,7 +1,8 @@
-import 'fake-indexeddb/auto';
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
+import { setBackend } from '../api/backend';
+import { resetMemoryBackend } from './memoryBackend';
 
 class MockIntersectionObserver {
   readonly root = null;
@@ -43,6 +44,7 @@ installBrowserStubs();
 
 beforeEach(() => {
   installBrowserStubs();
+  setBackend(resetMemoryBackend());
   // Default network: fail loudly so tests that forget to mock fetch don't hit the real API.
   vi.stubGlobal(
     'fetch',

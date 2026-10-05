@@ -1,23 +1,31 @@
 import { create } from 'zustand';
-import { db } from '../db/dexie';
 import { entryKey } from '../utils/variants';
-import { todayKey } from '../utils/format';
 import { gradeRank } from '../utils/grading';
-import { getCardsByIds, setIdFromCardId, toSnapshot } from '../api/client';
-import { markMigrated, migrateVariant, needsMigration, resolveLegacyIds } from '../api/migrate';
-import { cacheImages, pruneImages } from '../db/imageCache';
-import { currentRates, isPaid, paidUsd, type Rates } from '../utils/fx';
-import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, PokemonCard, SetStat, ValuePoint, WishlistEntry } from '../api/types';
+import { toSnapshot } from '../api/client';
+import { isPaid } from '../utils/fx';
+import { getBackend, type CollectionRole, type CollectionSummary, type CustomList } from '../api/backend';
+import { ApiError } from '../api/http';
+import { toast } from './toastStore';
+import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, PokemonCard, SetStat, ValuePoint, WishlistEntry } from '../api/types';
+import { NOTE_MAX } from '@poketracker/shared/value';
+
+export { computeValue, costBasis, gradedValue, NOTE_MAX, priceOf, type CostBasis } from '@poketracker/shared/value';
 
 type CardLike = PokemonCard | CardSnapshot;
 type VariantQty = Record<string, number>;
 
-const PRICE_SYNC_KEY = 'poketracker-last-price-sync';
-const PRICE_SYNC_INTERVAL = 12 * 60 * 60 * 1000;
-export const NOTE_MAX = 500;
+export const ACTIVE_COLLECTION_KEY = 'poketracker-collection';
 
 interface CollectionState {
   isLoaded: boolean;
+  /** Set when the collection couldn't be loaded */
+  loadError: string | null;
+  collectionId: string | null;
+  role: CollectionRole | null;
+  /** Viewers and public share links can't change anything */
+  readOnly: boolean;
+  /** Collections the signed-in user can open */
+  collections: CollectionSummary[];
   entries: Map<string, CollectionEntry>;
   /** cardId -> variant -> raw (ungraded) quantity */
   byCard: Map<string, VariantQty>;
@@ -33,10 +41,17 @@ interface CollectionState {
   notes: Map<string, string>;
   setStats: Map<string, SetStat>;
   history: ValuePoint[];
+  lists: CustomList[];
   syncing: boolean;
+  /** When the server last refreshed prices */
   lastSync: string | null;
 
-  load: () => Promise<void>;
+  /** Loads a collection: the given one, else the last one used, else the user's personal collection. */
+  load: (collectionId?: string) => Promise<void>;
+  /** Reloads the current collection from the server. */
+  refresh: () => Promise<void>;
+  /** Shows a collection loaded elsewhere (e.g. a public share), read-only. */
+  show: (data: Partial<Pick<CollectionState, 'entries' | 'graded' | 'cards' | 'wishlist' | 'notes' | 'history' | 'lists' | 'setStats'>> & { collectionId: string }) => void;
   remember: (cards: CardLike[]) => Promise<void>;
   adjust: (card: CardLike, variant: string, delta: number) => Promise<void>;
   setQuantity: (cardId: string, variant: string, quantity: number) => Promise<void>;
@@ -47,18 +62,25 @@ interface CollectionState {
   /** Saves (or, when blank, deletes) the note for a card. */
   setNote: (cardId: string, text: string) => Promise<void>;
   recordSetStat: (setId: string, masterTotal: number) => Promise<void>;
-  /** Returns the number of cards refreshed, or -1 if the API was unreachable. */
+  /**
+   * Refreshes prices. With `force`, owners/admins make the server fetch fresh prices first;
+   * everyone else just reloads what the server already has. Returns the number of cards
+   * with prices, or -1 if the server or card API was unreachable.
+   */
   syncPrices: (force?: boolean) => Promise<number>;
-  /** Remaps collections created with the old pokemontcg.io catalogue. Returns true if anything changed. */
-  migrateLegacy: () => Promise<boolean>;
   recordValue: () => Promise<void>;
   /** Adds or updates a graded copy. Returns the saved copy. */
   saveGraded: (card: CardLike, copy: GradedInput) => Promise<GradedCopy>;
-  /** Deletes a graded copy and its photos, returning them for undo. */
+  /** Deletes a graded copy, returning it for undo (its photos are kept until undo expires). */
   removeGraded: (id: string) => Promise<{ copy: GradedCopy; photos: GradedPhoto[] } | undefined>;
   restoreGraded: (copy: GradedCopy, photos?: GradedPhoto[]) => Promise<void>;
   importData: (data: unknown) => Promise<number>;
   clearAll: () => Promise<void>;
+  createList: (name: string, description?: string) => Promise<CustomList | undefined>;
+  updateList: (id: string, patch: { name?: string; description?: string; order?: string[] }) => Promise<void>;
+  deleteList: (id: string) => Promise<void>;
+  /** Adds the card to the list, or removes it if it's already there. Returns whether it's now in the list. */
+  toggleInList: (listId: string, card: CardLike) => Promise<boolean>;
 }
 
 export type GradedInput = Omit<GradedCopy, 'id' | 'cardId' | 'setId' | 'addedAt' | 'updatedAt'> & { id?: string };
@@ -97,102 +119,31 @@ export function indexGraded(graded: Map<string, GradedCopy>) {
 
 const newId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
-const GRADING_COMPANIES = new Set(['PSA', 'BGS', 'CGC', 'SGC', 'TAG', 'ACE', 'Other']);
-
-export function priceOf(card: CardSnapshot | undefined, variant: string) {
-  if (!card) return undefined;
-  return card.prices[variant] ?? Object.values(card.prices)[0];
-}
-
-/** A slab is worth the owner's valuation, else the raw market price of its printing. */
-export function gradedValue(g: GradedCopy, cards: Map<string, CardSnapshot>) {
-  return g.valueUsd ?? priceOf(cards.get(g.cardId), g.variant) ?? 0;
-}
-
-export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy> = []) {
-  let valueUsd = 0;
-  let count = 0;
-  const unique = new Set<string>();
-  for (const e of entries) {
-    count += e.quantity;
-    unique.add(e.cardId);
-    const price = priceOf(cards.get(e.cardId), e.variant);
-    if (price) valueUsd += price * e.quantity;
-  }
-  for (const g of graded) {
-    count++;
-    unique.add(g.cardId);
-    valueUsd += gradedValue(g, cards);
-  }
-  return { valueUsd, count, unique: unique.size };
-}
-
-export interface CostBasis {
-  /** What was paid (USD at the given rates) for copies with a recorded price */
-  costUsd: number;
-  /** Today's market value of those same copies */
-  valueUsd: number;
-  /** Copies with a recorded price */
-  costed: number;
-}
-
-/** Cost basis vs. market value, counting only copies whose purchase price is known. */
-export function costBasis(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy>, rates: Rates): CostBasis {
-  const out = { costUsd: 0, valueUsd: 0, costed: 0 };
-  for (const e of entries) {
-    const each = paidUsd(e.paid, rates);
-    if (each == null) continue;
-    out.costUsd += each * e.quantity;
-    out.valueUsd += (priceOf(cards.get(e.cardId), e.variant) ?? 0) * e.quantity;
-    out.costed += e.quantity;
-  }
-  for (const g of graded) {
-    const cost = paidUsd(g.paid, rates);
-    if (cost == null) continue;
-    out.costUsd += cost;
-    out.valueUsd += gradedValue(g, cards);
-    out.costed++;
-  }
-  return out;
-}
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
 /** Listing cards (sets, search) carry no prices; never let them wipe a priced snapshot. */
 function merge(prev: CardSnapshot | undefined, next: CardSnapshot): CardSnapshot {
   if (!prev || Object.keys(next.prices).length) return next;
   return { ...next, prices: prev.prices, tcgplayerUrl: prev.tcgplayerUrl, cardmarketUrl: prev.cardmarketUrl };
 }
 
-async function readAll() {
-  const [entries, cards, wishlist, setStats, history, gradedRows, notes] = await Promise.all([
-    db.collection.toArray(),
-    db.cards.toArray(),
-    db.wishlist.toArray(),
-    db.setStats.toArray(),
-    db.valueHistory.orderBy('date').toArray(),
-    db.graded.toArray(),
-    db.notes.toArray(),
-  ]);
-  const map = new Map(entries.map((e) => [e.id, e]));
-  const byCard = indexEntries(map);
-  const graded = new Map(gradedRows.map((g) => [g.id, g]));
-  return {
-    isLoaded: true,
-    entries: map,
-    byCard,
-    graded,
-    gradedByCard: indexGraded(graded),
-    holdings: indexHoldings(byCard, graded),
-    cards: new Map(cards.map((c) => [c.id, c])),
-    wishlist: new Map(wishlist.map((w) => [w.cardId, w])),
-    notes: new Map(notes.map((n) => [n.cardId, n.text])),
-    setStats: new Map(setStats.map((s) => [s.setId, s])),
-    history,
-  };
+const EMPTY = {
+  entries: new Map<string, CollectionEntry>(),
+  byCard: new Map<string, VariantQty>(),
+  graded: new Map<string, GradedCopy>(),
+  gradedByCard: new Map<string, GradedCopy[]>(),
+  holdings: new Map<string, VariantQty>(),
+  wishlist: new Map<string, WishlistEntry>(),
+  notes: new Map<string, string>(),
+  history: [] as ValuePoint[],
+  lists: [] as CustomList[],
+};
+
+function failed(err: unknown) {
+  const msg = err instanceof ApiError ? err.message : "Couldn't save that change. Check your connection and try again.";
+  toast(msg, { tone: 'error' });
 }
 
 let valueTimer: ReturnType<typeof setTimeout> | undefined;
+let loadSeq = 0;
 
 export const useCollectionStore = create<CollectionState>((set, get) => {
   const scheduleValue = () => {
@@ -209,67 +160,143 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     scheduleValue();
   };
 
-  /** Fetch full details (prices) and cache the image for a newly owned / wishlisted card. */
-  const hydrate = (s: CardSnapshot) => {
-    if (Object.keys(s.prices).length) {
-      void cacheImages([s]);
-      return;
+  /** The collection to write to; undefined (and nothing happens) when read-only. */
+  const writable = () => {
+    const { collectionId, readOnly } = get();
+    return !readOnly && collectionId ? collectionId : undefined;
+  };
+
+  /** Applies an optimistic change, persists it, and reverts if the server refuses. */
+  async function persist(apply: () => void, save: () => Promise<unknown>) {
+    const before = { entries: get().entries, graded: get().graded, wishlist: get().wishlist, notes: get().notes, lists: get().lists };
+    apply();
+    try {
+      await save();
+      return true;
+    } catch (err) {
+      const byCard = indexEntries(before.entries);
+      set({ ...before, byCard, gradedByCard: indexGraded(before.graded), holdings: indexHoldings(byCard, before.graded) });
+      failed(err);
+      return false;
     }
-    void getCardsByIds([s.id])
+  }
+
+  /** Ask the server for full details (prices) of a newly owned / wishlisted card. */
+  const hydrate = (s: CardSnapshot) => {
+    if (Object.keys(s.prices).length) return;
+    void getBackend()
+      .hydrate([s.id])
       .then(async (full) => {
         await get().remember(full);
-        await cacheImages(full.map(toSnapshot));
-        await get().recordValue();
+        scheduleValue();
       })
       .catch(() => undefined);
   };
 
+  const apply = (data: Awaited<ReturnType<ReturnType<typeof getBackend>['state']>>, collectionId: string) => {
+    const entries = new Map(data.entries.map((e) => [e.id, e]));
+    const byCard = indexEntries(entries);
+    const graded = new Map(data.graded.map((g) => [g.id, g]));
+    const cards = new Map(get().cards);
+    for (const c of data.cards) cards.set(c.id, merge(cards.get(c.id), c));
+    set({
+      isLoaded: true,
+      loadError: null,
+      collectionId,
+      role: data.role,
+      readOnly: data.role === 'viewer' || !!getBackend().readOnly,
+      entries,
+      byCard,
+      graded,
+      gradedByCard: indexGraded(graded),
+      holdings: indexHoldings(byCard, graded),
+      cards,
+      wishlist: new Map(data.wishlist.map((w) => [w.cardId, w])),
+      notes: new Map(data.notes.map((n) => [n.cardId, n.text])),
+      setStats: new Map(data.setStats.map((s) => [s.setId, s])),
+      history: [...data.history].sort((a, b) => a.date.localeCompare(b.date)),
+      lists: data.lists,
+    });
+  };
+
   return {
     isLoaded: false,
-    entries: new Map(),
-    byCard: new Map(),
-    graded: new Map(),
-    gradedByCard: new Map(),
-    holdings: new Map(),
+    loadError: null,
+    collectionId: null,
+    role: null,
+    readOnly: false,
+    collections: [],
+    ...EMPTY,
     cards: new Map(),
-    wishlist: new Map(),
-    notes: new Map(),
     setStats: new Map(),
-    history: [],
     syncing: false,
-    lastSync: localStorage.getItem(PRICE_SYNC_KEY),
+    lastSync: null,
 
-    load: async () => {
-      set(await readAll());
-      if (needsMigration()) {
-        try {
-          if (await get().migrateLegacy()) set(await readAll());
-          if (!needsMigration()) {
-            void get().syncPrices(true);
-            return;
-          }
-        } catch (err) {
-          console.warn('Collection migration failed; will retry next launch', err);
-        }
+    load: async (requested) => {
+      const seq = ++loadSeq;
+      const backend = getBackend();
+      try {
+        const collections = await backend.collections();
+        const saved = localStorage.getItem(ACTIVE_COLLECTION_KEY);
+        const pick =
+          collections.find((c) => c.id === requested) ??
+          collections.find((c) => c.id === saved) ??
+          collections.find((c) => c.kind === 'personal' && c.mine) ??
+          collections[0];
+        if (!pick) throw new Error('No collection available');
+        const data = await backend.state(pick.id);
+        if (seq !== loadSeq) return;
+        if (pick.id !== get().collectionId) set({ ...EMPTY });
+        set({ collections });
+        apply(data, pick.id);
+        if (requested) localStorage.setItem(ACTIVE_COLLECTION_KEY, pick.id);
+      } catch (err) {
+        if (seq !== loadSeq) return;
+        set({ isLoaded: true, loadError: err instanceof Error ? err.message : 'Could not load your collection' });
+        return;
       }
-      const last = get().lastSync;
-      const stale = !last || Date.now() - new Date(last).getTime() > PRICE_SYNC_INTERVAL;
-      void get().syncPrices(stale);
+      void backend
+        .status()
+        .then((s) => set({ lastSync: s.lastPriceSync }))
+        .catch(() => undefined);
+    },
+
+    refresh: async () => {
+      const id = get().collectionId;
+      if (!id) return get().load();
+      const data = await getBackend().state(id);
+      if (id === get().collectionId) apply(data, id);
+    },
+
+    show: (data) => {
+      const entries = data.entries ?? new Map();
+      const graded = data.graded ?? new Map();
+      const byCard = indexEntries(entries);
+      set({
+        ...EMPTY,
+        ...data,
+        isLoaded: true,
+        loadError: null,
+        role: 'viewer',
+        readOnly: true,
+        byCard,
+        gradedByCard: indexGraded(graded),
+        holdings: indexHoldings(byCard, graded),
+      });
     },
 
     remember: async (input) => {
       if (!input.length) return;
-      const current = get().cards;
-      const snaps = input.map((c) => merge(current.get(c.id), snap(c)));
-      await db.cards.bulkPut(snaps);
       set((s) => {
         const cards = new Map(s.cards);
-        for (const c of snaps) cards.set(c.id, c);
+        for (const c of input) cards.set(c.id, merge(cards.get(c.id), snap(c)));
         return { cards };
       });
     },
 
     adjust: async (card, variant, delta) => {
+      const cid = writable();
+      if (!cid) return;
       const s = snap(card);
       if (!isSnapshot(card) || !get().cards.has(s.id)) await get().remember([s]);
       const key = entryKey(s.id, variant);
@@ -279,253 +306,156 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       if (quantity === 0) {
         if (!existing) return;
         entries.delete(key);
-        await db.collection.delete(key);
-      } else {
-        const now = new Date().toISOString();
-        const entry: CollectionEntry = existing
-          ? { ...existing, quantity, updatedAt: now }
-          : { id: key, cardId: s.id, setId: s.setId, variant, quantity, addedAt: now, condition: 'NM' };
-        entries.set(key, entry);
-        await db.collection.put(entry);
-        if (!existing) hydrate(get().cards.get(s.id) ?? s);
+        await persist(() => commitEntries(entries), () => getBackend().deleteEntries(cid, [key]));
+        return;
       }
-      commitEntries(entries);
+      const now = new Date().toISOString();
+      const entry: CollectionEntry = existing
+        ? { ...existing, quantity, updatedAt: now }
+        : { id: key, cardId: s.id, setId: s.setId, variant, quantity, addedAt: now, condition: 'NM' };
+      entries.set(key, entry);
+      const ok = await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, [entry]));
+      if (ok && !existing) hydrate(get().cards.get(s.id) ?? s);
     },
 
     setQuantity: async (cardId, variant, quantity) => {
+      const cid = writable();
       const key = entryKey(cardId, variant);
       const existing = get().entries.get(key);
-      if (!existing) return;
+      if (!cid || !existing) return;
       const entries = new Map(get().entries);
       if (quantity <= 0) {
         entries.delete(key);
-        await db.collection.delete(key);
+        await persist(() => commitEntries(entries), () => getBackend().deleteEntries(cid, [key]));
       } else {
         const entry = { ...existing, quantity, updatedAt: new Date().toISOString() };
         entries.set(key, entry);
-        await db.collection.put(entry);
+        await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, [entry]));
       }
-      commitEntries(entries);
     },
 
     updateEntry: async (cardId, variant, patch) => {
+      const cid = writable();
       const key = entryKey(cardId, variant);
       const existing = get().entries.get(key);
-      if (!existing) return;
+      if (!cid || !existing) return;
       const entry = { ...existing, ...patch };
       if ('paid' in patch && !isPaid(patch.paid)) {
         if (patch.paid === undefined) delete entry.paid;
         else entry.paid = existing.paid;
       }
-      await db.collection.put(entry);
       const entries = new Map(get().entries);
       entries.set(key, entry);
-      commitEntries(entries);
+      await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, [entry]));
     },
 
     removeCard: async (cardId) => {
+      const cid = writable();
+      if (!cid) return [];
       const removed = Array.from(get().entries.values()).filter((e) => e.cardId === cardId);
-      await db.collection.bulkDelete(removed.map((e) => e.id));
+      if (!removed.length) return [];
       const entries = new Map(get().entries);
       for (const e of removed) entries.delete(e.id);
-      commitEntries(entries);
-      return removed;
+      const ok = await persist(() => commitEntries(entries), () => getBackend().deleteEntries(cid, removed.map((e) => e.id)));
+      return ok ? removed : [];
     },
 
     restoreEntries: async (restore) => {
-      await db.collection.bulkPut(restore);
+      const cid = writable();
+      if (!cid || !restore.length) return;
       const entries = new Map(get().entries);
       for (const e of restore) entries.set(e.id, e);
-      commitEntries(entries);
+      await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, restore));
     },
 
     toggleWishlist: async (card) => {
+      const cid = writable();
       const s = snap(card);
+      if (!cid) return get().wishlist.has(s.id);
       const wishlist = new Map(get().wishlist);
       if (wishlist.has(s.id)) {
         wishlist.delete(s.id);
-        await db.wishlist.delete(s.id);
-        set({ wishlist });
-        return false;
+        const ok = await persist(() => set({ wishlist }), () => getBackend().deleteWishlist(cid, s.id));
+        return !ok;
       }
       if (!isSnapshot(card) || !get().cards.has(s.id)) await get().remember([s]);
       const entry = { cardId: s.id, addedAt: new Date().toISOString() };
       wishlist.set(s.id, entry);
-      await db.wishlist.put(entry);
-      set({ wishlist });
-      hydrate(get().cards.get(s.id) ?? s);
-      return true;
+      const ok = await persist(() => set({ wishlist }), () => getBackend().putWishlist(cid, entry));
+      if (ok) hydrate(get().cards.get(s.id) ?? s);
+      return ok;
     },
 
     recordSetStat: async (setId, masterTotal) => {
       if (get().setStats.get(setId)?.masterTotal === masterTotal) return;
       const stat = { setId, masterTotal, syncedAt: new Date().toISOString() };
-      await db.setStats.put(stat);
       set((s) => ({ setStats: new Map(s.setStats).set(setId, stat) }));
+      if (get().readOnly) return;
+      await getBackend()
+        .putSetStat(setId, masterTotal)
+        .catch(() => undefined);
     },
 
     syncPrices: async (force = false) => {
       if (get().syncing) return 0;
-      const { entries, wishlist, cards, graded } = get();
-      const wanted = new Set<string>([...Array.from(entries.values(), (e) => e.cardId), ...wishlist.keys(), ...Array.from(graded.values(), (g) => g.cardId)]);
-      const ids = Array.from(wanted).filter((id) => force || !cards.has(id));
-      if (!ids.length) {
-        await get().recordValue();
-        return 0;
-      }
       set({ syncing: true });
+      const backend = getBackend();
       try {
-        let refreshed = 0;
-        let failed = 0;
-        for (let i = 0; i < ids.length; i += 40) {
+        if (force && !get().readOnly) {
           try {
-            const fresh = await getCardsByIds(ids.slice(i, i + 40));
-            await get().remember(fresh);
-            refreshed += fresh.length;
+            await backend.refreshPrices();
           } catch (err) {
-            failed++;
-            console.warn('Price sync batch failed', err);
+            // Members can't trigger a refresh; they still get the server's latest prices.
+            if (!(err instanceof ApiError && err.status === 403)) throw err;
           }
         }
-        if (refreshed === 0 && failed > 0) throw new Error('Card API unavailable');
-        const latest = get().cards;
-        void cacheImages(Array.from(wanted, (id) => latest.get(id)).filter((c): c is CardSnapshot => !!c));
-        if (force) {
-          void pruneImages(wanted);
-          const now = new Date().toISOString();
-          localStorage.setItem(PRICE_SYNC_KEY, now);
-          set({ lastSync: now });
-        }
-        await get().recordValue();
-        return refreshed;
+        await get().refresh();
+        const status = await backend.status().catch(() => undefined);
+        if (status) set({ lastSync: status.lastPriceSync });
+        return Array.from(get().cards.values()).filter((c) => Object.keys(c.prices).length).length;
       } catch (err) {
-        console.warn('Price sync failed', err);
+        console.warn('Price refresh failed', err);
         return -1;
       } finally {
         set({ syncing: false });
       }
     },
 
-    migrateLegacy: async () => {
-      const { entries, wishlist, cards } = get();
-      const ids = Array.from(new Set([...Array.from(entries.values(), (e) => e.cardId), ...wishlist.keys()]));
-      if (!ids.length) {
-        markMigrated();
-        return false;
+    recordValue: async () => {
+      const cid = writable();
+      if (!cid) return;
+      try {
+        const point = await getBackend().recordValue(cid);
+        if (point) set((s) => ({ history: [...s.history.filter((p) => p.date !== point.date), point].sort((a, b) => a.date.localeCompare(b.date)) }));
+      } catch {
+        /* the nightly job records it anyway */
       }
-      const names = new Map(Array.from(cards.values(), (c) => [c.id, c.name]));
-      const { map, failedSets } = await resolveLegacyIds(ids, names);
-      const to = (id: string) => map.get(id) ?? id;
-      const changed = ids.some((id) => to(id) !== id) || Array.from(entries.values()).some((e) => migrateVariant(e.variant) !== e.variant);
-      if (changed) {
-        await db.transaction('rw', db.collection, db.wishlist, db.cards, async () => {
-          const merged = new Map<string, CollectionEntry>();
-          for (const e of entries.values()) {
-            const cardId = to(e.cardId);
-            const variant = migrateVariant(e.variant);
-            const id = entryKey(cardId, variant);
-            const prev = merged.get(id);
-            merged.set(id, prev ? { ...prev, quantity: prev.quantity + e.quantity } : { ...e, id, cardId, variant, setId: setIdFromCardId(cardId) });
-          }
-          await db.collection.clear();
-          await db.collection.bulkPut(Array.from(merged.values()));
-          const wl = new Map(Array.from(wishlist.values(), (w) => [to(w.cardId), { ...w, cardId: to(w.cardId) }]));
-          await db.wishlist.clear();
-          await db.wishlist.bulkPut(Array.from(wl.values()));
-          await db.cards.bulkDelete(Array.from(cards.keys()).filter((id) => to(id) !== id));
-        });
-      }
-      if (failedSets === 0) markMigrated();
-      return changed;
     },
 
     setNote: async (cardId, text) => {
+      const cid = writable();
+      if (!cid) return;
       const clean = text.trim().slice(0, NOTE_MAX);
       const notes = new Map(get().notes);
-      if (clean) {
-        notes.set(cardId, clean);
-        await db.notes.put({ cardId, text: clean, updatedAt: new Date().toISOString() });
-      } else {
-        notes.delete(cardId);
-        await db.notes.delete(cardId);
-      }
-      set({ notes });
-    },
-
-    recordValue: async () => {
-      const { entries, cards, history, graded } = get();
-      const { valueUsd, count, unique } = computeValue(entries.values(), cards, graded.values());
-      if (count === 0 && history.length === 0) return;
-      const point: ValuePoint = { date: todayKey(), valueUsd: round2(valueUsd), cards: count, unique };
-      const cost = costBasis(entries.values(), cards, graded.values(), currentRates());
-      if (cost.costed) Object.assign(point, { costUsd: round2(cost.costUsd), costedValueUsd: round2(cost.valueUsd) });
-      await db.valueHistory.put(point);
-      set((s) => ({ history: [...s.history.filter((p) => p.date !== point.date), point] }));
+      if (clean) notes.set(cardId, clean);
+      else notes.delete(cardId);
+      await persist(() => set({ notes }), () => getBackend().putNote(cid, cardId, clean));
     },
 
     importData: async (data) => {
-      const obj = data as { collection?: unknown[]; wishlist?: unknown[] } | null;
-      const raw: unknown[] = Array.isArray(data) ? data : Array.isArray(obj?.collection) ? obj.collection : [];
-      const valid: CollectionEntry[] = [];
-      for (const r of raw) {
-        const e = r as Partial<CollectionEntry>;
-        if (typeof e?.cardId !== 'string' || typeof e.variant !== 'string') continue;
-        valid.push({
-          id: entryKey(e.cardId, e.variant),
-          cardId: e.cardId,
-          setId: e.setId ?? setIdFromCardId(e.cardId),
-          variant: e.variant,
-          quantity: Math.max(1, Math.floor(Number(e.quantity) || 1)),
-          condition: e.condition,
-          notes: e.notes,
-          paid: isPaid(e.paid) ? { amount: e.paid.amount, currency: e.paid.currency } : undefined,
-          addedAt: e.addedAt ?? new Date().toISOString(),
-        });
+      const cid = writable();
+      if (!cid) throw new Error("You can't import into a collection you can only view");
+      if (!data || typeof data !== 'object') throw new Error('No collection entries found in file');
+      const result = await getBackend().importData(cid, data);
+      if (!result.entries && !result.graded && !result.wishlist && !result.notes && !Array.isArray((data as { wishlist?: unknown }).wishlist)) {
+        throw new Error('No collection entries found in file');
       }
-      const gradedIn = Array.isArray((obj as { graded?: unknown })?.graded) ? ((obj as { graded: unknown[] }).graded) : [];
-      const validGraded: GradedCopy[] = [];
-      for (const r of gradedIn) {
-        const g = r as Partial<GradedCopy>;
-        if (typeof g?.cardId !== 'string' || typeof g.variant !== 'string' || typeof g.grade !== 'string' || !GRADING_COMPANIES.has(g.company as string)) continue;
-        validGraded.push({
-          ...g,
-          id: typeof g.id === 'string' ? g.id : newId(),
-          cardId: g.cardId,
-          setId: g.setId ?? setIdFromCardId(g.cardId),
-          variant: g.variant,
-          company: g.company!,
-          grade: g.grade,
-          countsTowardSet: g.countsTowardSet !== false,
-          valueUsd: typeof g.valueUsd === 'number' && g.valueUsd >= 0 ? g.valueUsd : undefined,
-          paid: isPaid(g.paid) ? { amount: g.paid.amount, currency: g.paid.currency } : undefined,
-          addedAt: g.addedAt ?? new Date().toISOString(),
-        });
-      }
-      const notesIn = Array.isArray((obj as { notes?: unknown })?.notes) ? (obj as { notes: unknown[] }).notes : [];
-      const validNotes: CardNote[] = [];
-      for (const r of notesIn) {
-        const n = r as Partial<CardNote>;
-        if (typeof n?.cardId !== 'string' || typeof n.text !== 'string' || !n.text.trim()) continue;
-        validNotes.push({ cardId: n.cardId, text: n.text.trim().slice(0, NOTE_MAX), updatedAt: n.updatedAt ?? new Date().toISOString() });
-      }
-      if (!valid.length && !validGraded.length && !validNotes.length && !Array.isArray(obj?.wishlist)) throw new Error('No collection entries found in file');
-      await db.collection.bulkPut(valid);
-      if (validGraded.length) await db.graded.bulkPut(validGraded);
-      if (validNotes.length) await db.notes.bulkPut(validNotes);
-      if (Array.isArray(obj?.wishlist)) {
-        await db.wishlist.bulkPut(
-          (obj.wishlist as WishlistEntry[])
-            .filter((w) => typeof w?.cardId === 'string')
-            .map((w) => ({ cardId: w.cardId, addedAt: w.addedAt ?? new Date().toISOString() })),
-        );
-      }
-      // Imported files may predate the TCGdex switch; load() remaps them if so.
-      localStorage.removeItem('poketracker-provider');
-      await get().load();
-      return valid.length + validGraded.length;
+      await get().refresh();
+      return result.entries + result.graded;
     },
 
     saveGraded: async (card, input) => {
+      const cid = writable();
       const s = snap(card);
       if (!isSnapshot(card) || !get().cards.has(s.id)) await get().remember([s]);
       const prev = input.id ? get().graded.get(input.id) : undefined;
@@ -543,37 +473,88 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         addedAt: prev?.addedAt ?? now,
         ...(prev ? { updatedAt: now } : {}),
       };
-      await db.graded.put(copy);
-      commitGraded(new Map(get().graded).set(copy.id, copy));
+      if (!cid) return copy;
+      const ok = await persist(() => commitGraded(new Map(get().graded).set(copy.id, copy)), () => getBackend().putGraded(cid, copy));
+      if (!ok) throw new Error("Couldn't save the graded copy");
       if (!prev) hydrate(get().cards.get(s.id) ?? s);
       return copy;
     },
 
     removeGraded: async (id) => {
+      const cid = writable();
       const copy = get().graded.get(id);
-      if (!copy) return undefined;
-      const photos = await db.gradedPhotos.where('gradedId').equals(id).toArray();
-      await db.transaction('rw', db.graded, db.gradedPhotos, async () => {
-        await db.graded.delete(id);
-        await db.gradedPhotos.bulkDelete(photos.map((p) => p.id));
-      });
+      if (!cid || !copy) return undefined;
       const graded = new Map(get().graded);
       graded.delete(id);
-      commitGraded(graded);
-      return { copy, photos };
+      const ok = await persist(() => commitGraded(graded), () => getBackend().deleteGraded(cid, id));
+      return ok ? { copy, photos: [] } : undefined;
     },
 
-    restoreGraded: async (copy, photos = []) => {
-      await db.transaction('rw', db.graded, db.gradedPhotos, async () => {
-        await db.graded.put(copy);
-        if (photos.length) await db.gradedPhotos.bulkPut(photos);
-      });
-      commitGraded(new Map(get().graded).set(copy.id, copy));
+    restoreGraded: async (copy) => {
+      const cid = writable();
+      if (!cid) return;
+      await persist(() => commitGraded(new Map(get().graded).set(copy.id, copy)), () => getBackend().putGraded(cid, copy));
     },
 
     clearAll: async () => {
-      await Promise.all([db.collection.clear(), db.wishlist.clear(), db.valueHistory.clear(), db.graded.clear(), db.gradedPhotos.clear(), db.notes.clear()]);
-      set({ entries: new Map(), byCard: new Map(), graded: new Map(), gradedByCard: new Map(), holdings: new Map(), wishlist: new Map(), notes: new Map(), history: [] });
+      const cid = writable();
+      if (!cid) return;
+      await getBackend().clear(cid);
+      set({ ...EMPTY });
+    },
+
+    createList: async (name, description) => {
+      const cid = writable();
+      if (!cid) return undefined;
+      try {
+        const list = await getBackend().createList(cid, name, description);
+        set((s) => ({ lists: [...s.lists, list] }));
+        return list;
+      } catch (err) {
+        failed(err);
+        return undefined;
+      }
+    },
+
+    updateList: async (id, patch) => {
+      const cid = writable();
+      if (!cid) return;
+      const lists = get().lists.map((l) =>
+        l.id === id
+          ? {
+              ...l,
+              ...(patch.name !== undefined ? { name: patch.name } : {}),
+              ...(patch.description !== undefined ? { description: patch.description || undefined } : {}),
+              ...(patch.order ? { cards: [...patch.order, ...l.cards.filter((c) => !patch.order!.includes(c))] } : {}),
+              updatedAt: new Date().toISOString(),
+            }
+          : l,
+      );
+      await persist(() => set({ lists }), () => getBackend().updateList(cid, id, patch));
+    },
+
+    deleteList: async (id) => {
+      const cid = writable();
+      if (!cid) return;
+      const lists = get().lists.filter((l) => l.id !== id);
+      await persist(() => set({ lists }), () => getBackend().deleteList(cid, id));
+    },
+
+    toggleInList: async (listId, card) => {
+      const cid = writable();
+      const list = get().lists.find((l) => l.id === listId);
+      if (!cid || !list) return false;
+      const s = snap(card);
+      const has = list.cards.includes(s.id);
+      if (!has && (!isSnapshot(card) || !get().cards.has(s.id))) await get().remember([s]);
+      const cards = has ? list.cards.filter((c) => c !== s.id) : [...list.cards, s.id];
+      const lists = get().lists.map((l) => (l.id === listId ? { ...l, cards, updatedAt: new Date().toISOString() } : l));
+      const ok = await persist(
+        () => set({ lists }),
+        () => (has ? getBackend().removeFromList(cid, listId, s.id) : getBackend().addToList(cid, listId, s.id)),
+      );
+      if (ok && !has) hydrate(get().cards.get(s.id) ?? s);
+      return ok ? !has : has;
     },
   };
 });
@@ -598,6 +579,10 @@ export function useNote(cardId: string) {
 
 export function useWished(cardId: string) {
   return useCollectionStore((s) => s.wishlist.has(cardId));
+}
+
+export function useReadOnly() {
+  return useCollectionStore((s) => s.readOnly);
 }
 
 export function ownedTotal(v?: VariantQty) {

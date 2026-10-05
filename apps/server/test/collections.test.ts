@@ -174,6 +174,52 @@ describe('import / export', () => {
     expect(out.graded[0].id).toBe('g9');
   });
 
+  it('normalises junk the way the browser-only app did', async () => {
+    const c = await setupOwner(s.app);
+    const id = await personalId(c);
+    const res = await c.post(`/api/collections/${id}/import`, {
+      collection: [
+        { cardId: 'sv1-001', variant: 'normal', quantity: '3', condition: 'LP', notes: 'n', addedAt: '2024-01-01' },
+        { cardId: 'sv1-002', variant: 'holofoil', quantity: 0 },
+        { cardId: 'sv1-003', variant: 'normal', quantity: 2.7, paid: { amount: 'lots', currency: 'EUR' } },
+        { cardId: 'sv1-004', variant: 'normal', paid: { amount: 4, currency: 'EUR' } },
+        { cardId: 42, variant: 'normal' },
+        null,
+      ],
+      wishlist: [{ cardId: 'sv1-010' }, { nope: true }],
+      graded: [
+        { cardId: 'sv1-001', variant: 'normal', company: 'CGC', grade: '9.5', valueUsd: -4 },
+        { cardId: 'sv1-002', variant: 'normal', company: 'Nope', grade: '9' },
+        { id: 'keep-id', cardId: 'sv1-003', variant: 'normal', company: 'PSA', grade: '10', countsTowardSet: false, paid: 'free' },
+        null,
+      ],
+      notes: [{ cardId: 'sv1-001', text: ' Trade with Sam ' }, { cardId: 'x-1', text: '  ' }, { text: 'orphan' }, null],
+    });
+    expect(res.json()).toMatchObject({ entries: 4, graded: 2, wishlist: 1, notes: 1 });
+    const st = (await c.get(`/api/collections/${id}/state`)).json();
+    const byId = Object.fromEntries(st.entries.map((e: { id: string }) => [e.id, e]));
+    expect(byId['sv1-001::normal']).toMatchObject({ quantity: 3, condition: 'LP', notes: 'n', setId: 'sv1', addedAt: '2024-01-01T00:00:00.000Z' });
+    expect(byId['sv1-002::holofoil'].quantity).toBe(1);
+    expect(byId['sv1-003::normal'].quantity).toBe(2);
+    expect(byId['sv1-003::normal'].paid).toBeUndefined();
+    expect(byId['sv1-004::normal']).toMatchObject({ quantity: 1, paid: { amount: 4, currency: 'EUR' } });
+    const cgc = st.graded.find((g: { company: string }) => g.company === 'CGC');
+    expect(cgc).toMatchObject({ setId: 'sv1', countsTowardSet: true });
+    expect(cgc.valueUsd).toBeUndefined();
+    const kept = st.graded.find((g: { id: string }) => g.id === 'keep-id');
+    expect(kept.countsTowardSet).toBe(false);
+    expect(kept.paid).toBeUndefined();
+    expect(st.notes).toEqual([expect.objectContaining({ cardId: 'sv1-001', text: 'Trade with Sam' })]);
+  });
+
+  it('accepts a bare array and notes- or wishlist-only files', async () => {
+    const c = await setupOwner(s.app);
+    const id = await personalId(c);
+    expect((await c.post(`/api/collections/${id}/import`, [{ cardId: 'sv1-001', variant: 'normal' }])).json()).toMatchObject({ entries: 1 });
+    expect((await c.post(`/api/collections/${id}/import`, { collection: [], wishlist: [{ cardId: 'sv1-009' }] })).json()).toMatchObject({ entries: 0, wishlist: 1 });
+    expect((await c.post(`/api/collections/${id}/import`, { notes: [{ cardId: 'sv1-001', text: 'x' }] })).json()).toMatchObject({ notes: 1 });
+  });
+
   it('rejects a file with nothing in it', async () => {
     const c = await setupOwner(s.app);
     expect((await c.post(`/api/collections/${await personalId(c)}/import`, { foo: 1 })).statusCode).toBe(400);

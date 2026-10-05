@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import { legacyImageUrl } from '../api/client';
-import { useCachedImage } from '../hooks/useCachedImage';
-import { useCollectionStore } from '../store/collectionStore';
+import { imageSrc, legacyImageUrl } from '../api/client';
 import { typeColor } from '../utils/energy';
 
 interface Props {
@@ -19,13 +17,12 @@ interface Props {
 }
 
 /**
- * Card art with graceful degradation: local cache → TCGdex → legacy CDN → a printed-style
- * placeholder, so cards without a scan still look intentional rather than broken.
+ * Card art with graceful degradation: TCGdex → legacy CDN → a printed-style placeholder, so
+ * cards without a scan still look intentional rather than broken. Images come through the
+ * server's cache, which keeps owned cards' art even if the CDN changes.
  */
 export default function CardImage({ id, src, name, number, setName, types, hires = false, alt = '', className = '', loading = 'lazy', onLoad }: Props) {
-  const keep = useCollectionStore((s) => s.byCard.has(id) || s.gradedByCard.has(id) || s.wishlist.has(id));
-  const cached = useCachedImage(id, keep && !hires);
-  const sources = [cached, src, legacyImageUrl(id, hires)].filter((s): s is string => !!s);
+  const sources = [src, legacyImageUrl(id, hires)].filter((s): s is string => !!s).map((s) => imageSrc(s));
   const key = sources.join('|');
   const [failed, setFailed] = useState({ key: '', n: 0 });
   const current = sources[failed.key === key ? failed.n : 0];

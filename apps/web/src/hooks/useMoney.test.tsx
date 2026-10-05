@@ -16,7 +16,7 @@ beforeEach(() => useSettings.setState(initial, true));
 
 describe('useMoney', () => {
   it('formats in GBP using fallback rates while live rates load', () => {
-    mockFetch([{ match: 'frankfurter', networkError: true }]);
+    mockFetch([{ match: '/api/fx', networkError: true }]);
     const { result } = renderHook(() => useMoney(), { wrapper });
     expect(result.current(10)).toBe('£7.60');
     expect(result.current(null)).toBe('—');
@@ -25,7 +25,7 @@ describe('useMoney', () => {
   });
 
   it('uses compact notation for large values', () => {
-    mockFetch([{ match: 'frankfurter', networkError: true }]);
+    mockFetch([{ match: '/api/fx', networkError: true }]);
     useSettings.setState({ currency: 'USD' });
     const { result } = renderHook(() => useMoney(), { wrapper });
     expect(result.current(1234.56)).toBe('US$1,234.56');
@@ -35,11 +35,11 @@ describe('useMoney', () => {
   });
 
   it('fetches live rates, caches them and re-formats', async () => {
-    const fetch = mockFetch([{ match: 'frankfurter', body: { rates: { GBP: 0.5, EUR: 0.9 } } }]);
+    const fetch = mockFetch([{ match: '/api/fx', body: { rates: { USD: 1, GBP: 0.5, EUR: 0.9 }, at: 1_700_000_000_000 } }]);
     const { result } = renderHook(() => useMoney(), { wrapper });
     await waitFor(() => expect(result.current(10)).toBe('£5.00'));
-    expect(String(fetch.mock.calls[0][0])).toContain('base=USD');
-    expect(JSON.parse(localStorage.getItem('poketracker-fx')!).rates).toEqual({ USD: 1, GBP: 0.5, EUR: 0.9 });
+    expect(String(fetch.mock.calls[0][0])).toBe('/api/fx');
+    expect(JSON.parse(localStorage.getItem('poketracker-fx')!)).toEqual({ rates: { USD: 1, GBP: 0.5, EUR: 0.9 }, at: 1_700_000_000_000 });
   });
 
   it('uses cached rates without fetching while fresh', () => {
@@ -53,7 +53,7 @@ describe('useMoney', () => {
 
   it('treats corrupt cached rates as missing and surfaces FX errors', async () => {
     localStorage.setItem('poketracker-fx', '{oops');
-    mockFetch([{ match: 'frankfurter', status: 500 }]);
+    mockFetch([{ match: '/api/fx', status: 200, body: { rates: null, at: null } }]);
     const { result } = renderHook(() => useRates(), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error?.message).toBe('FX unavailable');

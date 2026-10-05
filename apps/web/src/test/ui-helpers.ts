@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 import { indexGraded, indexHoldings, useCollectionStore } from '../store/collectionStore';
 import { useSettings } from '../store/settingsStore';
 import { useToasts } from '../store/toastStore';
-import { db } from '../db/dexie';
+import { memory, TEST_COLLECTION } from './memoryBackend';
 import type { CardSnapshot, CollectionEntry, GradedCopy, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 
 const initialCollection = useCollectionStore.getState();
@@ -12,25 +12,16 @@ const initialSettings = useSettings.getState();
 export const TEST_RATES = { USD: 1, GBP: 0.5, EUR: 0.9 };
 
 /**
- * Restores every store to its initial state and empties the database. `recordValue` is stubbed
+ * Restores every store to its initial state, pointed at the (fresh) in-memory backend. `recordValue` is stubbed
  * because `commitEntries` schedules it on a 1.5s timer that can otherwise leak into later tests.
  */
 export async function resetStores() {
   useCollectionStore.setState(initialCollection, true);
-  useCollectionStore.setState({ recordValue: async () => {}, lastSync: null });
+  useCollectionStore.setState({ recordValue: async () => {}, lastSync: null, collectionId: TEST_COLLECTION, role: 'owner', readOnly: false });
   useSettings.setState(initialSettings, true);
   useToasts.setState({ toasts: [] });
   localStorage.setItem('poketracker-fx', JSON.stringify({ rates: TEST_RATES, at: Date.now() }));
-  await Promise.all([
-    db.collection.clear(),
-    db.cards.clear(),
-    db.wishlist.clear(),
-    db.valueHistory.clear(),
-    db.setStats.clear(),
-    db.images.clear(),
-    db.graded.clear(),
-    db.gradedPhotos.clear(),
-  ]);
+  return memory;
 }
 
 export function seedCollection({
@@ -55,6 +46,7 @@ export function seedCollection({
   const gradedMap = new Map(graded.map((g) => [g.id, g]));
   useCollectionStore.setState({
     isLoaded: true,
+    collectionId: TEST_COLLECTION,
     entries: new Map(entries.map((e) => [e.id, e])),
     byCard,
     graded: gradedMap,

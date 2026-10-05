@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useSettings } from '../store/settingsStore';
 
 import { cachedFx as cached, FALLBACK_RATES as FALLBACK, FX_KEY, type Rates } from '../utils/fx';
+import { api } from '../api/http';
 
+/** The server refreshes ECB rates daily; we keep a copy for code running outside React. */
 async function fetchRates(): Promise<Rates> {
-  const res = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=GBP,EUR');
-  if (!res.ok) throw new Error('FX unavailable');
-  const json = (await res.json()) as { rates: { GBP: number; EUR: number } };
-  const rates = { USD: 1, GBP: json.rates.GBP, EUR: json.rates.EUR };
-  localStorage.setItem(FX_KEY, JSON.stringify({ rates, at: Date.now() }));
+  const { rates, at } = await api<{ rates: Rates; at: number | null }>('/api/fx');
+  if (!rates?.GBP || !rates?.EUR) throw new Error('FX unavailable');
+  localStorage.setItem(FX_KEY, JSON.stringify({ rates, at: at ?? Date.now() }));
   return rates;
 }
 

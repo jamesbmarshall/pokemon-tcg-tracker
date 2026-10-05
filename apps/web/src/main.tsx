@@ -4,7 +4,10 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/mona-sans/standard.css'
 import '@fontsource-variable/martian-mono/standard.css'
 import './index.css'
+import { configureForServer } from './api/client'
 import App from './App'
+
+configureForServer()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

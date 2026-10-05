@@ -99,7 +99,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
         notes,
       };
       const saved = await saveGraded(card, input);
-      if (dropIds.length) await removePhotos(dropIds);
+      if (dropIds.length) await removePhotos(dropIds, saved.id);
       if (newFiles.length) await addPhotos(saved.id, newFiles);
       toast(copy ? 'Graded copy updated' : `Added ${card.name} · ${company === 'Other' ? companyName : company} ${grade}`, { tone: 'success' });
       onClose();

@@ -13,14 +13,13 @@
   "dependencies": {
     "@fontsource-variable/martian-mono": "^5.3.0",
     "@fontsource-variable/mona-sans": "^5.3.0",
+    "@poketracker/shared": "*",
     "@tanstack/react-query": "^5.95.2",
     "lucide-react": "^1.48.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.2",
-    "zustand": "^5.0.12",
-    "@poketracker/shared": "*",
-    "dexie": "^4.4.1"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
@@ -34,7 +33,6 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.2.2",
     "vite": "^8.0.1",
-    "vitest": "^4.1.11",
-    "fake-indexeddb": "^6.2.5"
+    "vitest": "^4.1.11"
   }
 }

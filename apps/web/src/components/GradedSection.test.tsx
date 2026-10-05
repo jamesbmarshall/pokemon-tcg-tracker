@@ -7,9 +7,7 @@ import { resetStores, seedCollection } from '../test/ui-helpers';
 import { makeCard, makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
 import { useCollectionStore } from '../store/collectionStore';
 import { useToasts } from '../store/toastStore';
-import { db } from '../db/dexie';
-
-vi.mock('../db/imageCache', () => ({ cacheImages: vi.fn(async () => {}), pruneImages: vi.fn(async () => {}) }));
+import { memory } from '../test/memoryBackend';
 
 const card = makeCard({ id: 'sv03-001' });
 const variants = Object.keys(card.tcgplayer?.prices ?? {});
@@ -99,7 +97,6 @@ describe('GradedSection', () => {
   });
 
   it('saves attached photos and shows them in a lightbox', async () => {
-    // fake-indexeddb clones Blobs into plain objects, which Node's createObjectURL rejects
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
     const user = userEvent.setup();
@@ -109,7 +106,7 @@ describe('GradedSection', () => {
     await user.upload(within(dialog).getByLabelText(/add photos/i), file);
     expect(within(dialog).getAllByRole('button', { name: /remove photo/i })).toHaveLength(1);
     await user.click(within(dialog).getByRole('button', { name: /^add graded copy$/i }));
-    await waitFor(async () => expect(await db.gradedPhotos.count()).toBe(1));
+    await waitFor(() => expect(memory.gradedPhotos.size).toBe(1));
     const view = await screen.findByRole('button', { name: /view 1 photo/i });
     await user.click(view);
     expect(screen.getByRole('dialog', { name: /PSA 10/ })).toBeInTheDocument();
@@ -134,7 +131,7 @@ describe('GradedSection', () => {
       cards: [makeSnapshot({ id: 'sv03-001', prices: { normal: 2 } })],
       graded: [makeGraded({ id: 'a', grade: '9', certNumber: undefined }), makeGraded({ id: 'b', company: 'BGS', grade: '10', label: 'Black Label', certNumber: '55' })],
     });
-    await db.graded.bulkPut([...store().graded.values()]);
+    for (const g of store().graded.values()) memory.graded.set(g.id, g);
     const user = userEvent.setup();
     renderWithProviders(<GradedSection card={card} />);
     expect(screen.getByRole('heading', { name: '2 slabs' })).toBeInTheDocument();

@@ -235,11 +235,14 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
   const rawPhotos: unknown[] = Array.isArray(obj.photos) ? obj.photos : [];
 
   // Backups from the pokemontcg.io era use different ids; remap them first.
-  const { remap, remapped } = await migrateImport(ctx, rawEntries, rawWishlist);
+  const legacy = await migrateImport(ctx, rawEntries, rawWishlist);
+  const remap = legacy.remap;
 
   const entries = new Map<string, CollectionEntry>();
   for (const r of rawEntries) {
-    const e = cleanEntry(remap(r));
+    // Older exports could omit quantity (or write 0); the browser-only app treated those as one copy.
+    const q = Math.floor(Number((r as { quantity?: unknown })?.quantity));
+    const e = cleanEntry(remap(r && typeof r === 'object' ? { ...r, quantity: q >= 1 ? q : 1 } : r));
     if (!e) continue;
     const prev = entries.get(e.id);
     entries.set(e.id, prev ? { ...prev, quantity: prev.quantity + e.quantity } : e);
@@ -288,8 +291,9 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
       }
     }
   });
-  void hydrateMissing(ctx, [...entries.values()].map((e) => e.cardId).concat(graded.map((g) => g.cardId), wishlist.map((w) => w.cardId))).then(() => recordValue(ctx, collectionId));
-  return { entries: entries.size, graded: graded.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped };
+  void hydrateMissing(ctx, [...entries.values()].map((e) => e.cardId).concat(graded.map((g) => g.cardId), wishlist.map((w) => w.cardId))).then(() => recordValue(ctx, collectionId))
+    .catch((err) => ctx.log.warn({ err }, 'post-import value snapshot failed'));
+  return { entries: entries.size, graded: graded.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
 }
 
 // ---------------------------------------------------------------- routes
@@ -462,7 +466,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { point: recordValue(ctx, id) ?? null };
   });
 
-  app.post('/api/collections/:id/import', async (req) => {
+  // Backups can carry slab photos as data URLs.
+  app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req) => {
     const { id } = need(ctx, req, 'write');
     const result = await importInto(ctx, id, req.body);
     audit(ctx, req, 'collection.imported', id, result);

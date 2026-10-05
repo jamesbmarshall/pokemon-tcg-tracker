@@ -1,13 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import CardImage from './CardImage';
-import { resetStores, seedCollection } from '../test/ui-helpers';
-import { makeEntry, makeSnapshot } from '../test/fixtures';
-import { db } from '../db/dexie';
+import { configureForServer, resetServerConfig } from '../api/client';
+import { resetStores } from '../test/ui-helpers';
 
 beforeEach(async () => {
   await resetStores();
 });
+
+afterEach(() => resetServerConfig());
 
 describe('CardImage', () => {
   it('renders the primary source', () => {
@@ -65,14 +66,17 @@ describe('CardImage', () => {
     expect(document.querySelector('img')).toHaveAttribute('src', 'https://img/b.webp');
   });
 
-  it('uses the locally cached copy first for owned cards', async () => {
-    seedCollection({ entries: [makeEntry({ cardId: 'zzz-9' })], cards: [makeSnapshot({ id: 'zzz-9' })] });
-    await db.images.put({ id: 'zzz-9', blob: new Blob(['x'], { type: 'image/png' }), savedAt: '2025-01-01' });
-    const spy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:cached-zzz-9');
-    render(<CardImage id="zzz-9" src="https://img/a.webp" name="P" />);
-    await vi.waitFor(() => expect(document.querySelector('img')).toHaveAttribute('src', 'blob:cached-zzz-9'));
-    expect(spy).toHaveBeenCalled();
+  it('routes CDN images through the server cache when hosted', () => {
+    configureForServer();
+    render(<CardImage id="sv03-007" src="https://assets.tcgdex.net/en/sv/sv03/007/high.webp" name="Charmander" />);
+    expect(document.querySelector('img')).toHaveAttribute('src', `/api/img?u=${encodeURIComponent('https://assets.tcgdex.net/en/sv/sv03/007/high.webp')}`);
     fireEvent.error(document.querySelector('img')!);
+    expect(document.querySelector('img')).toHaveAttribute('src', `/api/img?u=${encodeURIComponent('https://images.pokemontcg.io/sv3/7.png')}`);
+  });
+
+  it('leaves unknown hosts alone even when hosted', () => {
+    configureForServer();
+    render(<CardImage id="zzz-1" src="https://img/a.webp" name="P" />);
     expect(document.querySelector('img')).toHaveAttribute('src', 'https://img/a.webp');
   });
 });

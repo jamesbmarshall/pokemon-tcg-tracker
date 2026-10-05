@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { ArrowUpDown, ChevronLeft, Grid3x3, LayoutGrid, Search, X, Zap } from 'lucide-react';
 import { useSet, useSetCards } from '../api/hooks';
-import { cardVariants, toSnapshot } from '../api/client';
+import { cardVariants, imageSrc, toSnapshot } from '../api/client';
 import { gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
 import { SetLogo, SetSymbol } from '../components/SetArt';
 import { useSettings } from '../store/settingsStore';
@@ -138,7 +138,7 @@ export default function SetPage() {
         <Skeleton className="h-52" />
       ) : (
         <section className="panel relative overflow-hidden">
-          <div className="pointer-events-none absolute inset-0 opacity-[0.13] blur-2xl" style={{ background: `url(${set.images.logo}) center/60% no-repeat` }} />
+          <div className="pointer-events-none absolute inset-0 opacity-[0.13] blur-2xl" style={{ background: `url("${imageSrc(set.images.logo)}") center/60% no-repeat` }} />
           <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
               <SetLogo

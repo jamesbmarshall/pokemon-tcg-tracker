@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { liveQuery } from 'dexie';
-import { db } from './dexie';
+import { create } from 'zustand';
+import { getBackend, type PhotoRef } from '../api/backend';
+import { useCollectionStore } from '../store/collectionStore';
 import type { GradedPhoto } from '../api/types';
 
 const MAX_EDGE = 1600;
 
-/** Downscale large phone photos so IndexedDB doesn't fill up; falls back to the original file. */
+/** Downscale large phone photos before upload; falls back to the original file. */
 export async function prepareImage(file: Blob): Promise<Blob> {
   if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file;
   try {
@@ -27,45 +28,54 @@ export async function prepareImage(file: Blob): Promise<Blob> {
   }
 }
 
-const photoId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
+/** Bumped whenever a slab's photos change so every viewer of them refetches. */
+const usePhotoVersions = create<{ v: Record<string, number>; bump: (id: string) => void }>((set) => ({
+  v: {},
+  bump: (id) => set((s) => ({ v: { ...s.v, [id]: (s.v[id] ?? 0) + 1 } })),
+}));
+
+const collectionId = () => {
+  const id = useCollectionStore.getState().collectionId;
+  if (!id) throw new Error('No collection loaded');
+  return id;
+};
 
 export async function addPhotos(gradedId: string, files: Blob[], side: GradedPhoto['side'] = 'other') {
-  const now = new Date().toISOString();
-  const photos: GradedPhoto[] = [];
-  for (const f of files) photos.push({ id: photoId(), gradedId, side, blob: await prepareImage(f), addedAt: now });
-  if (photos.length) await db.gradedPhotos.bulkPut(photos);
-  return photos;
+  if (!files.length) return [];
+  const prepared = await Promise.all(files.map(prepareImage));
+  const out = await getBackend().addPhotos(collectionId(), gradedId, prepared, side);
+  usePhotoVersions.getState().bump(gradedId);
+  return out;
 }
 
-export const removePhotos = (ids: string[]) => db.gradedPhotos.bulkDelete(ids);
-
-export const photosFor = (gradedId: string) => db.gradedPhotos.where('gradedId').equals(gradedId).sortBy('addedAt');
-
-export interface PhotoUrl {
-  id: string;
-  url: string;
+export async function removePhotos(ids: string[], gradedId?: string) {
+  const cid = collectionId();
+  await Promise.all(ids.map((id) => getBackend().deletePhoto(cid, id)));
+  if (gradedId) usePhotoVersions.getState().bump(gradedId);
 }
 
-/** Live list of a slab's photos as object URLs (revoked on change/unmount). */
+export const photosFor = (gradedId: string) => getBackend().photos(collectionId(), gradedId);
+
+export type PhotoUrl = Pick<PhotoRef, 'id' | 'url'>;
+
+/** A slab's photos (served by the server), refreshed whenever they change. */
 export function useGradedPhotos(gradedId: string | undefined) {
-  const [state, setState] = useState<{ id?: string; photos: PhotoUrl[] }>({ photos: [] });
+  const version = usePhotoVersions((s) => (gradedId ? (s.v[gradedId] ?? 0) : 0));
+  const cid = useCollectionStore((s) => s.collectionId);
+  const [state, setState] = useState<{ key?: string; photos: PhotoUrl[] }>({ photos: [] });
+  const key = gradedId && cid ? `${cid}/${gradedId}/${version}` : undefined;
   useEffect(() => {
-    if (!gradedId) return;
-    let urls: PhotoUrl[] = [];
-    const sub = liveQuery(() => photosFor(gradedId)).subscribe({
-      next: (rows) => {
-        urls.forEach((p) => URL.revokeObjectURL(p.url));
-        urls = rows.map((r) => ({ id: r.id, url: URL.createObjectURL(r.blob) }));
-        setState({ id: gradedId, photos: urls });
-      },
-      error: () => setState({ id: gradedId, photos: [] }),
-    });
+    if (!key || !gradedId || !cid) return;
+    let live = true;
+    getBackend()
+      .photos(cid, gradedId)
+      .then((rows) => live && setState({ key, photos: rows.map((r) => ({ id: r.id, url: r.url })) }))
+      .catch(() => live && setState({ key, photos: [] }));
     return () => {
-      sub.unsubscribe();
-      urls.forEach((p) => URL.revokeObjectURL(p.url));
+      live = false;
     };
-  }, [gradedId]);
-  return gradedId && state.id === gradedId ? state.photos : NONE;
+  }, [key, gradedId, cid]);
+  return key && state.key === key ? state.photos : NONE;
 }
 
 const NONE: PhotoUrl[] = [];
