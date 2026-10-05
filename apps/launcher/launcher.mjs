@@ -8,7 +8,7 @@
 //   $DATA_DIR/app/pending.json  { version, backup } to try a new version, or { rollback: true }
 //   $DATA_DIR/app/state.json    { active, previous, last } — written here only
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chownSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const LAUNCHER_VERSION = '1.0.0';
@@ -52,6 +52,51 @@ export function compareVersions(a, b) {
 }
 
 const imageVersion = () => readJson(join(BUNDLE_DIR, 'manifest.json'))?.version;
+
+/** Chowns a tree, skipping anything already owned correctly and never following symlinks. */
+function chownTree(path, uid, gid) {
+  const st = lstatSync(path);
+  if (st.isSymbolicLink()) return;
+  if (st.uid !== uid || st.gid !== gid) chownSync(path, uid, gid);
+  if (st.isDirectory()) for (const name of readdirSync(path)) chownTree(join(path, name), uid, gid);
+}
+
+/**
+ * Whether a data folder with this owner/mode can be written by uid:gid once we drop root.
+ * Exported for tests.
+ */
+export function writableBy({ uid, gid, mode }, target) {
+  if (uid === target.uid) return (mode & 0o200) !== 0;
+  if (gid === target.gid) return (mode & 0o020) !== 0;
+  return (mode & 0o002) !== 0;
+}
+
+/**
+ * NAS hosts (Unraid, Synology) usually bind-mount a host folder for /data, and Docker creates
+ * a missing folder owned by root. So when started as root we hand the data folder to PUID:PGID
+ * (default 1000:1000, the image's "node" user) and then drop to that user for good. The server
+ * never runs as root. If the folder can't be handed over (e.g. some network shares refuse
+ * chown) and isn't otherwise writable by that user, we stay root rather than fail to start, and
+ * say so in the log.
+ */
+function dropPrivileges() {
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0) return;
+  const target = { uid: Number(process.env.PUID || 1000), gid: Number(process.env.PGID || 1000) };
+  if (target.uid === 0) return;
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    chownTree(DATA_DIR, target.uid, target.gid);
+  } catch (err) {
+    log(`could not change owner of ${DATA_DIR} to ${target.uid}:${target.gid} (${err.code ?? err.message})`, { level: 40 });
+  }
+  if (!writableBy(statSync(DATA_DIR), target)) {
+    log(`${DATA_DIR} is not writable by ${target.uid}:${target.gid}; continuing as root`, { level: 40 });
+    return;
+  }
+  process.setgroups([target.gid]);
+  process.setgid(target.gid);
+  process.setuid(target.uid);
+}
 
 /** Where a version's files live, or undefined if we don't have it. */
 function dirFor(version) {
@@ -126,7 +171,16 @@ function restoreDb(backup) {
 }
 
 async function main() {
-  mkdirSync(APP_DIR, { recursive: true });
+  dropPrivileges();
+  try {
+    mkdirSync(APP_DIR, { recursive: true });
+    writeFileSync(join(APP_DIR, '.write-test'), '');
+    rmSync(join(APP_DIR, '.write-test'));
+  } catch (err) {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : '?';
+    log(`cannot write to ${DATA_DIR}: ${err.code ?? err.message}. Make the data folder writable by user ${uid}, or set PUID/PGID to the folder's owner.`, { level: 50 });
+    process.exit(1);
+  }
   for (const sig of ['SIGTERM', 'SIGINT']) {
     process.on(sig, () => {
       stopping = true;

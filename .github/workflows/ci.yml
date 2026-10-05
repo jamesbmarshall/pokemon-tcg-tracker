@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, type-check, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Bundle (unsigned)
+        run: node scripts/make-bundle.mjs --version "0.0.0-ci.${{ github.run_number }}"
+
+  azure:
+    name: Azure templates compile and are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The "Deploy to Azure" buttons use the committed JSON, so it must match the Bicep source.
+      # Generator metadata (Bicep version) is ignored so a different local Bicep doesn't fail CI.
+      - run: |
+          cd deploy/azure
+          for f in containerapps appservice; do
+            az bicep build -f "$f.bicep" --stdout | jq -S 'del(.metadata)' > "/tmp/$f.json"
+            jq -S 'del(.metadata)' "$f.json" | diff -u - "/tmp/$f.json" \
+              || { echo "::error::deploy/azure/$f.json is stale. Run: az bicep build -f deploy/azure/$f.bicep"; exit 1; }
+          done
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: poketracker:ci
+          build-args: |
+            VERSION=0.0.0-ci.${{ github.run_number }}
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: |
+          docker run -d --name pt -p 3000:3000 poketracker:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:3000/health | grep -q '"ok":true'
+          curl -fsS http://localhost:3000/ | grep -q '<div id="root">'
+          docker logs pt 2>&1 | grep -q 'setup token'
+      - if: failure()
+        run: docker logs pt || true

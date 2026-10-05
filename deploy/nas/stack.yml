@@ -1,0 +1,35 @@
+# PokéTracker stack for Portainer, Synology Container Manager, CasaOS and similar.
+#
+# Portainer: Stacks → Add stack → paste this file (or point "Repository" at it), set the
+#            environment variables below, Deploy.
+# Synology:  Container Manager → Project → Create → paste this file, Next, Done.
+#
+# Then open http://<nas-ip>:3000 and enter your setup token to create the owner account. If you
+# didn't set one, it's printed in the container's log.
+#
+# Data lives in a named volume. To use a NAS folder instead (e.g. /volume1/docker/poketracker),
+# swap the volume line for "- /volume1/docker/poketracker:/data" and set PUID/PGID to the
+# folder owner's ids (`id` over SSH shows yours). The container hands the folder to that user on
+# start and then runs as it.
+#
+# For HTTPS outside your home network, put it behind your NAS's reverse proxy (Synology:
+# Control Panel → Login Portal → Advanced → Reverse Proxy) and set PUBLIC_URL to that address.
+
+services:
+  poketracker:
+    image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker:${POKETRACKER_TAG:-latest}
+    container_name: poketracker
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TZ: ${TZ:-Europe/London}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - poketracker-data:/data
+
+volumes:
+  poketracker-data:

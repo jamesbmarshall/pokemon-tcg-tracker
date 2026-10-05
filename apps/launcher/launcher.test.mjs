@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { compareVersions } from './launcher.mjs';
+import { compareVersions, writableBy } from './launcher.mjs';
 
 // A stand-in server bundle: serves /health with its manifest version, exits 75 on /restart.
 const FAKE_SERVER = `
@@ -126,4 +126,14 @@ test('exits cleanly on SIGTERM', async () => {
   proc.kill('SIGTERM');
   const code = await new Promise((r) => proc.once('exit', r));
   assert.equal(code, 0);
+});
+
+test('writableBy checks the owner, group and other write bits', () => {
+  const t = { uid: 99, gid: 100 };
+  assert.equal(writableBy({ uid: 99, gid: 0, mode: 0o40755 }, t), true);
+  assert.equal(writableBy({ uid: 99, gid: 0, mode: 0o40555 }, t), false);
+  assert.equal(writableBy({ uid: 0, gid: 100, mode: 0o40775 }, t), true);
+  assert.equal(writableBy({ uid: 0, gid: 100, mode: 0o40755 }, t), false);
+  assert.equal(writableBy({ uid: 0, gid: 0, mode: 0o40777 }, t), true);
+  assert.equal(writableBy({ uid: 0, gid: 0, mode: 0o40755 }, t), false);
 });

@@ -31,3 +31,6 @@ dist-ssr
 /data
 apps/*/dist
 release/
+
+# Release signing key (never commit)
+update-signing-key.pem

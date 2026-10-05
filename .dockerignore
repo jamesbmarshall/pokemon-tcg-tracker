@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/coverage
+release
+data
+.git
+.github
+.vscode
+.idea
+.DS_Store
+*.log
+.env
+.env.*
+update-signing-key.pem
+deploy/**
+!deploy/update-public-key.pem

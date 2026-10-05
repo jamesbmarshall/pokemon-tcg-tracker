@@ -1,0 +1,251 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.47.16.16243",
+      "templateHash": "14149486207549613783"
+    }
+  },
+  "parameters": {
+    "appName": {
+      "type": "string",
+      "defaultValue": "poketracker",
+      "minLength": 3,
+      "maxLength": 24,
+      "metadata": {
+        "description": "Name for the app. It becomes part of the web address: https://<name>.<region-id>.azurecontainerapps.io"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Defaults to the resource group's region."
+      }
+    },
+    "setupToken": {
+      "type": "securestring",
+      "minLength": 12,
+      "metadata": {
+        "description": "A secret phrase you choose now and type in when you first open the app, to create the owner account. It stops anyone else from claiming a freshly deployed instance. At least 12 characters."
+      }
+    },
+    "image": {
+      "type": "string",
+      "defaultValue": "ghcr.io/jamesbmarshall/pokemon-tcg-tracker:latest",
+      "metadata": {
+        "description": "Container image. Leave as is unless you are testing a specific version."
+      }
+    },
+    "registryUsername": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Only needed while the image is private: a GitHub username with access to it."
+      }
+    },
+    "registryPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Only needed while the image is private: a GitHub token with the read:packages scope."
+      }
+    },
+    "timeZone": {
+      "type": "string",
+      "defaultValue": "UTC",
+      "metadata": {
+        "description": "IANA time zone used for scheduled jobs and logs, e.g. Europe/London."
+      }
+    }
+  },
+  "variables": {
+    "suffix": "[uniqueString(resourceGroup().id, parameters('appName'))]",
+    "storageName": "[take(format('pt{0}{1}', toLower(replace(parameters('appName'), '-', '')), variables('suffix')), 24)]",
+    "shareName": "poketracker-data",
+    "usePrivateRegistry": "[and(not(empty(parameters('registryUsername'))), not(empty(parameters('registryPassword'))))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}-logs', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('storageName')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "allowBlobPublicAccess": false
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/default/{1}', variables('storageName'), variables('shareName'))]",
+      "properties": {
+        "shareQuota": 20
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}-env', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('appName'))), '2023-09-01').customerId]",
+            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('appName'))), '2023-09-01').primarySharedKey]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs', parameters('appName')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments/storages",
+      "apiVersion": "2024-03-01",
+      "name": "[format('{0}/{1}', format('{0}-env', parameters('appName')), 'data')]",
+      "properties": {
+        "azureFile": {
+          "accountName": "[variables('storageName')]",
+          "accountKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-05-01').keys[0].value]",
+          "shareName": "[variables('shareName')]",
+          "accessMode": "ReadWrite"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('appName')))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', split(format('{0}/default/{1}', variables('storageName'), variables('shareName')), '/')[0], split(format('{0}/default/{1}', variables('storageName'), variables('shareName')), '/')[1], split(format('{0}/default/{1}', variables('storageName'), variables('shareName')), '/')[2])]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('appName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('appName')))]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 3000,
+            "transport": "auto",
+            "allowInsecure": false
+          },
+          "secrets": "[concat(createArray(createObject('name', 'setup-token', 'value', parameters('setupToken'))), if(variables('usePrivateRegistry'), createArray(createObject('name', 'registry-password', 'value', parameters('registryPassword'))), createArray()))]",
+          "registries": "[if(variables('usePrivateRegistry'), createArray(createObject('server', 'ghcr.io', 'username', parameters('registryUsername'), 'passwordSecretRef', 'registry-password')), createArray())]"
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "poketracker",
+              "image": "[parameters('image')]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": [
+                {
+                  "name": "PUBLIC_URL",
+                  "value": "[format('https://{0}.{1}', parameters('appName'), reference(resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('appName'))), '2024-03-01').defaultDomain)]"
+                },
+                {
+                  "name": "TRUST_PROXY",
+                  "value": "true"
+                },
+                {
+                  "name": "SQLITE_JOURNAL_MODE",
+                  "value": "delete"
+                },
+                {
+                  "name": "SETUP_TOKEN",
+                  "secretRef": "setup-token"
+                },
+                {
+                  "name": "TZ",
+                  "value": "[parameters('timeZone')]"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "data",
+                  "mountPath": "/data"
+                }
+              ],
+              "probes": [
+                {
+                  "type": "Startup",
+                  "httpGet": {
+                    "path": "/health",
+                    "port": 3000
+                  },
+                  "periodSeconds": 10,
+                  "failureThreshold": 18
+                },
+                {
+                  "type": "Liveness",
+                  "httpGet": {
+                    "path": "/health",
+                    "port": 3000
+                  },
+                  "periodSeconds": 30,
+                  "failureThreshold": 3
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1
+          },
+          "volumes": [
+            {
+              "name": "data",
+              "storageType": "AzureFile",
+              "storageName": "data",
+              "mountOptions": "nobrl,mfsymlinks,cache=strict,uid=1000,gid=1000,dir_mode=0750,file_mode=0640"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('appName')))]",
+        "[resourceId('Microsoft.App/managedEnvironments/storages', format('{0}-env', parameters('appName')), 'data')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "url": {
+      "type": "string",
+      "metadata": {
+        "description": "Open this address and enter your setup token to create the owner account."
+      },
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2024-03-01').configuration.ingress.fqdn)]"
+    }
+  }
+}

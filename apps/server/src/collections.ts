@@ -156,7 +156,7 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
     graded = graded.map((g) => ({ ...g, paid: opts.hidePaid ? undefined : g.paid, notes: opts.hideNotes ? undefined : g.notes, valueUsd: opts.hideValue ? undefined : g.valueUsd }));
   }
   let history: ValuePoint[] = opts.hideValue ? [] : readHistory(ctx.db, collectionId);
-  if (opts.hidePaid) history = history.map(({ costUsd: _c, costedValueUsd: _v, ...p }) => p);
+  if (opts.hidePaid) history = history.map((p) => ({ date: p.date, valueUsd: p.valueUsd, cards: p.cards, unique: p.unique }));
   const ids = new Set([...entries.map((e) => e.cardId), ...graded.map((g) => g.cardId), ...wishlist.map((w) => w.cardId), ...lists.flatMap((l) => l.cards)]);
   let cards = Array.from(readCards(ctx.db, ids).values());
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));

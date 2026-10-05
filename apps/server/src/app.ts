@@ -86,13 +86,16 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
       root: web,
       wildcard: false,
       index: false,
+      // We set cache-control ourselves; the plugin's default would overwrite it with max-age=0.
+      cacheControl: false,
       setHeaders: (res, path) => {
         res.setHeader('cache-control', path.includes(`${join(web, 'assets')}`) ? 'public, max-age=31536000, immutable' : 'no-cache');
       },
     });
     // Client-side routes all get the SPA shell.
     app.setNotFoundHandler((req, reply) => {
-      if (req.method !== 'GET' || req.url.startsWith('/api/')) return reply.status(404).send({ error: 'Not found' });
+      // HEAD too: uptime monitors commonly probe "/" with it.
+      if ((req.method !== 'GET' && req.method !== 'HEAD') || req.url.startsWith('/api/')) return reply.status(404).send({ error: 'Not found' });
       if (/\.[a-z0-9]{2,5}$/i.test(req.url.split('?')[0])) return reply.status(404).send('Not found');
       reply.header('cache-control', 'no-cache');
       if (req.url.startsWith('/s/')) reply.header('x-robots-tag', 'noindex, nofollow');

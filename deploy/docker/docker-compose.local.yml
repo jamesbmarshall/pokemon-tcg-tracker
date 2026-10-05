@@ -1,0 +1,25 @@
+# PokéTracker without a domain: plain HTTP on port 3000. Good for a home network, or for
+# running behind a reverse proxy you already have (Nginx Proxy Manager, Traefik, Cloudflare Tunnel).
+#
+#   docker compose -f docker-compose.local.yml up -d
+#   docker compose -f docker-compose.local.yml logs | grep -i "setup token"
+#
+# If you do put HTTPS in front, set PUBLIC_URL to that address so invite and share links use it.
+
+name: poketracker
+
+services:
+  poketracker:
+    image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker:${POKETRACKER_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - poketracker-data:/data
+
+volumes:
+  poketracker-data:

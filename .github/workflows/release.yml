@@ -1,0 +1,152 @@
+name: Release
+
+# Push a tag like v2.1.0 to publish. Pre-release tags (v2.1.0-beta.1) publish an image and a
+# GitHub pre-release, which in-app updates ignore (they follow /releases/latest).
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish, e.g. v2.1.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag $TAG is not vX.Y.Z"; exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          case "$TAG" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT";; *) echo "prerelease=false" >> "$GITHUB_OUTPUT";; esac
+
+  test:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  bundle:
+    needs: [meta, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package and sign
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ needs.meta.outputs.version }}
+        run: node scripts/make-bundle.mjs --require-signature
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: |
+            release/poketracker-*.tar.gz
+            release/poketracker-*.tar.gz.sha256
+            release/poketracker-*.tar.gz.sig
+          if-no-files-found: error
+
+  image:
+    needs: [meta, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.meta.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.meta.outputs.tag }},enable=${{ needs.meta.outputs.prerelease == 'false' }}
+            type=semver,pattern={{major}},value=${{ needs.meta.outputs.tag }},enable=${{ needs.meta.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.meta.outputs.prerelease == 'false' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.tags.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.meta.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Published last: running installs see the release (and offer the update) only once the
+  # bundle and the image it may need are both available.
+  publish:
+    needs: [meta, bundle, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+          path: release
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          flags="--generate-notes --verify-tag"
+          [ "$PRERELEASE" = "true" ] && flags="$flags --prerelease" || flags="$flags --latest"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --title "PokéTracker ${TAG#v}" $flags
+          fi

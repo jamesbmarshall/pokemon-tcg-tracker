@@ -1,0 +1,50 @@
+# PokéTracker on any Docker host, with automatic HTTPS (Let's Encrypt, via Caddy).
+#
+#   1. Point a DNS record (e.g. cards.example.com) at this server and open ports 80 and 443.
+#   2. Put DOMAIN=cards.example.com in a .env file next to this one.
+#   3. docker compose up -d
+#   4. docker compose logs poketracker | grep -i "setup token", then open https://DOMAIN.
+#
+# From then on users, updates and backups are all handled in the app.
+# No domain? Use docker-compose.local.yml, which serves plain HTTP on port 3000.
+
+name: poketracker
+
+services:
+  poketracker:
+    image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker:${POKETRACKER_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: https://${DOMAIN:?Set DOMAIN in .env, e.g. DOMAIN=cards.example.com}
+      TRUST_PROXY: "true"
+      # Optional: pick the first-run setup token yourself instead of reading it from the logs.
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - poketracker-data:/data
+    # Reachable only through Caddy, never published on the host directly.
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - poketracker
+    environment:
+      DOMAIN: ${DOMAIN}
+      # Let's Encrypt production by default; see the Caddyfile for the staging option.
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  poketracker-data:
+  caddy-data:
+  caddy-config:

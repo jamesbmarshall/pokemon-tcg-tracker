@@ -15,6 +15,8 @@ export interface Config {
   supervised: boolean;
   launcherVersion: string;
   githubRepo: string;
+  /** GitHub REST API base; only changed for testing against a mock release feed. */
+  githubApi: string;
   updatePublicKey: string;
   /** Optional pre-shared first-run token (e.g. supplied as a Deploy to Azure parameter). */
   setupToken: string;
@@ -60,6 +62,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     supervised: env.POKETRACKER_LAUNCHER === '1',
     launcherVersion: env.POKETRACKER_LAUNCHER_VERSION ?? '',
     githubRepo: env.GITHUB_REPO ?? 'jamesbmarshall/pokemon-tcg-tracker',
+    githubApi: (env.GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
     updatePublicKey: readKey(),
     setupToken: env.SETUP_TOKEN ?? '',
     imageCacheMb: Number(env.IMAGE_CACHE_MB ?? 2048),

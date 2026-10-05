@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+  Unraid Community Applications template for PokéTracker.
+  To use before it is listed in CA: Docker tab → Add Container → Template → paste this file's raw
+  URL into "Template repositories" under Apps → Settings, or save it to
+  /boot/config/plugins/dockerMan/templates-user/my-PokeTracker.xml.
+
+  PUID/PGID default to nobody:users (99:100), Unraid's usual owner for appdata. The container
+  hands the data folder to that user on start and then runs as it, never as root.
+-->
+<Container version="2">
+  <Name>PokeTracker</Name>
+  <Repository>ghcr.io/jamesbmarshall/pokemon-tcg-tracker:latest</Repository>
+  <Registry>https://github.com/jamesbmarshall/pokemon-tcg-tracker/pkgs/container/pokemon-tcg-tracker</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/jamesbmarshall/pokemon-tcg-tracker/issues</Support>
+  <Project>https://github.com/jamesbmarshall/pokemon-tcg-tracker</Project>
+  <Overview>Self-hosted Pokémon TCG collection tracker for your household. Track sets, variants, graded slabs and wishlists, with prices refreshed automatically in the background. Invite family members and share collections with read-only links. Updates install from Settings → System with one click.&#xD;
+&#xD;
+First run: open the WebUI and enter the Setup token you set below (or, if left blank, the one printed in the container log) to create the owner account.</Overview>
+  <Category>Tools: Productivity: Other:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/jamesbmarshall/pokemon-tcg-tracker/main/apps/web/public/favicon.svg</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <DateInstalled/>
+  <Config Name="WebUI port" Target="3000" Default="3000" Mode="tcp" Description="Port for the web interface." Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/poketracker" Mode="rw" Description="Database, backups, cached card images and installed updates. Back this folder up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/poketracker</Config>
+  <Config Name="Setup token" Target="SETUP_TOKEN" Default="" Mode="" Description="Optional. A phrase you will type in on first visit to create the owner account. Leave blank to use a random one from the container log." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="Optional. The address people use to reach PokéTracker, e.g. https://cards.example.com if it sits behind a reverse proxy. Used in invite and share links." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User id that owns the data folder." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group id that owns the data folder." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Time zone" Target="TZ" Default="Europe/London" Mode="" Description="Time zone for scheduled jobs and logs." Type="Variable" Display="advanced" Required="false" Mask="false">Europe/London</Config>
+  <Config Name="Image cache (MB)" Target="IMAGE_CACHE_MB" Default="2048" Mode="" Description="Disk space for cached card images." Type="Variable" Display="advanced" Required="false" Mask="false">2048</Config>
+  <Config Name="Backups to keep" Target="BACKUPS_TO_KEEP" Default="7" Mode="" Description="Daily database backups kept in /data/backups." Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
+</Container>

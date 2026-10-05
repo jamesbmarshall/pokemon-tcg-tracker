@@ -1,0 +1,129 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.47.16.16243",
+      "templateHash": "13586941632561844598"
+    }
+  },
+  "parameters": {
+    "appName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 60,
+      "metadata": {
+        "description": "Globally unique name for the app. It becomes the web address: https://<name>.azurewebsites.net"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region. Defaults to the resource group's region."
+      }
+    },
+    "setupToken": {
+      "type": "securestring",
+      "minLength": 12,
+      "metadata": {
+        "description": "A secret phrase you choose now and type in when you first open the app, to create the owner account. It stops anyone else from claiming a freshly deployed instance. At least 12 characters."
+      }
+    },
+    "sku": {
+      "type": "string",
+      "defaultValue": "B1",
+      "allowedValues": [
+        "B1",
+        "B2",
+        "S1",
+        "P0v3",
+        "P1v3"
+      ],
+      "metadata": {
+        "description": "App Service plan size. B1 is plenty for a household; \"Always On\" keeps the background jobs running, so the Free tier is not offered."
+      }
+    },
+    "image": {
+      "type": "string",
+      "defaultValue": "ghcr.io/jamesbmarshall/pokemon-tcg-tracker:latest",
+      "metadata": {
+        "description": "Container image. Leave as is unless you are testing a specific version."
+      }
+    },
+    "registryUsername": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Only needed while the image is private: a GitHub username with access to it."
+      }
+    },
+    "registryPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Only needed while the image is private: a GitHub token with the read:packages scope."
+      }
+    },
+    "timeZone": {
+      "type": "string",
+      "defaultValue": "UTC",
+      "metadata": {
+        "description": "IANA time zone used for scheduled jobs and logs, e.g. Europe/London."
+      }
+    }
+  },
+  "variables": {
+    "usePrivateRegistry": "[and(not(empty(parameters('registryUsername'))), not(empty(parameters('registryPassword'))))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}-plan', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "kind": "linux",
+      "sku": {
+        "name": "[parameters('sku')]",
+        "capacity": 1
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('appName')]",
+      "location": "[parameters('location')]",
+      "kind": "app,linux,container",
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('appName')))]",
+        "httpsOnly": true,
+        "clientAffinityEnabled": false,
+        "siteConfig": {
+          "linuxFxVersion": "[format('DOCKER|{0}', parameters('image'))]",
+          "alwaysOn": true,
+          "http20Enabled": true,
+          "ftpsState": "Disabled",
+          "minTlsVersion": "1.2",
+          "healthCheckPath": "/health",
+          "appSettings": "[concat(createArray(createObject('name', 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', 'value', 'true'), createObject('name', 'WEBSITES_PORT', 'value', '3000'), createObject('name', 'WEBSITES_CONTAINER_START_TIME_LIMIT', 'value', '600'), createObject('name', 'DATA_DIR', 'value', '/home/poketracker'), createObject('name', 'PUBLIC_URL', 'value', format('https://{0}.azurewebsites.net', parameters('appName'))), createObject('name', 'TRUST_PROXY', 'value', 'true'), createObject('name', 'SQLITE_JOURNAL_MODE', 'value', 'delete'), createObject('name', 'SETUP_TOKEN', 'value', parameters('setupToken')), createObject('name', 'TZ', 'value', parameters('timeZone'))), if(variables('usePrivateRegistry'), createArray(createObject('name', 'DOCKER_REGISTRY_SERVER_URL', 'value', 'https://ghcr.io'), createObject('name', 'DOCKER_REGISTRY_SERVER_USERNAME', 'value', parameters('registryUsername')), createObject('name', 'DOCKER_REGISTRY_SERVER_PASSWORD', 'value', parameters('registryPassword'))), createArray()))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', format('{0}-plan', parameters('appName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "url": {
+      "type": "string",
+      "metadata": {
+        "description": "Open this address and enter your setup token to create the owner account."
+      },
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('appName')), '2023-12-01').defaultHostName)]"
+    }
+  }
+}

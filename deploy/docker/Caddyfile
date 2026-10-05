@@ -1,0 +1,22 @@
+# HTTPS for PokéTracker, with certificates from Let's Encrypt.
+#
+# Caddy requests a certificate for {$DOMAIN} on first start and renews it well before it
+# expires, with no cron jobs or certbot. Requirements: the domain's DNS points at this server, and
+# ports 80 and 443 are reachable from the internet (Let's Encrypt checks the domain over them).
+#
+# ACME_CA picks the certificate authority (docker-compose.yml defaults it to Let's Encrypt
+# production). While testing, put ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+# in .env to stay clear of Let's Encrypt's rate limits. Browsers distrust staging certificates,
+# so remove the line once everything works and run `docker compose up -d` again.
+{
+	acme_ca {$ACME_CA}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	# The app enforces its own, smaller upload limits; this is just an outer guard.
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy poketracker:3000
+}

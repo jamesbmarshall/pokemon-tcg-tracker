@@ -106,7 +106,7 @@ async function gh(ctx: Ctx, url: string) {
 
 export async function checkForUpdate(ctx: Ctx): Promise<UpdateState> {
   try {
-    const rel = (await gh(ctx, `https://api.github.com/repos/${ctx.config.githubRepo}/releases/latest`)) as {
+    const rel = (await gh(ctx, `${ctx.config.githubApi}/repos/${ctx.config.githubRepo}/releases/latest`)) as {
       tag_name: string;
       name: string;
       body: string;
