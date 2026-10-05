@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BookOpen, Heart, Layers, LayoutDashboard, RefreshCw, Search, Settings } from 'lucide-react';
+import { BookOpen, Heart, Layers, LayoutDashboard, RefreshCw, Search, Settings, ShieldCheck, UserRound } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
 import { relativeTime } from '../utils/format';
+import { isAdmin, useAuth } from '../store/authStore';
 import { Logo } from './ui';
 import CommandPalette from './CommandPalette';
 import Toaster from './Toaster';
@@ -45,10 +46,30 @@ function ValueBadge() {
   );
 }
 
+const sideLink = ({ isActive }: { isActive: boolean }) =>
+  `flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors ${isActive ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg'}`;
+
+function AccountLink() {
+  const user = useAuth((s) => s.user);
+  if (!user) return null;
+  return (
+    <NavLink to="/account" className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2 transition-colors ${isActive ? 'bg-surface-2' : 'hover:bg-surface'}`}>
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-surface-2 font-display text-sm font-semibold uppercase text-volt">
+        {user.displayName.slice(0, 1)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{user.displayName}</span>
+        <span className="block truncate font-mono text-[11px] text-faint">{user.username}</span>
+      </span>
+    </NavLink>
+  );
+}
+
 export default function Layout() {
   const [palette, setPalette] = useState(false);
   const { pathname } = useLocation();
   const wishCount = useCollectionStore((s) => s.wishlist.size);
+  const admin = useAuth((s) => isAdmin(s.user));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -117,15 +138,21 @@ export default function Layout() {
 
         <div className="mt-auto space-y-3">
           <ValueBadge />
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors ${isActive ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg'}`
-            }
-          >
-            <Settings size={17} />
-            Settings
-          </NavLink>
+          <div className="space-y-0.5">
+            <NavLink to="/settings" className={sideLink}>
+              <Settings size={17} />
+              Settings
+            </NavLink>
+            {admin && (
+              <NavLink to="/admin" className={sideLink}>
+                <ShieldCheck size={17} />
+                Admin
+              </NavLink>
+            )}
+          </div>
+          <div className="border-t border-line pt-3">
+            <AccountLink />
+          </div>
         </div>
       </aside>
 
@@ -144,6 +171,9 @@ export default function Layout() {
           <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Settings">
             <Settings size={19} />
           </Link>
+          <Link to="/account" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Account">
+            <UserRound size={19} />
+          </Link>
         </div>
       </header>
 
@@ -158,7 +188,7 @@ export default function Layout() {
           <a href="https://frankfurter.dev" target="_blank" rel="noreferrer" className="underline decoration-line-strong underline-offset-2 hover:text-muted">
             Frankfurter
           </a>
-          . Pokémon and card images © The Pokémon Company. Your collection is stored only in this browser.
+          . Pokémon and card images © The Pokémon Company.
         </footer>
       </main>
 

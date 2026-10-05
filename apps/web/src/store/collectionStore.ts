@@ -50,6 +50,8 @@ interface CollectionState {
   load: (collectionId?: string) => Promise<void>;
   /** Reloads the current collection from the server. */
   refresh: () => Promise<void>;
+  /** Forgets everything held locally (on sign-out), without touching the server. */
+  reset: () => void;
   /** Shows a collection loaded elsewhere (e.g. a public share), read-only. */
   show: (data: Partial<Pick<CollectionState, 'entries' | 'graded' | 'cards' | 'wishlist' | 'notes' | 'history' | 'lists' | 'setStats'>> & { collectionId: string }) => void;
   remember: (cards: CardLike[]) => Promise<void>;
@@ -259,6 +261,12 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         .status()
         .then((s) => set({ lastSync: s.lastPriceSync }))
         .catch(() => undefined);
+    },
+
+    reset: () => {
+      loadSeq++;
+      clearTimeout(valueTimer);
+      set({ ...EMPTY, isLoaded: false, loadError: null, collectionId: null, role: null, readOnly: false, collections: [], cards: new Map(), setStats: new Map(), syncing: false, lastSync: null });
     },
 
     refresh: async () => {

@@ -3,6 +3,10 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { setBackend } from '../api/backend';
 import { resetMemoryBackend } from './memoryBackend';
+import { useAuth, type User } from '../store/authStore';
+
+/** Tests run signed in as the owner unless they say otherwise. */
+export const TEST_USER: User = { id: 'u-owner', username: 'ash', displayName: 'Ash', role: 'owner', totpEnabled: false };
 
 class MockIntersectionObserver {
   readonly root = null;
@@ -45,6 +49,7 @@ installBrowserStubs();
 beforeEach(() => {
   installBrowserStubs();
   setBackend(resetMemoryBackend());
+  useAuth.setState({ status: 'ready', user: TEST_USER, error: null });
   // Default network: fail loudly so tests that forget to mock fetch don't hit the real API.
   vi.stubGlobal(
     'fetch',

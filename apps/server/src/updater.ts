@@ -36,7 +36,19 @@ export interface UpdateState {
 export interface LauncherState {
   active?: string;
   previous?: string;
-  last?: { from?: string; to?: string; ok: boolean; at: string; message?: string; rolledBack?: boolean };
+  last?: { from?: string; to?: string; ok: boolean; at: string; message?: string; rolledBack?: boolean; restoredDb?: boolean; kind?: 'update' | 'rollback' | 'image' };
+}
+
+/**
+ * Auto-update must not undo the owner's decision or retry a known-bad release every night:
+ * skip a version the owner rolled back from, or one that failed its health check.
+ */
+export function autoUpdateBlockedFor(ctx: Ctx, version: string): boolean {
+  const last = readLauncherState(ctx).last;
+  if (!last) return false;
+  if (last.kind === 'rollback' && last.ok && last.from === version) return true;
+  if (!last.ok && last.to === version) return true;
+  return false;
 }
 
 const appDir = (ctx: Ctx) => join(ctx.config.dataDir, 'app');

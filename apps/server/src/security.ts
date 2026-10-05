@@ -80,14 +80,4 @@ export const dummyVerify = async (password: string) => {
   return false;
 };
 
-export const PASSWORD_MIN = 10;
-export const PASSWORD_MAX = 256;
-
-export function passwordProblem(password: unknown, username = ''): string | undefined {
-  if (typeof password !== 'string') return 'Password is required';
-  if (password.length < PASSWORD_MIN) return `Use at least ${PASSWORD_MIN} characters`;
-  if (password.length > PASSWORD_MAX) return 'Password is too long';
-  if (username && password.toLowerCase().includes(username.toLowerCase())) return "Password can't contain your username";
-  if (/^(.)\1+$/.test(password)) return 'Password is too simple';
-  return undefined;
-}
+export { PASSWORD_MAX, PASSWORD_MIN, passwordProblem } from '@poketracker/shared/accounts';

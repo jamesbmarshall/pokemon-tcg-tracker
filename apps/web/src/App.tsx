@@ -11,6 +11,11 @@ import CollectionPage from './pages/CollectionPage';
 import WishlistPage from './pages/WishlistPage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
+import AccountPage from './pages/AccountPage';
+import AdminPage from './pages/AdminPage';
+import { AuthShell, InvitePage, LoginPage, ResetPage, SetupPage } from './pages/AuthPages';
+import { useAuth } from './store/authStore';
+import { Logo } from './components/ui';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,11 +28,12 @@ function LegacySetRedirect() {
   return <Navigate to={`/sets/${setId}`} replace />;
 }
 
-function AppInner() {
+function SignedInApp() {
   const load = useCollectionStore((s) => s.load);
+  const userId = useAuth((s) => s.user?.id);
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (userId) void load();
+  }, [load, userId]);
 
   return (
     <Routes>
@@ -40,11 +46,65 @@ function AppInner() {
         <Route path="wishlist" element={<WishlistPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="account" element={<AccountPage />} />
+        <Route path="admin" element={<AdminPage />} />
         <Route path="browse" element={<Navigate to="/sets" replace />} />
         <Route path="browse/:setId" element={<LegacySetRedirect />} />
         <Route path="binder" element={<Navigate to="/collection?view=binder" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
+    </Routes>
+  );
+}
+
+function Splash() {
+  return (
+    <div className="grid min-h-dvh place-items-center" aria-busy="true" aria-label="Loading">
+      <div className="animate-pulse">
+        <Logo size={40} />
+      </div>
+    </div>
+  );
+}
+
+/** Shows whatever the session calls for: first-run setup, sign-in, or the app itself. */
+function Gate() {
+  const status = useAuth((s) => s.status);
+  const error = useAuth((s) => s.error);
+  const init = useAuth((s) => s.init);
+  switch (status) {
+    case 'loading':
+      return <Splash />;
+    case 'offline':
+      return (
+        <AuthShell title="Can't reach PokéTracker" intro={error ?? 'The server is unavailable.'}>
+          <p className="text-sm text-muted">If it's just been updated or restarted, give it a minute.</p>
+          <button className="btn btn-primary mt-5 w-full" onClick={() => void init()}>
+            Try again
+          </button>
+        </AuthShell>
+      );
+    case 'setup':
+      return <SetupPage />;
+    case 'signed-out':
+    case 'mfa':
+      return <LoginPage />;
+    case 'ready':
+      return <SignedInApp />;
+  }
+}
+
+function AppInner() {
+  const init = useAuth((s) => s.init);
+  useEffect(() => {
+    if (useAuth.getState().status === 'loading') void init();
+  }, [init]);
+
+  return (
+    <Routes>
+      <Route path="invite/:token" element={<InvitePage />} />
+      <Route path="reset/:token" element={<ResetPage />} />
+      <Route path="*" element={<Gate />} />
     </Routes>
   );
 }

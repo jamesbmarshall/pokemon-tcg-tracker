@@ -8,6 +8,9 @@ import { makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
 import { useCollectionStore } from '../store/collectionStore';
 import { useSettings } from '../store/settingsStore';
 import { useToasts } from '../store/toastStore';
+import { useAuth } from '../store/authStore';
+import { TEST_USER } from '../test/setup';
+import { mockApi } from '../test/apiMock';
 
 interface Download {
   name: string;
@@ -264,4 +267,32 @@ describe('SettingsPage', () => {
     expect(rows[2]).toMatch(/,120\.00,GBP,$/);
   });
 
+});
+
+describe('server and updates', () => {
+  const update = { current: '1.2.0', launcherVersion: '1', canUpdate: true, blocker: null, autoUpdate: false, available: false, latest: null, checkedAt: null, error: null, applying: false, progress: null, launcher: {} };
+
+  it('gives the owner the update controls and the admin area', async () => {
+    mockApi({ 'GET /api/system/update': update });
+    renderWithProviders(<SettingsPage />);
+    expect(screen.getByRole('heading', { name: 'Updates' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /check now/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /users, invites/i })).toHaveAttribute('href', '/admin');
+    expect(await screen.findByText('test')).toBeInTheDocument();
+  });
+
+  it('gives admins the admin area but not updates', () => {
+    useAuth.setState({ user: { ...TEST_USER, role: 'admin' } });
+    renderWithProviders(<SettingsPage />);
+    expect(screen.queryByRole('heading', { name: 'Updates' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /users, invites/i })).toBeInTheDocument();
+  });
+
+  it('shows members the version only', () => {
+    useAuth.setState({ user: { ...TEST_USER, role: 'member' } });
+    renderWithProviders(<SettingsPage />);
+    expect(screen.getByRole('heading', { name: 'Server' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Updates' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /users, invites/i })).not.toBeInTheDocument();
+  });
 });

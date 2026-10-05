@@ -6,7 +6,7 @@ import type { Ctx } from './context.ts';
 import { readCards, recordValue, refreshCards, trackedCardIds } from './cards.ts';
 import { cachedUpstream, ensureImage, pruneHttpCache, pruneImages, refreshFx, ttlFor } from './catalog.ts';
 import { deletePhotoFiles } from './collections.ts';
-import { applyUpdate, autoUpdateEnabled, checkForUpdate, pruneVersions, updateAvailable, updateBlocker } from './updater.ts';
+import { applyUpdate, autoUpdateBlockedFor, autoUpdateEnabled, checkForUpdate, pruneVersions, updateAvailable, updateBlocker } from './updater.ts';
 
 interface JobDef {
   name: string;
@@ -135,7 +135,7 @@ export const JOBS: JobDef[] = [
       const s = await checkForUpdate(ctx);
       if (s.error) throw new Error(s.error);
       const available = updateAvailable(ctx, s);
-      if (available && autoUpdateEnabled(ctx) && !updateBlocker(ctx)) {
+      if (available && autoUpdateEnabled(ctx) && !updateBlocker(ctx) && !autoUpdateBlockedFor(ctx, s.latest!.version)) {
         await applyUpdate(ctx, 'auto');
         return { available, latest: s.latest?.version, applied: true };
       }

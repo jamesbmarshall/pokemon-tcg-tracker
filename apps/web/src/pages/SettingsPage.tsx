@@ -1,5 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { Download, FileJson, FileSpreadsheet, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { Download, FileJson, FileSpreadsheet, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { getBackend } from '../api/backend';
+import { isAdmin, useAuth } from '../store/authStore';
+import UpdatesSection from '../components/UpdatesSection';
 import { computeValue, gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
 import { useSettings, type Currency } from '../store/settingsStore';
 import { useMoney, useRates } from '../hooks/useMoney';
@@ -51,6 +56,8 @@ export default function SettingsPage() {
   const lists = useCollectionStore((s) => s.lists);
   const readOnly = useCollectionStore((s) => s.readOnly);
   const role = useCollectionStore((s) => s.role);
+  const user = useAuth((s) => s.user);
+  const { data: status } = useQuery({ queryKey: ['system', 'status'], queryFn: () => getBackend().status(), staleTime: 60_000 });
   const { data: rates } = useRates();
   const money = useMoney();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -174,6 +181,24 @@ export default function SettingsPage() {
           </p>
         )}
       </Section>
+
+      <Section title="Server" description="This PokéTracker server and who can use it.">
+        <p className="text-sm text-muted">
+          Version <b className="font-mono text-fg">{status?.version ?? '…'}</b>
+          {status?.updateAvailable && status.latest && user?.role !== 'owner' && <> · version {status.latest} is available; the owner can install it.</>}
+        </p>
+        {isAdmin(user) && (
+          <Link to="/admin" className="btn btn-ghost mt-3">
+            <ShieldCheck size={15} /> Users, invites, jobs & backups
+          </Link>
+        )}
+      </Section>
+
+      {user?.role === 'owner' && (
+        <Section title="Updates" description="Install new versions of PokéTracker from here. Your data is backed up first, and a version that won't start is undone automatically.">
+          <UpdatesSection />
+        </Section>
+      )}
 
       <Section title="Data source" description="Where card data comes from.">
         <p className="text-sm leading-relaxed text-muted">

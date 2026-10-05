@@ -160,6 +160,7 @@ export function Segmented<T extends string | number>({
       {options.map((o) => (
         <button
           key={String(o.value)}
+          type="button"
           role="radio"
           aria-checked={value === o.value}
           title={o.title}

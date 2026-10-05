@@ -4,6 +4,8 @@ import QRCode from 'qrcode';
 import { audit, bad, forbidden, HttpError, inDays, Limiter, now, requireRole, requireUser, str, type Ctx, type Role, type SessionUser } from './context.ts';
 import { dummyVerify, hashPassword, newId, passwordProblem, randomToken, safeEqual, sha256, verifyPassword } from './security.ts';
 
+import { USERNAME, USERNAME_HINT } from '@poketracker/shared/accounts';
+
 export const SESSION_COOKIE = 'pt_session';
 const SESSION_DAYS = 30;
 const MFA_PENDING_MINUTES = 5;
@@ -36,11 +38,10 @@ export const toSessionUser = (u: UserRow): SessionUser => ({
   totpEnabled: !!u.totp_enabled,
 });
 
-const USERNAME = /^[a-z0-9][a-z0-9._-]{1,31}$/i;
 
 function validUsername(v: unknown): string {
   const u = str(v, 64);
-  if (!USERNAME.test(u)) throw bad('Usernames are 2–32 letters, numbers, dots, dashes or underscores', 'invalid_username');
+  if (!USERNAME.test(u)) throw bad(USERNAME_HINT, 'invalid_username');
   return u;
 }
 
