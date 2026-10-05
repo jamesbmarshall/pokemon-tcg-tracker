@@ -9,8 +9,25 @@ import { fromEnglishCategory, fromEnglishType, splitId, toEnglishCategory, toEng
 
 export type { Lang } from './languages';
 
-const API = 'https://api.tcgdex.net/v2';
-const GRAPHQL = 'https://api.tcgdex.net/v2/graphql';
+export const TCGDEX_API = 'https://api.tcgdex.net/v2';
+
+let API = TCGDEX_API;
+let GRAPHQL = `${TCGDEX_API}/graphql`;
+let extraHeaders: () => Record<string, string> = () => ({});
+let eurRate: () => number = () => 0.89;
+
+/**
+ * The browser talks to TCGdex through the app server (which caches responses); the server
+ * talks to TCGdex directly. `base` is the equivalent of https://api.tcgdex.net/v2.
+ */
+export function configureCatalog(opts: { base?: string; headers?: () => Record<string, string>; eurPerUsd?: () => number }) {
+  if (opts.base) {
+    API = opts.base.replace(/\/$/, '');
+    GRAPHQL = `${API}/graphql`;
+  }
+  if (opts.headers) extraHeaders = opts.headers;
+  if (opts.eurPerUsd) eurRate = opts.eurPerUsd;
+}
 /** TCG Pocket (the mobile game) shares the catalogue; it isn't physical cards. */
 const DIGITAL_SERIES = new Set(['tcgp']);
 
@@ -22,7 +39,8 @@ async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSig
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await fetch(url, { ...init, signal });
+      const headers = { ...extraHeaders(), ...(init.headers as Record<string, string> | undefined) };
+      res = await fetch(url, { ...init, headers, signal });
     } catch (err) {
       if (signal?.aborted || attempt >= 3) throw err;
       await backoff(attempt);
@@ -38,7 +56,7 @@ async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSig
 }
 
 export function rest<T>(path: string, params?: Record<string, string>, signal?: AbortSignal, lang: Lang = 'en'): Promise<T> {
-  const url = new URL(`${API}/${lang}${path}`);
+  const url = new URL(`${API}/${lang}${path}`, typeof location !== 'undefined' ? location.href : undefined);
   if (params) for (const [k, v] of Object.entries(params)) url.searchParams.append(k, v);
   return request<T>(url.toString(), {}, signal);
 }
@@ -290,11 +308,8 @@ function toCardmarket(raw: NonNullable<RawCard['pricing']>['cardmarket'], varian
 }
 
 function eurPerUsd(): number {
-  try {
-    return JSON.parse(localStorage.getItem('poketracker-fx') ?? 'null')?.rates?.EUR || 0.89;
-  } catch {
-    return 0.89;
-  }
+  const r = eurRate();
+  return r > 0 ? r : 0.89;
 }
 
 /** Best single market price per variant in USD: TCGplayer, falling back to converted Cardmarket. */

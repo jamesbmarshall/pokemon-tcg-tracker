@@ -1,0 +1,29 @@
+{
+  "name": "@poketracker/server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --experimental-strip-types --disable-warning=ExperimentalWarning scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/helmet": "^13.0.1",
+    "@fastify/multipart": "^9.0.3",
+    "@fastify/static": "^8.2.0",
+    "@poketracker/shared": "*",
+    "croner": "^9.1.0",
+    "fastify": "^5.4.0",
+    "hash-wasm": "^4.12.0",
+    "otpauth": "^9.4.0",
+    "qrcode": "^1.5.4",
+    "tar": "^7.4.3"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "esbuild": "^0.25.8",
+    "tsx": "^4.20.3"
+  }
+}

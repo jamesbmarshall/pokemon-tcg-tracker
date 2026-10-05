@@ -26,3 +26,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Server runtime data (local dev)
+/data
+apps/*/dist
+release/

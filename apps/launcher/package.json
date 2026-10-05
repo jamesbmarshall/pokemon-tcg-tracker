@@ -1,0 +1,10 @@
+{
+  "name": "@poketracker/launcher",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Supervisor baked into the container image. Runs the active app bundle, health-gates updates and rolls back.",
+  "scripts": {
+    "test": "vitest run"
+  }
+}
