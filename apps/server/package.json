@@ -4,9 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node --watch --experimental-strip-types --disable-warning=ExperimentalWarning scripts/dev.mjs",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "build": "node scripts/build.mjs",
-    "test": "vitest run"
+    "start": "node --disable-warning=ExperimentalWarning dist/server.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
