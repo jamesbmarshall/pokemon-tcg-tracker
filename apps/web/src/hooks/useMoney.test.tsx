@@ -30,7 +30,8 @@ describe('useMoney', () => {
     const { result } = renderHook(() => useMoney(), { wrapper });
     expect(result.current(1234.56)).toBe('US$1,234.56');
     expect(result.current(1234.56, { compact: true })).toBe('US$1,235');
-    expect(result.current(25000, { compact: true })).toBe('US$25K');
+    // The compact suffix's case depends on the ICU version (25K on macOS, 25k on some Linux builds).
+    expect(result.current(25000, { compact: true })).toMatch(/^US\$25K$/i);
     expect(result.current(50, { compact: true })).toBe('US$50.00');
   });
 
