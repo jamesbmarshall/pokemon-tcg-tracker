@@ -1,3 +1,10 @@
+/**
+ * App shell: React Query client, router, and the auth gate.
+ *
+ * Token links (invites, password resets, public shares) are routed before the gate so they work
+ * without a session. Everything else waits for authStore to decide between setup, sign-in and the
+ * signed-in app.
+ */
 import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -20,12 +27,15 @@ import { AuthShell, InvitePage, LoginPage, ResetPage, SetupPage } from './pages/
 import { useAuth } from './store/authStore';
 import { Logo } from './components/ui';
 
+// Catalogue queries retry with backoff because upstream TCGdex hiccups are common and transient.
+// Focus refetching is off: the data changes rarely and a refetch would hit the server for nothing.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 2, retryDelay: (n) => Math.min(1000 * 2 ** n, 6000), refetchOnWindowFocus: false },
   },
 });
 
+// Old /browse/:setId bookmarks from before the routes were renamed.
 function LegacySetRedirect() {
   const { setId } = useParams();
   return <Navigate to={`/sets/${setId}`} replace />;
@@ -34,6 +44,7 @@ function LegacySetRedirect() {
 function SignedInApp() {
   const load = useCollectionStore((s) => s.load);
   const userId = useAuth((s) => s.user?.id);
+  // Keyed on the user id so signing in as someone else loads their collection, not the cached one.
   useEffect(() => {
     if (userId) void load();
   }, [load, userId]);
@@ -103,6 +114,7 @@ function Gate() {
 
 function AppInner() {
   const init = useAuth((s) => s.init);
+  // Guarded so StrictMode's double effect and remounts don't restart an auth check already done.
   useEffect(() => {
     if (useAuth.getState().status === 'loading') void init();
   }, [init]);

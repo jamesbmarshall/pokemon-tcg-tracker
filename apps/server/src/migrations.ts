@@ -1,9 +1,15 @@
 /**
  * Append-only list of schema migrations. Never edit a shipped entry; add a new one.
  * The updater takes a backup before starting a version that will apply new migrations.
+ *
+ * Migrations must be additive (new tables, new nullable or defaulted columns, new indexes).
+ * After a rollback the launcher runs the previous version's code against this database, and
+ * only a failed health check restores the pre-update backup. A manual rollback, a crash-loop
+ * rollback or a rollback to an older image all keep the migrated schema, so older code must
+ * still work with it. Renames, drops and tighter constraints need a multi-release plan.
  */
 export const MIGRATIONS: string[] = [
-  /* 1: initial schema */ `
+  /* 1: initial schema. Collections own all card data; users reach them as owner or member. */ `
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
   CREATE TABLE users (

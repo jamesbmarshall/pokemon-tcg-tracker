@@ -1,3 +1,7 @@
+/**
+ * Domain types shared by the server and the web app. The card and set shapes follow the old
+ * pokemontcg.io field names, which the UI was built on; catalog.ts maps TCGdex responses onto them.
+ */
 export type PriceBlock = { low?: number; mid?: number; high?: number; market?: number; directLow?: number };
 
 export interface PokemonCard {
@@ -93,6 +97,7 @@ export interface Paid {
   currency: 'USD' | 'GBP' | 'EUR';
 }
 
+/** Raw (ungraded) copies of one printing of a card. Graded copies are tracked as GradedCopy. */
 export interface CollectionEntry {
   id: string; // `${cardId}::${variant}`
   cardId: string;
@@ -200,6 +205,10 @@ export interface GradedCopy {
   updatedAt?: string;
 }
 
+/**
+ * Photo of a slab, from the IndexedDB era. Photos now live on the server (see PhotoRef in the web
+ * app); the type remains for its `side` union and the store's undo signature.
+ */
 export interface GradedPhoto {
   id: string;
   gradedId: string;

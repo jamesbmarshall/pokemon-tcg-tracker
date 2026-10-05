@@ -1,3 +1,8 @@
+/**
+ * Display preferences, persisted to localStorage so the first paint uses them before the server
+ * responds. Most fields are also synced per user by authStore (see startPrefSync), so the
+ * server copy wins once signed in.
+ */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -11,6 +16,7 @@ interface SettingsState {
   setView: 'grid' | 'binder';
   setMode: SetMode;
   quickAdd: boolean;
+  /** Free-form per-page view choices (sort order, filters) keyed by page, so new pages need no schema change. */
   viewPrefs: Record<string, string>;
   setCurrency: (c: Currency) => void;
   setPocketSize: (n: 9 | 12) => void;

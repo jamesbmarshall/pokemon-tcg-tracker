@@ -1,3 +1,8 @@
+/**
+ * Server entry point (bundled by esbuild into server.mjs). Opens and migrates the database,
+ * starts HTTP, prints the first-run setup token and starts the job scheduler. Normally run by
+ * the launcher, which restarts us when we exit with RESTART_CODE after staging an update.
+ */
 import { join } from 'node:path';
 import { loadConfig } from './config.ts';
 import { Db } from './db.ts';
@@ -12,6 +17,8 @@ import { settleUpdateState } from './updater.ts';
 async function main() {
   const config = loadConfig();
   const db = new Db(join(config.dataDir, 'poketracker.db'), config.journalMode);
+  // Migrate before anything reads the schema. A failure here exits non-zero before /health is
+  // up, which is what lets the launcher roll a bad update back.
   const applied = db.migrate();
   const sealer = new Sealer(loadInstanceKey(join(config.dataDir, 'secret.key'), process.env.SECRET_KEY));
 
@@ -22,6 +29,8 @@ async function main() {
   initCatalog(ctx);
   settleUpdateState(ctx);
 
+  // Stop jobs first so none start a write mid-shutdown, then drain HTTP, then close the DB.
+  // The finally makes sure we still exit with the requested code if closing the app throws.
   const shutdown = async (code = 0) => {
     exitCode = code;
     stopJobs();
@@ -64,6 +73,7 @@ async function main() {
     process.stdout.write(banner + '\n');
   }
 
+  // Started last so catch-up jobs never compete with migrations or a half-started server.
   if (config.jobs) stopJobs = startScheduler(ctx);
 }
 

@@ -1,3 +1,10 @@
+/**
+ * React Query hooks for catalogue data (sets, cards, search, printings, rarities).
+ *
+ * Catalogue data is shared reference data, not user state, so it lives in the React Query
+ * cache rather than collectionStore. Requests go through the server's TCGdex proxy once
+ * configureForServer() has run.
+ */
 import { useEffect } from 'react';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { getCard, getPrintings, getRarities, getSet, getSetCards, getSets, primeSets, searchCards, type SearchFilters } from './client';
@@ -22,6 +29,8 @@ function cachedSets(lang: Lang = 'en'): { at: number; data: CardSet[] } | undefi
   }
 }
 
+// Seed the catalogue client's in-memory set index at import time, so card lookups that need
+// set metadata work before the first sets request finishes.
 for (const { code } of LANGUAGES) primeSets(cachedSets(code)?.data, code);
 
 // The set list rarely changes, so keep a local copy for instant loads and API outages.
@@ -33,7 +42,7 @@ export function useSets(lang: Lang = 'en') {
       try {
         localStorage.setItem(cacheKey(lang), JSON.stringify({ at: Date.now(), data }));
       } catch {
-        /* storage full — non-fatal */
+        /* storage full: non-fatal */
       }
       return data;
     },
@@ -47,6 +56,11 @@ export function useSet(setId: string) {
   return useQuery({ queryKey: ['set', setId], queryFn: () => getSet(setId), staleTime: 6 * HOUR, enabled: !!setId });
 }
 
+/**
+ * Loads a set's cards and, as a side effect, records the master-set total (every variant of
+ * every card) on the server. Progress bars elsewhere use that stored total so they don't need to
+ * load each set's card list.
+ */
 export function useSetCards(setId: string) {
   const recordSetStat = useCollectionStore((s) => s.recordSetStat);
   const q = useQuery({

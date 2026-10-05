@@ -1,3 +1,10 @@
+/**
+ * Admin console for owners and admins: users, invites, background jobs and storage, backups
+ * (owner only) and the audit log.
+ *
+ * What each role may do is decided by the server; the checks here (canManage, owner-only tabs and
+ * controls) just avoid offering actions that would be refused.
+ */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
@@ -59,6 +66,10 @@ const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', admin: 'Admin', membe
 
 // ---------------------------------------------------------------- users
 
+/**
+ * Mirrors the server's hierarchy: nobody manages themselves or the owner, and admins can only
+ * manage members. Self-management is excluded so an admin can't lock themselves out by accident.
+ */
 function canManage(actor: User, target: AdminUser) {
   return actor.id !== target.id && target.role !== 'owner' && (actor.role === 'owner' || target.role === 'member');
 }
@@ -67,6 +78,7 @@ function ResetLinkDialog({ target, onClose }: { target: AdminUser; onClose: () =
   const [clearTotp, setClearTotp] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const { busy, error, onSubmit } = useSubmit(async () => {
+    // The link is only returned once; the server keeps a hash of the token, not the link itself.
     const r = await api<{ link: string }>(`/api/admin/users/${target.id}/reset`, { method: 'POST', body: { clearTotp } });
     setLink(r.link);
   });
@@ -108,6 +120,7 @@ function UsersTab({ me }: { me: User }) {
   const { data, isPending, error } = useQuery({ queryKey: ['admin', 'users'], queryFn: () => api<AdminUser[]>('/api/admin/users') });
   const [dialog, setDialog] = useState<{ kind: 'reset' | 'delete' | 'owner'; user: AdminUser } | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+  // Refetches even on failure, so the table never shows a change the server rejected.
   const patch = async (u: AdminUser, body: Record<string, unknown>, done: string) => {
     try {
       await api(`/api/admin/users/${u.id}`, { method: 'PATCH', body });
@@ -222,6 +235,7 @@ function UsersTab({ me }: { me: User }) {
           onClose={() => setDialog(null)}
           onConfirm={async (password) => {
             await api(`/api/admin/users/${dialog.user.id}/transfer-ownership`, { method: 'POST', body: { password } });
+            // The current user has just been demoted to admin; reload their role so owner-only UI goes away.
             await useAuth.getState().refreshUser();
             toast(`${dialog.user.displayName} is now the owner. You're an admin.`);
             await refresh();
@@ -236,6 +250,7 @@ function UsersTab({ me }: { me: User }) {
 
 // ---------------------------------------------------------------- invites
 
+// Precedence matters: a used invite reads as used even if it has since expired.
 function inviteState(i: Invite): { tone: 'good' | 'warn' | 'bad' | 'muted'; label: string } {
   if (i.usedAt) return { tone: 'muted', label: `Used by ${i.usedBy ?? 'someone'}` };
   if (i.revokedAt) return { tone: 'bad', label: 'Revoked' };
@@ -246,6 +261,7 @@ function inviteState(i: Invite): { tone: 'good' | 'warn' | 'bad' | 'muted'; labe
 function InvitesTab({ me }: { me: User }) {
   const qc = useQueryClient();
   const { data, isPending } = useQuery({ queryKey: ['admin', 'invites'], queryFn: () => api<Invite[]>('/api/admin/invites') });
+  // Only owners see the role picker, so admins always send 'member' (the server enforces the same).
   const [role, setRole] = useState<'member' | 'admin'>('member');
   const [days, setDays] = useState(7);
   const [note, setNote] = useState('');
@@ -339,6 +355,7 @@ function InvitesTab({ me }: { me: User }) {
 
 function JobsTab({ me }: { me: User }) {
   const qc = useQueryClient();
+  // Poll quickly while something is running so the status pill updates, slowly otherwise.
   const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/api/admin/jobs'), refetchInterval: (q) => (q.state.data?.some((j) => j.running) ? 2000 : 30000) });
   const storage = useQuery({ queryKey: ['admin', 'storage'], queryFn: () => api<{ dbBytes: number; images: { count: number; bytes: number; capBytes: number }; backups: number }>('/api/admin/storage') });
   const run = async (j: Job) => {
@@ -378,6 +395,7 @@ function JobsTab({ me }: { me: User }) {
               </p>
               {j.lastStatus === 'error' && j.lastError && <p className="mt-1 break-words font-mono text-[11px] text-loss">{j.lastError}</p>}
             </div>
+            {/* Updates are owner-only, so admins can't trigger the update check by hand. */}
             {(j.name !== 'update-check' || me.role === 'owner') && (
               <button className="btn btn-ghost !h-8 !px-3 text-xs" disabled={j.running} onClick={() => void run(j)}>
                 {j.running ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />} Run now
@@ -411,6 +429,8 @@ function JobsTab({ me }: { me: User }) {
 }
 
 // ---------------------------------------------------------------- backups (owner)
+
+// Backups hold every user's data and password hashes, so the server limits them to the owner.
 
 function BackupsTab() {
   const qc = useQueryClient();
@@ -448,6 +468,7 @@ function BackupsTab() {
                   {KIND[b.kind]} · {formatDate(b.createdAt)} ({relativeTime(b.createdAt)}) · {bytes(b.size)}
                 </p>
               </div>
+              {/* A plain link so the browser streams the file to disk; GETs need no CSRF header. */}
               <a className="btn btn-ghost !h-8 !px-3 text-xs" href={`/api/admin/backups/${encodeURIComponent(b.name)}`} download>
                 <Download size={13} /> Download
               </a>
@@ -476,6 +497,8 @@ function BackupsTab() {
 
 // ---------------------------------------------------------------- audit
 
+// Friendly names for audit actions. Unknown actions fall back to the raw key, so a new server
+// action shows up (less readably) without a web change.
 const ACTION_LABEL: Record<string, string> = {
   'setup.owner_created': 'Server set up',
   'auth.login': 'Signed in',

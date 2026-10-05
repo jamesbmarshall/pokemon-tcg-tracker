@@ -4,17 +4,23 @@ import type { Ctx } from './context.ts';
 type Remap = (raw: unknown) => unknown;
 
 /**
+ * Import-time migration of legacy collection backups. Runs only on import, never against the
+ * database, so the stored data is always in the current id scheme.
+ *
  * Old backups (pokemontcg.io era) use different card ids and variant keys. Builds a
  * function that rewrites a raw imported record onto TCGdex ids. Only legacy-looking
  * set prefixes trigger network lookups, so modern exports import without any.
+ * If resolution fails the import still goes ahead with the ids it could not map left as-is.
  */
 export async function migrateImport(ctx: Ctx, entries: unknown[], wishlist: unknown[]): Promise<{ remap: Remap; readonly remapped: number }> {
   const ids = new Set<string>();
   const names = new Map<string, string>();
   for (const r of [...entries, ...wishlist]) {
+    // Raw JSON from a user's file: check every field's type before trusting it.
     const o = r as { cardId?: unknown; name?: unknown };
     if (typeof o?.cardId === 'string' && isLegacyId(o.cardId)) {
       ids.add(o.cardId);
+      // Names break ties when several TCGdex cards share the legacy card number.
       if (typeof o.name === 'string') names.set(o.cardId, o.name);
     }
   }
@@ -33,6 +39,7 @@ export async function migrateImport(ctx: Ctx, entries: unknown[], wishlist: unkn
     const cardId = typeof o.cardId === 'string' ? (map.get(o.cardId) ?? o.cardId) : o.cardId;
     const variant = typeof o.variant === 'string' ? migrateVariant(o.variant) : o.variant;
     if (cardId === o.cardId && variant === o.variant) return raw;
+    // Copy rather than mutate, so the caller's parsed input stays untouched.
     remapped++;
     return { ...o, cardId, variant };
   };

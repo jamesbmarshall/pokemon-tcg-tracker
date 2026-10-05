@@ -1,3 +1,7 @@
+/**
+ * Translates data from the pokemontcg.io era (card ids and variant names) to TCGdex. Used when
+ * importing old backups, which may predate the switch of catalogue provider.
+ */
 import { getSetCards, setIdFromCardId } from './catalog';
 import { LEGACY_SET_MAP } from './legacySets';
 
@@ -46,6 +50,8 @@ export async function resolveLegacyIds(ids: string[], names: Map<string, string>
         map.set(oldId, oldId);
         continue;
       }
+      // No exact id: match on card number, using the name to choose between duplicates (some
+      // sets reuse a number for different cards), else take the first hit.
       const wanted = normNumber(oldId.slice(legacySet.length + 1));
       const hits = cards.filter((c) => normNumber(c.number) === wanted);
       const name = names.get(oldId)?.toLowerCase();

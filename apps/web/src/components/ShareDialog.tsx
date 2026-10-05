@@ -1,3 +1,10 @@
+/**
+ * Share-link creation dialog, the per-link row used here and on the Sharing page, and the Share
+ * button that opens the dialog.
+ *
+ * The privacy toggles are stored on the share and applied by the server when the link is opened:
+ * hidden fields are stripped from the response, not merely hidden by the viewer's UI.
+ */
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, Eye, Link2, Share2, Trash2 } from 'lucide-react';
@@ -10,6 +17,7 @@ import { CopyField, FormError, Modal, StatusPill } from './forms';
 import { errorText, useSubmit } from './formUtils';
 import { Segmented } from './ui';
 
+// 0 means no expiry; it is sent as undefined so the server stores null.
 const EXPIRY = [
   { value: 0, label: 'Never' },
   { value: 1, label: '1 day' },
@@ -29,6 +37,7 @@ export function ShareRow({ share, showWhat }: { share: Share; showWhat?: boolean
   const revoke = useMutation({ mutationFn: () => sharing.revoke(share.id), onSuccess: () => done('Link revoked'), onError: (e) => toast(errorText(e), { tone: 'error' }) });
   const remove = useMutation({ mutationFn: () => sharing.remove(share.id), onSuccess: () => done('Link deleted'), onError: (e) => toast(errorText(e), { tone: 'error' }) });
   const hidden = [share.hidePaid && 'what you paid', share.hideValue && 'values', share.hideNotes && 'notes'].filter(Boolean);
+  // Revocation wins over expiry: a revoked link that has also passed its date still reads "Revoked".
   const state = share.revokedAt ? 'Revoked' : share.active ? 'Active' : 'Expired';
 
   return (
@@ -87,6 +96,7 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
   const [audience, setAudience] = useState<ShareAudience>('public');
   const [userIds, setUserIds] = useState<string[]>([]);
   const [title, setTitle] = useState('');
+  // Private-by-default: purchase prices and notes are personal, market values usually aren't.
   const [hidePaid, setHidePaid] = useState(true);
   const [hideValue, setHideValue] = useState(false);
   const [hideNotes, setHideNotes] = useState(true);
@@ -95,6 +105,8 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
   const shares = useQuery({ queryKey: SHARES_KEY, queryFn: sharing.mine });
   const users = useQuery({ queryKey: ['users'], queryFn: sharing.users, enabled: audience === 'users' });
   const others = users.data?.filter((u) => u.id !== me) ?? [];
+  // Links already made for exactly this scope and target, so the owner can reuse or revoke them
+  // instead of piling up duplicates. Null and undefined targets are treated as the same.
   const existing = (shares.data ?? []).filter((s) => s.collectionId === collectionId && s.scope === scope && (s.target ?? undefined) === target);
 
   const { busy, error, onSubmit } = useSubmit(async () => {
@@ -109,6 +121,7 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
       hideValue,
       hideNotes,
       expiresInDays: days || undefined,
+      // Ticked people are kept in state if the audience changes, so only send them for 'users'.
       userIds: audience === 'users' ? userIds : undefined,
     });
     setTitle('');
@@ -205,7 +218,10 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
   );
 }
 
-/** "Share" button for the collection's owner; nothing for editors and viewers. */
+/**
+ * "Share" button for the collection's owner; nothing for editors and viewers. Hiding it is only
+ * a courtesy: the server refuses share creation from anyone but the owner.
+ */
 export function ShareButton({ scope, target, what, compact }: { scope: ShareScope; target?: string; what: string; compact?: boolean }) {
   const owner = useCollectionStore((s) => s.role === 'owner' && !s.readOnly);
   const [open, setOpen] = useState(false);

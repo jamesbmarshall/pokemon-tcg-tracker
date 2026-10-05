@@ -1,3 +1,17 @@
+/**
+ * Selective sharing of a collection, or a slice of it, with people who aren't members.
+ *
+ * A share has a scope (whole collection, one set, wishlist, graded slabs or a custom list), an
+ * audience (anyone with the link, chosen users, or everyone on this instance) and privacy flags
+ * (hidePaid / hideValue / hideNotes). Shares are read-only by construction: visitors only ever
+ * reach the GET routes under /api/public, never the collection routes.
+ *
+ * Redaction and scoping happen here on the server, not in the web client, because anything sent
+ * to the browser can be read from devtools. If a field is hidden, it is never serialised.
+ *
+ * Tokens: the link token's SHA-256 is used for lookup, and a sealed copy is kept so the owner
+ * can copy the link again later. Revocation, expiry and audience are re-checked on every request.
+ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
 import { access, collectionState, photosFor, streamPhoto } from './collections.ts';
@@ -33,12 +47,17 @@ interface ShareRow {
 const live = (s: ShareRow) => !s.revoked_at && (!s.expires_at || s.expires_at > now());
 
 function findByToken(ctx: Ctx, token: string | undefined): ShareRow | undefined {
+  // Real tokens are ~22 chars; refuse oversized input before hashing it.
   if (!token || token.length > 64) return undefined;
   const s = ctx.db.get<ShareRow>('SELECT * FROM shares WHERE token_hash = ?', sha256(token));
   return s && live(s) ? s : undefined;
 }
 
-/** Whether this request may see the share. 'login' means the visitor must sign in first. */
+/**
+ * Whether this request may see the share. 'login' means the visitor must sign in first.
+ * For 'users' and 'instance' audiences the link alone isn't enough: a forwarded URL still needs
+ * the right account, which is the point of choosing those audiences over 'public'.
+ */
 function canView(ctx: Ctx, s: ShareRow, req: FastifyRequest): true | 'login' | false {
   if (s.audience === 'public') return true;
   if (!req.user) return 'login';
@@ -46,13 +65,23 @@ function canView(ctx: Ctx, s: ShareRow, req: FastifyRequest): true | 'login' | f
   return !!ctx.db.get('SELECT 1 FROM share_users WHERE share_id = ? AND user_id = ?', s.id, req.user.id);
 }
 
-/** A share cookie lets anonymous visitors use the catalogue and image proxies, nothing else. */
+/**
+ * A share cookie lets anonymous visitors use the catalogue and image proxies, nothing else.
+ * Called from the onRequest hook on every API request, so a revoked or expired share stops
+ * granting proxy access straight away even though the cookie itself lingers in the browser.
+ */
 export function attachShare(ctx: Ctx, req: FastifyRequest) {
   const s = findByToken(ctx, req.cookies[SHARE_COOKIE]);
   if (s && canView(ctx, s, req) === true) req.shareToken = s.id;
 }
 
-/** Applies the share's scope and privacy flags to the collection state. Server-side so nothing leaks. */
+/**
+ * Applies the share's scope and privacy flags to the collection state. Server-side so nothing leaks.
+ *
+ * Privacy flags are applied first by collectionState; this function then narrows to the scope.
+ * Every scope starts from `empty` and copies in only what it needs, so a field added to the
+ * collection state later stays hidden from narrower shares until it is opted in here.
+ */
 export function shareView(ctx: Ctx, s: ShareRow) {
   const full = collectionState(ctx, s.collection_id, { hidePaid: !!s.hide_paid, hideValue: !!s.hide_value, hideNotes: !!s.hide_notes });
   const pick = (ids: Set<string>) => full.cards.filter((c) => ids.has(c.id));
@@ -61,6 +90,8 @@ export function shareView(ctx: Ctx, s: ShareRow) {
     case 'collection':
       return full;
     case 'set': {
+      // Wishlist and note rows don't carry a setId. Use the hydrated card when we have it,
+      // otherwise fall back to the "<setId>-<number>" card id convention.
       const inSet = <T extends { cardId: string }>(x: T) => full.cards.find((c) => c.id === x.cardId)?.setId === s.target || x.cardId.startsWith(`${s.target}-`);
       const entries = full.entries.filter((e) => e.setId === s.target);
       const graded = full.graded.filter((g) => g.setId === s.target);
@@ -78,6 +109,7 @@ export function shareView(ctx: Ctx, s: ShareRow) {
       return { ...empty, graded: full.graded, notes: full.notes.filter((n) => ids.has(n.cardId)), cards: pick(ids) };
     }
     case 'list': {
+      // A list deleted after sharing yields an empty view rather than an error.
       const list = full.lists.find((l) => l.id === s.target);
       const ids = new Set(list?.cards ?? []);
       return {
@@ -92,6 +124,7 @@ export function shareView(ctx: Ctx, s: ShareRow) {
   }
 }
 
+/** Owner-facing summary of a share, including the re-openable link when the key still matches. */
 function describe(ctx: Ctx, s: ShareRow, req: FastifyRequest) {
   let token = '';
   try {
@@ -126,6 +159,11 @@ function describe(ctx: Ctx, s: ShareRow, req: FastifyRequest) {
   };
 }
 
+/**
+ * Parses expiry from either a relative `expiresInDays` or an absolute `expiresAt`.
+ * Returns null for "never expires", and undefined for "not specified" so PATCH can tell
+ * "leave as is" apart from "clear it".
+ */
 function expiry(body: Record<string, unknown>): string | null | undefined {
   if (body.expiresAt === null || body.expiresInDays === null) return null;
   if (typeof body.expiresInDays === 'number') {
@@ -140,6 +178,11 @@ function expiry(body: Record<string, unknown>): string | null | undefined {
   return undefined;
 }
 
+/**
+ * Replaces the recipient list. A non-array means "unchanged". Unknown or disabled user ids are
+ * skipped silently rather than rejected, so a stale picker in the client doesn't block saving.
+ * The owner is never stored as a recipient because canView already lets them in.
+ */
 function setUsers(ctx: Ctx, shareId: string, ownerId: string, ids: unknown) {
   if (!Array.isArray(ids)) return;
   if (ids.length > 200) throw bad('Too many people');
@@ -150,11 +193,15 @@ function setUsers(ctx: Ctx, shareId: string, ownerId: string, ids: unknown) {
   }
 }
 
+/** Strict boolean: anything other than true/false keeps the default, so junk can't flip privacy. */
 const flag = (v: unknown, dflt: number) => (typeof v === 'boolean' ? (v ? 1 : 0) : dflt);
 
 export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
+  // Generous enough for a page load's worth of photo requests, low enough to slow token guessing.
   const visits = new Limiter(240, 60_000);
 
+  // Looks up a share the caller owns. Returns 404 rather than 403 for other people's shares so
+  // ids can't be probed for existence.
   const mine = (req: FastifyRequest) => {
     const u = requireUser(req);
     const s = ctx.db.get<ShareRow>('SELECT * FROM shares WHERE id = ?', (req.params as { id: string }).id);
@@ -187,6 +234,7 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
       if (!ctx.db.get('SELECT 1 FROM lists WHERE id = ? AND collection_id = ?', target, collectionId)) throw bad('Pick a list to share');
     }
     if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM shares WHERE owner_id = ?', u.id)!.n >= 500) throw bad('You have too many share links');
+    // 128 bits is plenty for an unguessable link and keeps the URL short enough to paste in chat.
     const token = randomToken(16);
     const id = newId();
     ctx.db.tx(() => {
@@ -202,6 +250,8 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
         target,
         audience,
         str(b.title, 100) || null,
+        // Privacy-leaning defaults: purchase prices and personal notes are hidden unless the
+        // owner opts in; market value is shown because it is usually the point of sharing.
         flag(b.hidePaid, 1),
         flag(b.hideValue, 0),
         flag(b.hideNotes, 1),
@@ -214,6 +264,10 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     return describe(ctx, ctx.db.get<ShareRow>('SELECT * FROM shares WHERE id = ?', id)!, req);
   });
 
+  /**
+   * Edits audience, title, privacy flags and expiry. Scope and target are fixed at creation:
+   * changing what a live link points at would surprise people who already have it.
+   */
   app.patch('/api/shares/:id', async (req) => {
     const s = mine(req);
     const b = (req.body ?? {}) as Record<string, unknown>;
@@ -232,12 +286,14 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
         s.id,
       );
       if (audience === 'users') setUsers(ctx, s.id, s.owner_id, b.userIds);
+      // Drop stale recipients so switching back to 'users' later doesn't quietly re-grant them.
       else ctx.db.run('DELETE FROM share_users WHERE share_id = ?', s.id);
     });
     audit(ctx, req, 'share.updated', s.id);
     return describe(ctx, ctx.db.get<ShareRow>('SELECT * FROM shares WHERE id = ?', s.id)!, req);
   });
 
+  // Revoke keeps the row (and its view stats) so the owner can see it was turned off; delete removes it.
   app.post('/api/shares/:id/revoke', async (req) => {
     const s = mine(req);
     ctx.db.run('UPDATE shares SET revoked_at = ? WHERE id = ?', now(), s.id);
@@ -252,6 +308,11 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
 
+  /**
+   * Shares addressed to the caller by name or to the whole instance. Public links are left out
+   * on purpose: they aren't "shared with" anyone in particular. The recipient list is stripped
+   * so people can't see who else a share went to.
+   */
   app.get('/api/shared-with-me', async (req) => {
     const u = requireUser(req);
     const rows = ctx.db.all<ShareRow & { owner_name: string }>(
@@ -268,6 +329,10 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // ------------------------------------------------------------ visitors
 
+  // Common gate for every visitor route. Missing, expired, revoked and forbidden shares all
+  // return the same 404 so a visitor can't tell a dead link from one they just can't see. The
+  // one exception is a signed-out visitor to a members-only share, who gets 401 so the client
+  // can offer sign-in.
   const open = (req: FastifyRequest, reply: FastifyReply) => {
     visits.check(req.ip, reply);
     const token = (req.params as { token: string }).token;
@@ -279,10 +344,18 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     return { s, token };
   };
 
+  /**
+   * Main visitor endpoint. Returns the redacted, scoped state with role 'viewer' so the web
+   * client renders it read-only. Also drops a short-lived share cookie, because card images and
+   * catalogue lookups are separate requests that don't carry the token in their URL.
+   */
   app.get('/api/public/:token', async (req, reply) => {
     const { s, token } = open(req, reply);
     reply.setCookie(SHARE_COOKIE, token, { path: '/', httpOnly: true, sameSite: 'lax', secure: isSecure(ctx, req), maxAge: 12 * 3600 });
+    // Belt and braces for anyone opening this URL directly: keep it out of search indexes and
+    // don't leak the token in a Referer. The SPA page itself gets no-referrer from helmet.
     reply.header('x-robots-tag', 'noindex, nofollow').header('referrer-policy', 'no-referrer');
+    // The owner previewing their own link shouldn't inflate the view count.
     if (s.owner_id !== req.user?.id) ctx.db.run('UPDATE shares SET views = views + 1, last_viewed_at = ? WHERE id = ?', now(), s.id);
     const owner = ctx.db.get<{ display_name: string }>('SELECT display_name FROM users WHERE id = ?', s.owner_id);
     const coll = ctx.db.get<{ name: string }>('SELECT name FROM collections WHERE id = ?', s.collection_id);
@@ -302,6 +375,8 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     };
   });
 
+  // Photo access is derived from the same scoped view as the JSON, so a slab outside the share's
+  // scope (or soft-deleted) can't be reached by guessing its id, even within the same collection.
   const visibleGraded = (s: ShareRow) => new Set(shareView(ctx, s).graded.map((g) => g.id));
 
   app.get('/api/public/:token/graded/:gid/photos', async (req, reply) => {
@@ -317,6 +392,7 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     const p = ctx.db.get<{ graded_id: string }>('SELECT graded_id FROM graded_photos WHERE id = ? AND collection_id = ?', pid, s.collection_id);
     if (!p || !visibleGraded(s).has(p.graded_id)) throw notFound();
     const { mime, stream } = streamPhoto(ctx, s.collection_id, pid);
+    // Shorter and not immutable (unlike the member route) so revoking a share takes effect sooner.
     reply.header('cache-control', 'private, max-age=3600').type(mime);
     return reply.send(stream);
   });

@@ -1,3 +1,8 @@
+/**
+ * Admin "Updates" panel: shows the running version, checks for and applies updates, toggles
+ * automatic updates, and rolls back. The update itself is done by the launcher process that
+ * supervises the server; this UI asks the server to start it, then waits out the restart.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownToLine, CheckCircle2, ExternalLink, History, RefreshCw, TriangleAlert } from 'lucide-react';
@@ -8,8 +13,10 @@ import { formatDate, relativeTime } from '../utils/format';
 
 export interface UpdateInfo {
   current: string;
+  /** Version of the supervising launcher; some updates require a minimum launcher version. */
   launcherVersion: string | null;
   canUpdate: boolean;
+  /** Human-readable reason updates are unavailable (not under the launcher, or no signing key), shown as-is. */
   blocker: string | null;
   autoUpdate: boolean;
   available: boolean;
@@ -18,6 +25,7 @@ export interface UpdateInfo {
   error: string | null;
   applying: boolean;
   progress: string | null;
+  /** What the launcher reports: active and previous installed versions and the outcome of the last switch. */
   launcher: {
     active?: string;
     previous?: string;
@@ -28,6 +36,8 @@ export interface UpdateInfo {
 const KEY = ['system', 'update'];
 
 /** Waits for the server to come back after a restart, then reports the version it's running. */
+// Polls /health with plain fetch rather than api(): during the restart failures are expected and
+// must not raise toasts or a sign-out. Returns null if the server hasn't answered after five minutes.
 async function waitForRestart(from: string, signal: AbortSignal): Promise<string | null> {
   const deadline = Date.now() + 5 * 60_000;
   let sawDown = false;
@@ -75,6 +85,7 @@ export default function UpdatesSection() {
   const { data: info, error, isPending } = useQuery({
     queryKey: KEY,
     queryFn: () => api<UpdateInfo>('/api/system/update'),
+    // Poll only while an update is being prepared, to show the launcher's progress messages.
     refetchInterval: (q) => (q.state.data?.applying ? 1500 : false),
   });
   const [checking, setChecking] = useState(false);
@@ -82,6 +93,7 @@ export default function UpdatesSection() {
   const [confirm, setConfirm] = useState<'update' | 'rollback' | null>(null);
   const [restarting, setRestarting] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
+  // Stop polling for the restart if the user leaves the page.
   useEffect(() => () => abort.current?.abort(), []);
 
   const set = (next: UpdateInfo) => qc.setQueryData(KEY, next);
@@ -109,6 +121,8 @@ export default function UpdatesSection() {
       window.location.reload();
       return;
     }
+    // Same version back (e.g. the update failed and the launcher rolled back) or no answer: stay on
+    // the page and refetch so LastResult explains what happened.
     setRestarting(null);
     await qc.invalidateQueries({ queryKey: KEY });
     if (!version) setActionError("The server hasn't come back yet. Give it a minute, then refresh this page.");

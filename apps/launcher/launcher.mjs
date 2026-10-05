@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 // PokéTracker launcher: supervises the server, applies staged updates and rolls back bad ones.
 // Plain Node, no dependencies. Baked into the container image; changes here need an image pull.
+// Because old launchers must keep running new server bundles, the protocol below only grows;
+// a bundle that needs newer launcher behaviour says so with manifest.minLauncher.
 //
 // Layout (see apps/server/src/updater.ts):
 //   $BUNDLE_DIR                 bundle shipped in the image (server.mjs, web/, manifest.json)
 //   $DATA_DIR/app/<version>/    bundles downloaded by in-app updates
 //   $DATA_DIR/app/pending.json  { version, backup } to try a new version, or { rollback: true }
-//   $DATA_DIR/app/state.json    { active, previous, last } — written here only
+//   $DATA_DIR/app/state.json    { image, active, previous, last }: written here only
 import { spawn } from 'node:child_process';
 import { chownSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const LAUNCHER_VERSION = '1.0.0';
+// Must match RESTART_CODE in apps/server/src/updater.ts. 75 is EX_TEMPFAIL: "try again".
 const RESTART_CODE = 75;
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -23,6 +26,7 @@ const STATE = join(APP_DIR, 'state.json');
 const PENDING = join(APP_DIR, 'pending.json');
 const DB = join(DATA_DIR, 'poketracker.db');
 
+// Same JSON-lines shape as the server's pino logs, so container log viewers parse both alike.
 const log = (msg, extra) => process.stdout.write(`${JSON.stringify({ level: 30, time: Date.now(), name: 'launcher', msg, ...extra })}\n`);
 const readJson = (file) => {
   try {
@@ -31,12 +35,14 @@ const readJson = (file) => {
     return undefined;
   }
 };
+// Write-then-rename so a crash or power cut never leaves a half-written state file.
 const writeJson = (file, value) => {
   mkdirSync(APP_DIR, { recursive: true });
   writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2));
   renameSync(`${file}.tmp`, file);
 };
 
+/** Kept identical to compareVersions in apps/server/src/updater.ts so both agree on "newer". */
 export function compareVersions(a, b) {
   const parse = (v) => {
     const [core, pre = ''] = String(v).replace(/^v/, '').split('-', 2);
@@ -53,7 +59,11 @@ export function compareVersions(a, b) {
 
 const imageVersion = () => readJson(join(BUNDLE_DIR, 'manifest.json'))?.version;
 
-/** Chowns a tree, skipping anything already owned correctly and never following symlinks. */
+/**
+ * Chowns a tree, skipping anything already owned correctly and never following symlinks.
+ * Skipping keeps restarts fast on large image caches; not following symlinks stops a link
+ * planted in /data from making root chown files elsewhere on the system.
+ */
 function chownTree(path, uid, gid) {
   const st = lstatSync(path);
   if (st.isSymbolicLink()) return;
@@ -93,6 +103,8 @@ function dropPrivileges() {
     log(`${DATA_DIR} is not writable by ${target.uid}:${target.gid}; continuing as root`, { level: 40 });
     return;
   }
+  // Groups first, then gid, then uid: once uid is dropped we no longer have the right to change
+  // the others. setgroups clears root's supplementary groups so none of them leak through.
   process.setgroups([target.gid]);
   process.setgid(target.gid);
   process.setuid(target.uid);
@@ -109,6 +121,8 @@ function dirFor(version) {
 /**
  * The version to run when nothing is pending. A newly pulled image wins if it is newer than the
  * active version; otherwise stick with the active one (which may be an intentional rollback).
+ * state.image remembers which image we last saw, so a newer image is adopted only once: if it
+ * fails and we roll back, the same image isn't retried on every restart.
  */
 function steadyVersion(state) {
   const img = imageVersion();
@@ -124,11 +138,13 @@ function start(version) {
   const dir = dirFor(version);
   log('starting server', { version, dir });
   child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(dir, 'server.mjs')], {
+    // Inherit stdio so server logs go straight to the container log.
     stdio: 'inherit',
     env: {
       ...process.env,
       DATA_DIR,
       PORT: String(PORT),
+      // Point the server at this version's own web build and manifest, not the image's.
       WEB_DIR: join(dir, 'web'),
       APP_MANIFEST: join(dir, 'manifest.json'),
       POKETRACKER_LAUNCHER: '1',
@@ -139,6 +155,11 @@ function start(version) {
   return { child, exited };
 }
 
+/**
+ * Polls /health until it reports `version`, the process exits, or the timeout passes.
+ * Matching the version matters: it proves the new code is the one answering, not some
+ * other process that happens to hold the port. The timeout has to cover slow migrations.
+ */
 async function healthy(version, exited) {
   const deadline = Date.now() + HEALTH_TIMEOUT_MS;
   let done = false;
@@ -155,6 +176,7 @@ async function healthy(version, exited) {
   return false;
 }
 
+/** SIGTERM for a clean DB close, then SIGKILL if the server hangs. */
 async function stop(proc, exited) {
   if (proc.exitCode !== null || proc.signalCode !== null) return;
   proc.kill('SIGTERM');
@@ -163,6 +185,11 @@ async function stop(proc, exited) {
   clearTimeout(t);
 }
 
+/**
+ * Puts the pre-update backup back after a failed update, undoing any migrations the new
+ * version ran. Only safe while the server is stopped. The -wal and -shm files go first: they
+ * belong to the database being replaced, and SQLite would otherwise replay them over the backup.
+ */
 function restoreDb(backup) {
   if (!backup || !existsSync(backup)) return false;
   for (const f of [`${DB}-wal`, `${DB}-shm`]) rmSync(f, { force: true });
@@ -172,6 +199,7 @@ function restoreDb(backup) {
 
 async function main() {
   dropPrivileges();
+  // Fail fast with an actionable message; otherwise the server would crash-loop on its first write.
   try {
     mkdirSync(APP_DIR, { recursive: true });
     writeFileSync(join(APP_DIR, '.write-test'), '');
@@ -182,6 +210,7 @@ async function main() {
     process.exit(1);
   }
   for (const sig of ['SIGTERM', 'SIGINT']) {
+    // Forward to the server and let its exit end the loop below, so the DB closes cleanly.
     process.on(sig, () => {
       stopping = true;
       if (child && child.exitCode === null) child.kill(sig);
@@ -189,13 +218,17 @@ async function main() {
     });
   }
 
+  // Timestamps of recent unexpected exits, for back-off and crash-loop rollback.
   const crashes = [];
   for (;;) {
     const state = readJson(STATE) ?? {};
     const pending = readJson(PENDING);
+    // Consume the request before acting on it so it is tried exactly once. If the trial goes
+    // wrong in a way we don't catch, the next start falls back to the steady version.
     rmSync(PENDING, { force: true });
 
     let target = steadyVersion(state);
+    // Set when this start is a change of version and must pass the health gate.
     let trial;
     if (pending?.rollback && state.previous && dirFor(state.previous)) {
       target = state.previous;
@@ -225,6 +258,8 @@ async function main() {
       } else {
         log('new version failed its health check; rolling back', { version: target, from: trial.from });
         await stop(proc, exited);
+        // Only updates come with a backup. A failed image or rollback trial leaves the DB as is,
+        // which is safe only because migrations are additive.
         const restored = trial.kind === 'update' ? restoreDb(trial.backup) : false;
         writeJson(STATE, {
           image: imageVersion(),
@@ -232,21 +267,27 @@ async function main() {
           previous: state.previous,
           last: { from: trial.from, to: target, ok: false, rolledBack: true, restoredDb: restored, at: new Date().toISOString(), kind: trial.kind, message: `Version ${target} did not start` },
         });
+        // The failed download is deleted so it can't be picked again; image bundles can't be.
         if (trial.kind === 'update') rmSync(join(APP_DIR, target), { recursive: true, force: true });
         continue;
       }
     } else if (!state.active || state.image !== imageVersion()) {
+      // First boot, or a different image that isn't newer than the active version: record it
+      // without a trial so steadyVersion won't treat it as new next time.
       writeJson(STATE, { ...state, image: imageVersion(), active: target });
     }
 
     const { code, signal } = await exited;
     if (stopping) process.exit(code ?? 0);
     if (code === RESTART_CODE) {
+      // Deliberate restart after staging an update or rollback: the loop re-reads pending.json.
       log('server requested a restart');
       crashes.length = 0;
       continue;
     }
     // Unexpected exit: back off, and give up on a version that keeps crashing right after an update.
+    // A version can pass its health check and still crash later (a scheduled job, say), so three
+    // crashes in five minutes within half an hour of an update count as a failed update.
     const t = Date.now();
     crashes.push(t);
     while (crashes.length && crashes[0] < t - 5 * 60_000) crashes.shift();
@@ -259,10 +300,12 @@ async function main() {
       crashes.length = 0;
       continue;
     }
+    // Exponential back-off (1s, 2s, 4s ... capped at 30s) so a broken install doesn't spin the CPU.
     await new Promise((r) => setTimeout(r, Math.min(30_000, 1000 * 2 ** (crashes.length - 1))));
   }
 }
 
+// Only run when executed directly, so tests can import the exported helpers.
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
     log('launcher crashed', { err: String(err?.stack ?? err) });

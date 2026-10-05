@@ -14,11 +14,14 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const pubFile = join(root, 'deploy/update-public-key.pem');
 const privFile = resolve(process.argv[2] ?? join(root, 'update-signing-key.pem'));
+// Never overwrite an existing private key: once it is lost, no release can be signed that
+// existing installs will accept until they pull an image with the new public key.
 if (existsSync(privFile)) {
   console.error(`${privFile} already exists; refusing to overwrite it.`);
   process.exit(1);
 }
 const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+// 0600: owner-only, as this key can publish code that every install will run.
 writeFileSync(privFile, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
 writeFileSync(pubFile, publicKey.export({ type: 'spki', format: 'pem' }));
 console.log(`Public key:  ${pubFile} (commit this)`);

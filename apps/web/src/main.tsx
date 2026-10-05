@@ -1,3 +1,7 @@
+/**
+ * Browser entry point. configureForServer() runs before the first render so every catalogue
+ * request and card image goes through the PokéTracker server from the start.
+ */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 // standard.css ships the full width + weight axes; the default entry is weight-only

@@ -1,3 +1,4 @@
+/** Grading company reference data: grade scales, label descriptors, and cert verification links. */
 import type { GradedCopy, GradingCompany } from '../api/types';
 
 export const COMPANIES: { value: GradingCompany; name: string }[] = [
@@ -10,6 +11,7 @@ export const COMPANIES: { value: GradingCompany; name: string }[] = [
   { value: 'Other', name: 'Other' },
 ];
 
+// Half-point steps from 10 down to `from`, e.g. 10, 9.5, 9 ... 1.
 const halves = (from: number) => Array.from({ length: (10 - from) * 2 + 1 }, (_, i) => String(10 - i / 2));
 const wholes = Array.from({ length: 10 }, (_, i) => String(10 - i));
 
@@ -96,4 +98,5 @@ export function verifyLink(g: Pick<GradedCopy, 'company' | 'certNumber'>): { url
   }
 }
 
+/** The four sub-grade categories used by every company that issues them. */
 export const SUBGRADE_KEYS = ['centering', 'corners', 'edges', 'surface'] as const;

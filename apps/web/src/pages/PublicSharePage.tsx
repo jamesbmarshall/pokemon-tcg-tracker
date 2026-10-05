@@ -1,3 +1,12 @@
+/**
+ * Public share page (/s/:token). Loads the share payload, swaps the collection store onto a
+ * read-only backend, and renders the shared slice with the normal card components.
+ *
+ * Everything the visitor receives has already been scoped and redacted by the server according
+ * to the share's privacy flags. Hiding values or notes in this UI is therefore cosmetic: the data
+ * was never sent. Opening the link also sets a short-lived share cookie, which is what lets an
+ * anonymous visitor load card images and catalogue data through the server's proxy.
+ */
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -33,6 +42,10 @@ function Section({ icon, title, count, children }: { icon: ReactNode; title: str
   );
 }
 
+/**
+ * A shared set is shown as a checklist with missing cards dimmed. If the full card list can't be
+ * loaded, fall back to just the owned cards that came with the share.
+ */
 function SetChecklist({ setId }: { setId: string }) {
   const { data, isError } = useSetCards(setId);
   const cards = useCollectionStore((s) => s.cards);
@@ -48,6 +61,7 @@ function ShareBody({ data }: { data: PublicShare }) {
   const pick = (ids: Iterable<string>) => [...new Set(ids)].map((id) => cards.get(id)).filter((c): c is CardSnapshot => !!c);
   const { scope, target } = data.share;
 
+  // A card held only as a slab still counts as "in the collection".
   const owned = pick([...byCard.keys(), ...gradedByCard.keys()]).sort(bySetThenNumber);
   const wished = pick(data.wishlist.map((w) => w.cardId));
   const graded = pick(gradedByCard.keys()).sort(bySetThenNumber);
@@ -60,6 +74,7 @@ function ShareBody({ data }: { data: PublicShare }) {
     case 'graded':
       return graded.length ? <CardGrid cards={graded} showSet /> : <Empty>No graded cards yet.</Empty>;
     case 'list': {
+      // A list share carries exactly one list: the shared one.
       const list = data.lists[0];
       if (!list) return <Empty>This list is empty.</Empty>;
       const items = pick(list.cards);
@@ -121,6 +136,7 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
     document.title = `${title} · PokéTracker`;
   }, [title]);
 
+  // Wishlists and lists aren't owned cards, so a count or value total would be misleading.
   const showTotals = data.share.scope !== 'wishlist' && data.share.scope !== 'list';
 
   return (
@@ -148,6 +164,7 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
             {showTotals && (
               <div className="text-right">
                 <p className="eyebrow">{count.toLocaleString('en-GB')} cards</p>
+                {/* With hideValue the server sends no prices, so this would only ever show zero. */}
                 {!data.share.hideValue && <p className="font-display text-2xl font-bold tabular">{money(valueUsd)}</p>}
               </div>
             )}
@@ -168,7 +185,7 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
 }
 
 /**
- * /s/:token — a read-only view of whatever was shared. Works signed out for public links;
+ * /s/:token: a read-only view of whatever was shared. Works signed out for public links;
  * links for specific people or everyone on the server ask you to sign in first.
  */
 export default function PublicSharePage() {
@@ -180,11 +197,14 @@ export default function PublicSharePage() {
   const shownId = `share:${token}`;
   const shown = useCollectionStore((s) => s.collectionId === shownId);
 
+  // signedIn is part of the key so signing in on this page refetches: a 'users' or 'instance' share
+  // that returned 401 to the anonymous visitor may now open. No retries: errors here are final.
   const q = useQuery({ queryKey: ['public-share', token, signedIn], queryFn: () => sharing.open(token), retry: false, staleTime: Infinity });
 
   useEffect(() => {
     const data = q.data;
     if (!data) return;
+    // Swap the backend before show() so anything the store triggers goes through the read-only one.
     setBackend(publicBackend(token));
     show({
       collectionId: shownId,
@@ -197,6 +217,8 @@ export default function PublicSharePage() {
       history: data.history,
       lists: data.lists,
     });
+    // Leaving the page must not leave share data in the store, or the signed-in app could briefly
+    // show someone else's cards as if they were the user's own.
     return () => {
       setBackend(httpBackend);
       reset();
@@ -205,12 +227,16 @@ export default function PublicSharePage() {
 
   if (q.error) {
     const err = q.error;
+    // 401 means the share needs a signed-in viewer. Expired, revoked, unknown and "not shared with
+    // you" all get one message, so the page doesn't say which it was.
     if (err instanceof ApiError && err.status === 401 && authStatus !== 'ready' && authStatus !== 'loading') {
       return authStatus === 'signed-out' || authStatus === 'mfa' ? <LoginPage /> : <Unavailable message="Sign in to PokéTracker to see this." />;
     }
     if (err instanceof ApiError && err.status === 0) return <Unavailable message="Couldn't reach the server. Check your connection and try again." />;
     return <Unavailable message="This link has expired, been revoked, or isn't shared with you." />;
   }
+  // Wait until the store actually holds this share, not just until the query resolves, so the
+  // first render never shows leftover data from the user's own collection.
   if (!shown || !q.data) {
     return (
       <div className="grid min-h-dvh place-items-center" aria-busy="true" aria-label="Loading">

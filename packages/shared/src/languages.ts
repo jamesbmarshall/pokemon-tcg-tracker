@@ -36,6 +36,7 @@ const BY_CODE = new Map(LANGUAGES.map((l) => [l.code, l]));
 export const isLang = (v: unknown): v is Lang => typeof v === 'string' && BY_CODE.has(v as Lang);
 export const language = (code: Lang): Language => BY_CODE.get(code)!;
 
+// Language codes are lowercase ("ja", "zh-tw"); TCGdex ids never contain ':', so this can't misfire.
 const PREFIX = /^([a-z]{2}(?:-[a-z]{2})?):(.+)$/;
 
 /** Splits a namespaced id into its language and the provider's raw id. */

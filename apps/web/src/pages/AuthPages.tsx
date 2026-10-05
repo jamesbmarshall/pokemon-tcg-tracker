@@ -1,3 +1,8 @@
+/**
+ * Screens shown without a session: first-run setup, sign-in (with the 2FA step), accepting an
+ * invite and resetting a password. Invite and reset pages are reached by token links, so App.tsx
+ * routes them outside the auth gate.
+ */
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -9,6 +14,7 @@ import { Logo } from '../components/ui';
 import { Field, FormError } from '../components/forms';
 import { useSubmit } from '../components/formUtils';
 
+/** Centred card layout shared by every signed-out screen, and by the "server unreachable" screen. */
 export function AuthShell({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {
   return (
     <div className="grid min-h-dvh place-items-center px-4 py-10">
@@ -35,6 +41,7 @@ function useAccountForm(withUsername = true, fixedUsername = '') {
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  // Errors appear only after the first submit attempt, so the form doesn't open covered in red.
   const [touched, setTouched] = useState(false);
   const name = withUsername ? username.trim() : fixedUsername;
   const problems = {
@@ -58,6 +65,11 @@ function useAccountForm(withUsername = true, fixedUsername = '') {
   return { fields, valid, touch: () => setTouched(true), values: { username: name, displayName: displayName.trim() || name, password } };
 }
 
+/**
+ * First-run owner account creation. The server only allows this while no users exist, and also
+ * requires the one-time setup code it prints to its logs. Without that code, whoever reached a
+ * freshly deployed, internet-facing server first could claim ownership of it.
+ */
 export function SetupPage() {
   const setup = useAuth((s) => s.setup);
   const [token, setToken] = useState('');
@@ -89,6 +101,7 @@ export function SetupPage() {
   );
 }
 
+/** Password sign-in, then the 2FA code step when authStore reports status 'mfa'. */
 export function LoginPage() {
   const status = useAuth((s) => s.status);
   const login = useAuth((s) => s.login);
@@ -132,6 +145,8 @@ export function LoginPage() {
   );
 }
 
+// A token link opened while signed in would create or change an account alongside the current
+// session, so ask the user to sign out first rather than guess which account they meant.
 function SignedInNotice() {
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
@@ -170,6 +185,8 @@ export function InvitePage() {
   const acceptInvite = useAuth((s) => s.acceptInvite);
   const navigate = useNavigate();
   const form = useAccountForm();
+  // Checked up front so a dead link says so before the user fills in the form. No retries: a 404
+  // here is the expected answer for a used or expired invite.
   const invite = useQuery({ queryKey: ['invite', token], queryFn: () => api<{ valid: boolean; role?: string }>(`/api/invites/${encodeURIComponent(token)}`), retry: false });
   const { busy, error, onSubmit } = useSubmit(async () => {
     form.touch();
@@ -207,6 +224,7 @@ export function ResetPage() {
     form.touch();
     if (!form.valid) throw new Error('Fix the highlighted fields first');
     await api(`/api/reset/${encodeURIComponent(token)}`, { method: 'POST', body: { password: form.values.password } });
+    // The server signs the user in as part of a successful reset, so just load who we are now.
     await refreshUser();
     navigate('/', { replace: true });
   });

@@ -1,3 +1,10 @@
+/**
+ * Session state for the signed-in user, and the app's top-level auth state machine.
+ *
+ * App.tsx renders a different screen per AuthStatus. This store also owns two side effects of
+ * being signed in: syncing display preferences to the server, and clearing the collection cache
+ * whenever the user changes so one account's data never shows under another.
+ */
 import { create } from 'zustand';
 import { api, ApiError, onUnauthenticated } from '../api/http';
 import { useSettings } from './settingsStore';
@@ -38,6 +45,7 @@ interface AuthState {
   signedOut: () => void;
 }
 
+// Only display preferences are synced. Anything device-specific should stay out of this list.
 type SyncedPrefs = Pick<ReturnType<typeof useSettings.getState>, 'currency' | 'pocketSize' | 'setView' | 'setMode' | 'quickAdd' | 'viewPrefs'>;
 const PREF_KEYS = ['currency', 'pocketSize', 'setView', 'setMode', 'quickAdd', 'viewPrefs'] as const;
 
@@ -52,6 +60,8 @@ function startPrefSync(prefs: { settings?: Partial<SyncedPrefs> } | undefined) {
     for (const k of PREF_KEYS) if (saved[k] !== undefined) (next as Record<string, unknown>)[k] = saved[k];
     useSettings.setState(next);
   }
+  // Subscribed after applying the server copy, so loading prefs doesn't immediately echo them back.
+  // Saves are debounced and best-effort: a failed save only means another device sees older prefs.
   let timer: ReturnType<typeof setTimeout> | undefined;
   const unsub = useSettings.subscribe((s, prev) => {
     if (PREF_KEYS.every((k) => s[k] === prev[k])) return;
@@ -76,10 +86,12 @@ interface Me {
 export const useAuth = create<AuthState>((set, get) => {
   const signedIn = (me: Me) => {
     const prev = get().user;
+    // A different account signing in on the same tab must not see the previous user's cached collection.
     if (prev && prev.id !== me.user.id) useCollectionStore.getState().reset();
     set({ status: 'ready', user: me.user, error: null });
     startPrefSync(me.prefs);
   };
+  // quiet401: init() and the sign-in flows handle a 401 themselves, as "signed out" rather than "session lost".
   const fetchMe = async () => signedIn(await api<Me>('/api/auth/me', { quiet401: true }));
 
   return {
@@ -90,6 +102,7 @@ export const useAuth = create<AuthState>((set, get) => {
     init: async () => {
       set({ status: 'loading', error: null });
       try {
+        // Checked before /me: a fresh install has no users, so the only useful screen is first-run setup.
         const { needed } = await api<{ needed: boolean }>('/api/setup');
         if (needed) return set({ status: 'setup', user: null });
         await fetchMe();
@@ -101,6 +114,7 @@ export const useAuth = create<AuthState>((set, get) => {
 
     login: async (username, password) => {
       const r = await api<{ mfa?: boolean; user?: User }>('/api/auth/login', { method: 'POST', body: { username, password }, quiet401: true });
+      // With 2FA on, the password step only creates a pending login; the session exists after verifyMfa().
       if (r.mfa) return set({ status: 'mfa' });
       await fetchMe();
     },
@@ -109,6 +123,8 @@ export const useAuth = create<AuthState>((set, get) => {
       try {
         await api('/api/auth/mfa', { method: 'POST', body: { code: code.trim() }, quiet401: true });
       } catch (err) {
+        // The pending login timed out, so go back to the password step. Other errors (a wrong code)
+        // keep the user on the code screen to retry.
         if (err instanceof ApiError && err.code === 'mfa_expired') set({ status: 'signed-out' });
         throw err;
       }
@@ -130,6 +146,7 @@ export const useAuth = create<AuthState>((set, get) => {
     setUser: (user) => set({ user }),
 
     logout: async () => {
+      // Sign out locally even if the server call fails, so the user is never stuck signed in.
       await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
       get().signedOut();
     },
@@ -143,9 +160,11 @@ export const useAuth = create<AuthState>((set, get) => {
 });
 
 // Any request that finds the session gone (expired, revoked elsewhere, account disabled) lands on sign-in.
+// Only acts from 'ready': during loading or sign-in a 401 is expected and handled by the caller.
 onUnauthenticated(() => {
   if (useAuth.getState().status === 'ready') useAuth.getState().signedOut();
 });
 
 export const useUser = () => useAuth((s) => s.user);
+/** UI convenience only: every admin action is authorised again on the server. */
 export const isAdmin = (u: User | null | undefined) => u?.role === 'owner' || u?.role === 'admin';

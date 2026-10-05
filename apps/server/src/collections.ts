@@ -1,3 +1,14 @@
+/**
+ * Collections: the card data itself and who may touch it.
+ *
+ * Every user gets one 'personal' collection at signup and may create 'shared' ones that other
+ * users join as editors or viewers. Per-collection access (owner/editor/viewer) is independent
+ * of the instance role: an instance admin has no implicit access to anyone's cards.
+ *
+ * Also home to input sanitising for entries and graded slabs (also used by import), the
+ * `collectionState` read model that both members and share visitors are served from, graded slab
+ * photo storage, and JSON import/export for backups and migration from the old browser-only app.
+ */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,6 +30,11 @@ export interface CollectionRow {
   created_at: string;
 }
 
+/**
+ * The caller's access to a collection, or null for none. Ownership comes from the collection row;
+ * everyone else needs an explicit membership row. Null deliberately covers both "doesn't exist"
+ * and "not yours" so callers can answer 404 in either case.
+ */
 export function access(ctx: Ctx, userId: string, collectionId: string): Access | null {
   const c = ctx.db.get<CollectionRow>('SELECT * FROM collections WHERE id = ?', collectionId);
   if (!c) return null;
@@ -27,6 +43,11 @@ export function access(ctx: Ctx, userId: string, collectionId: string): Access |
   return m?.role ?? null;
 }
 
+/**
+ * Route guard for `/api/collections/:id/...`. 'read' = any member, 'write' = owner or editor,
+ * 'own' = owner only (rename, delete, membership, clear). Non-members get 404 rather than 403 so
+ * collection ids can't be probed.
+ */
 function need(ctx: Ctx, req: FastifyRequest, level: 'read' | 'write' | 'own'): { id: string; role: Access } {
   const u = requireUser(req);
   const id = (req.params as { id: string }).id;
@@ -39,9 +60,11 @@ function need(ctx: Ctx, req: FastifyRequest, level: 'read' | 'write' | 'own'): {
 
 // ---------------------------------------------------------------- validation
 
+// Card ids appear in URL paths (e.g. /wishlist/:cardId), so whitespace, slashes and URL delimiters are banned.
 const CARD_ID = /^[^\s/\\?#]{1,100}$/;
 const VARIANT = /^[A-Za-z0-9]{1,40}$/;
 const CONDITIONS = new Set(['M', 'NM', 'LP', 'MP', 'HP', 'DMG']);
+// Normalises client timestamps to ISO UTC. Unparseable input falls back to now rather than failing the save.
 const iso = (v: unknown) => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : now());
 
 function cardId(v: unknown): string {
@@ -49,6 +72,12 @@ function cardId(v: unknown): string {
   return v;
 }
 
+/**
+ * Turns untrusted client or import data into a well-formed entry, or undefined if it can't be
+ * salvaged. Builds a new object field by field, so unknown properties never reach the database.
+ * The id and setId are derived from cardId/variant rather than trusted, which keeps one row per
+ * card + variant and stops a client filing a card under the wrong set.
+ */
 export function cleanEntry(raw: unknown): CollectionEntry | undefined {
   const e = raw as Partial<CollectionEntry>;
   if (typeof e?.cardId !== 'string' || !CARD_ID.test(e.cardId) || typeof e.variant !== 'string' || !VARIANT.test(e.variant)) return undefined;
@@ -70,6 +99,11 @@ export function cleanEntry(raw: unknown): CollectionEntry | undefined {
 
 const num = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : undefined);
 
+/**
+ * Graded-slab equivalent of cleanEntry. Unlike entries, several slabs of the same card can
+ * exist, so each keeps its own id; a well-formed client id is kept so the client's optimistic
+ * copy, its photos and undo all refer to the same slab, otherwise a fresh one is minted.
+ */
 export function cleanGraded(raw: unknown): GradedCopy | undefined {
   const g = raw as Partial<GradedCopy>;
   if (typeof g?.cardId !== 'string' || !CARD_ID.test(g.cardId) || typeof g.variant !== 'string' || !VARIANT.test(g.variant)) return undefined;
@@ -116,12 +150,14 @@ function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
   );
 }
 
+// Writing a graded copy always clears deleted_at, which is how "Undo" after a soft delete restores it.
 function putGraded(ctx: Ctx, collectionId: string, g: GradedCopy) {
   ctx.db.run('INSERT OR REPLACE INTO graded (collection_id, id, card_id, data, deleted_at) VALUES (?, ?, ?, ?, NULL)', collectionId, g.id, g.cardId, JSON.stringify(g));
 }
 
 // ---------------------------------------------------------------- read models
 
+/** Collections the user owns or belongs to, personal first, with their effective access level. */
 export function listCollections(ctx: Ctx, userId: string) {
   return ctx.db
     .all<CollectionRow & { role: string | null; owner_name: string }>(
@@ -144,7 +180,15 @@ export interface StateOptions {
   hideValue?: boolean;
 }
 
-/** Everything the client needs to render a collection. Redaction is applied here for shares. */
+/**
+ * Everything the client needs to render a collection. Redaction is applied here for shares.
+ *
+ * Members call this with no options and see everything. Shares pass their privacy flags, and
+ * the matching fields are removed before serialisation rather than left for the client to hide:
+ *  - hidePaid: purchase prices on entries and slabs, plus cost-basis figures in value history.
+ *  - hideValue: slab valuations, card market prices and the whole value history.
+ *  - hideNotes: per-card notes and the notes field on entries and slabs.
+ */
 export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptions = {}) {
   let entries = readEntries(ctx.db, collectionId);
   let graded = readGraded(ctx.db, collectionId);
@@ -156,10 +200,13 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
     graded = graded.map((g) => ({ ...g, paid: opts.hidePaid ? undefined : g.paid, notes: opts.hideNotes ? undefined : g.notes, valueUsd: opts.hideValue ? undefined : g.valueUsd }));
   }
   let history: ValuePoint[] = opts.hideValue ? [] : readHistory(ctx.db, collectionId);
+  // Rebuild each point from an allow-list so costUsd / costedValueUsd (what the owner paid) are dropped.
   if (opts.hidePaid) history = history.map((p) => ({ date: p.date, valueUsd: p.valueUsd, cards: p.cards, unique: p.unique }));
   const ids = new Set([...entries.map((e) => e.cardId), ...graded.map((g) => g.cardId), ...wishlist.map((w) => w.cardId), ...lists.flatMap((l) => l.cards)]);
   let cards = Array.from(readCards(ctx.db, ids).values());
+  // Card prices would let a visitor recompute the hidden total, so they go too.
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
+  // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
   const setStats = ctx.db.all<{ set_id: string; master_total: number; synced_at: string }>('SELECT * FROM set_stats').map((s) => ({ setId: s.set_id, masterTotal: s.master_total, syncedAt: s.synced_at }));
   return { entries, graded, wishlist, notes, history, cards, setStats, lists };
 }
@@ -176,9 +223,14 @@ export function readLists(ctx: Ctx, collectionId: string) {
   }));
 }
 
+// Files are named by random photo id only, never by anything user-supplied, so there is no path traversal.
 const photoDir = (ctx: Ctx) => join(ctx.config.dataDir, 'photos');
 
-/** Accept only images whose bytes actually look like an image. */
+/**
+ * Accept only images whose bytes actually look like an image.
+ * The client's filename and Content-Type are ignored because both are trivially forged. The
+ * sniffed type is what gets served back, and SVG is deliberately absent since it can carry script.
+ */
 export function sniffImage(buf: Buffer): string | undefined {
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
   if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
@@ -188,6 +240,10 @@ export function sniffImage(buf: Buffer): string | undefined {
   return undefined;
 }
 
+/**
+ * Stores a slab photo on disk and records it. Callers must already have checked write access
+ * and that the graded copy belongs to this collection.
+ */
 export function savePhoto(ctx: Ctx, collectionId: string, gradedId: string, side: string, buf: Buffer) {
   const mime = sniffImage(buf);
   if (!mime) throw bad('That file is not a supported image');
@@ -199,10 +255,15 @@ export function savePhoto(ctx: Ctx, collectionId: string, gradedId: string, side
   return { id, side: s, mime };
 }
 
+/** Best effort: `force` makes already-missing files a no-op so cleanup can be retried safely. */
 export function deletePhotoFiles(ctx: Ctx, ids: string[]) {
   for (const id of ids) rmSync(join(photoDir(ctx), id), { force: true });
 }
 
+/**
+ * The collection id is part of the lookup so a photo id from one collection can't be fetched
+ * through a route authorised for another.
+ */
 export function streamPhoto(ctx: Ctx, collectionId: string, photoId: string) {
   const p = ctx.db.get<{ id: string; mime: string }>('SELECT id, mime FROM graded_photos WHERE id = ? AND collection_id = ?', photoId, collectionId);
   const file = p && join(photoDir(ctx), p.id);
@@ -225,6 +286,16 @@ export interface ImportResult {
   remapped: number;
 }
 
+/**
+ * Merges a backup into a collection. Accepts current exports, older exports and the bare array
+ * format from the original browser-only app. Everything goes through the same sanitisers as live
+ * edits, invalid rows are skipped rather than failing the whole import, and the database writes
+ * happen in one transaction.
+ *
+ * Merge semantics: entries, slabs, wishlist and notes overwrite matching rows; value history
+ * only fills gaps. Card data and a fresh value snapshot are fetched afterwards in the background
+ * so a large import returns promptly.
+ */
 export async function importInto(ctx: Ctx, collectionId: string, data: unknown): Promise<ImportResult> {
   const obj = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   const rawEntries: unknown[] = Array.isArray(data) ? data : Array.isArray(obj.collection) ? obj.collection : [];
@@ -245,6 +316,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
     const e = cleanEntry(remap(r && typeof r === 'object' ? { ...r, quantity: q >= 1 ? q : 1 } : r));
     if (!e) continue;
     const prev = entries.get(e.id);
+    // The same card + variant can appear more than once in hand-edited files; sum rather than drop.
     entries.set(e.id, prev ? { ...prev, quantity: prev.quantity + e.quantity } : e);
   }
   const graded = rawGraded.map((g) => cleanGraded(remap(g))).filter((g): g is GradedCopy => !!g);
@@ -280,6 +352,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
     const gradedIds = new Set(graded.map((g) => g.id));
     for (const raw of rawPhotos) {
       const p = raw as { gradedId?: string; side?: string; dataUrl?: string };
+      // Only attach photos to slabs from this same file, never to an existing slab chosen by id.
       if (!p?.gradedId || !gradedIds.has(p.gradedId) || typeof p.dataUrl !== 'string') continue;
       const m = /^data:image\/[a-z+]+;base64,(.+)$/.exec(p.dataUrl);
       if (!m) continue;
@@ -287,7 +360,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
         savePhoto(ctx, collectionId, p.gradedId, p.side ?? 'other', Buffer.from(m[1], 'base64'));
         photos++;
       } catch {
-        /* skip unreadable photo */
+        /* skip unreadable photo: savePhoto re-sniffs the decoded bytes rather than trusting the data URL's type */
       }
     }
   });
@@ -301,6 +374,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
 export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.get('/api/collections', async (req) => listCollections(ctx, requireUser(req).id));
 
+  // Personal collections are created with the account (createUser); this only makes shared ones.
   app.post('/api/collections', async (req) => {
     const u = requireUser(req);
     const name = str((req.body as Record<string, unknown>)?.name, 60);
@@ -325,6 +399,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     const { id } = need(ctx, req, 'own');
     const c = ctx.db.get<CollectionRow>('SELECT * FROM collections WHERE id = ?', id)!;
     if (c.kind === 'personal') throw bad("Your personal collection can't be deleted");
+    // Collect photo ids before the cascade removes their rows, then delete the files afterwards.
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
     ctx.db.run('DELETE FROM collections WHERE id = ?', id);
     deletePhotoFiles(ctx, photos);
@@ -340,6 +415,10 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     );
   });
 
+  /**
+   * Adds or changes a member. Owner only, shared collections only: a personal collection stays
+   * private to its owner and is shared via share links instead. Role defaults to editor.
+   */
   app.put('/api/collections/:id/members/:userId', async (req) => {
     const { id } = need(ctx, req, 'own');
     const c = ctx.db.get<CollectionRow>('SELECT * FROM collections WHERE id = ?', id)!;
@@ -368,6 +447,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { role, ...collectionState(ctx, id) };
   });
 
+  // Bulk upsert so the client can save many changes in one request. All-or-nothing:
+  // one bad entry rejects the batch, so the client never ends up half-saved.
   app.put('/api/collections/:id/entries', async (req) => {
     const { id } = need(ctx, req, 'write');
     const list = (req.body as { entries?: unknown[] })?.entries;
@@ -375,6 +456,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     const clean = list.map(cleanEntry);
     if (clean.some((e) => !e)) throw bad('One or more entries are invalid');
     ctx.db.tx(() => clean.forEach((e) => putEntry(ctx, id, e!)));
+    // Fire and forget: fetch catalogue data for any new cards without holding up the save.
     void hydrateMissing(ctx, clean.map((e) => e!.cardId));
     return { entries: clean };
   });
@@ -402,6 +484,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
 
+  // Saving empty text deletes the note, so the client needs only one endpoint for both.
   app.put('/api/collections/:id/notes/:cardId', async (req) => {
     const { id } = need(ctx, req, 'write');
     const card = cardId((req.params as { cardId: string }).cardId);
@@ -414,6 +497,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.put('/api/collections/:id/graded/:gid', async (req) => {
     const { id } = need(ctx, req, 'write');
     const { gid } = req.params as { gid: string };
+    // The URL id wins over any id in the body, and must survive cleanGraded unchanged.
     const copy = cleanGraded({ ...(req.body as object), id: gid });
     if (!copy || copy.id !== gid) throw bad('That graded copy is invalid');
     putGraded(ctx, id, copy);
@@ -433,6 +517,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return photosFor(ctx, id, (req.params as { gid: string }).gid);
   });
 
+  // Multipart upload. Each part is sniffed and stored individually; size limits come from the
+  // multipart plugin configuration in app.ts.
   app.post('/api/collections/:id/graded/:gid/photos', async (req) => {
     const { id } = need(ctx, req, 'write');
     const { gid } = req.params as { gid: string };
@@ -449,6 +535,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.get('/api/collections/:id/photos/:pid', async (req, reply) => {
     const { id } = need(ctx, req, 'read');
     const { mime, stream } = streamPhoto(ctx, id, (req.params as { pid: string }).pid);
+    // Photo ids are random and never reused, so the bytes behind a URL never change. `private`
+    // keeps shared caches from storing them.
     reply.header('cache-control', 'private, max-age=31536000, immutable').type(mime);
     return reply.send(stream);
   });
@@ -461,12 +549,14 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
 
+  // Lets the client take a value snapshot on demand (e.g. after a big edit) instead of waiting for the nightly job.
   app.post('/api/collections/:id/value', async (req) => {
     const { id } = need(ctx, req, 'write');
     return { point: recordValue(ctx, id) ?? null };
   });
 
   // Backups can carry slab photos as data URLs.
+  // Hence the much larger body limit than the global default, on this route only.
   app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req) => {
     const { id } = need(ctx, req, 'write');
     const result = await importInto(ctx, id, req.body);
@@ -474,6 +564,10 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return result;
   });
 
+  /**
+   * Full, unredacted backup. Any member, including viewers, may export: they can already see
+   * every field in the app, so this exposes nothing new. Photos are not included.
+   */
   app.get('/api/collections/:id/export', async (req, reply) => {
     const { id } = need(ctx, req, 'read');
     const s = collectionState(ctx, id);
@@ -491,10 +585,13 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     };
   });
 
+  // Wipes the contents but keeps the collection, its members and its shares. Owner only because
+  // it is destructive and, unlike slab deletion, has no undo.
   app.post('/api/collections/:id/clear', async (req) => {
     const { id } = need(ctx, req, 'own');
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
     ctx.db.tx(() => {
+      // Table names are a fixed list, never user input, so interpolating them is safe.
       for (const t of ['entries', 'wishlist', 'notes', 'graded', 'graded_photos', 'value_history', 'lists']) ctx.db.run(`DELETE FROM ${t} WHERE collection_id = ?`, id);
     });
     deletePhotoFiles(ctx, photos);
@@ -504,6 +601,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // ------------------------------------------------------------ custom lists
 
+  // Checks collection access, then that the list really belongs to that collection, so a list id
+  // from somewhere else can't be edited through a collection the caller happens to have access to.
   const ownList = (req: FastifyRequest, level: 'read' | 'write') => {
     const { id, listId } = req.params as { id: string; listId: string };
     need(ctx, req, level);
@@ -533,6 +632,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     }
     if (body.description !== undefined) ctx.db.run('UPDATE lists SET description = ?, updated_at = ? WHERE id = ?', str(body.description, 500) || null, now(), listId);
     if (Array.isArray(body.order)) {
+      // Position is the array index; ids not already in the list are ignored by the WHERE clause.
       ctx.db.tx(() => (body.order as unknown[]).forEach((c, i) => typeof c === 'string' && ctx.db.run('UPDATE list_cards SET position = ? WHERE list_id = ? AND card_id = ?', i, listId, c)));
     }
     return { ok: true };
@@ -562,6 +662,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   // ------------------------------------------------------------ shared catalogue data
+  // Card and set data is instance-wide, not per collection, so any signed-in user may fill it in.
 
   app.post('/api/cards/hydrate', async (req) => {
     requireUser(req);
@@ -572,6 +673,11 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return Array.from(readCards(ctx.db, clean).values());
   });
 
+  /**
+   * Records a set's master-set size as counted by the client from the catalogue, so completion
+   * percentages work for every user without each one re-counting. The bounds keep obviously
+   * bogus totals out.
+   */
   app.put('/api/set-stats/:setId', async (req) => {
     requireUser(req);
     const setId = str((req.params as { setId: string }).setId, 100);

@@ -1,3 +1,7 @@
+/**
+ * Signed-in app chrome: desktop sidebar, mobile top and tab bars, collection switcher, value
+ * badge, and the command palette shortcut. Pages render into the <Outlet />.
+ */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
@@ -18,6 +22,10 @@ const NAV = [
   { to: '/search', label: 'Search', icon: Search },
 ];
 
+/**
+ * Sidebar collection value. Refresh asks the server for fresh prices; for members the server
+ * refuses that part and the store just reloads the latest prices it already has.
+ */
 function ValueBadge() {
   const entries = useCollectionStore((s) => s.entries);
   const cards = useCollectionStore((s) => s.cards);
@@ -101,11 +109,13 @@ export default function Layout() {
   const [palette, setPalette] = useState(false);
   const { pathname } = useLocation();
   const wishCount = useCollectionStore((s) => s.wishlist.size);
+  // Only hides the link; the admin page and its endpoints check the role again.
   const admin = useAuth((s) => isAdmin(s.user));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable]');
+      // Cmd/Ctrl+K works even while typing (it has no text meaning); '/' only outside text fields.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPalette((p) => !p);
@@ -118,6 +128,7 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // The layout persists across routes, so the browser won't reset scroll on navigation by itself.
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);

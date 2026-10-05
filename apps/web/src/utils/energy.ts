@@ -1,3 +1,4 @@
+/** Energy-type icons and CSS colour tokens, used for type badges and card placeholders. */
 import { Droplet, Eye, Flame, Hand, Hexagon, Leaf, Moon, Sparkles, Star, Swords, Zap, type LucideIcon } from 'lucide-react';
 
 export const TYPE_META: Record<string, { icon: LucideIcon; color: string }> = {
@@ -16,6 +17,7 @@ export const TYPE_META: Record<string, { icon: LucideIcon; color: string }> = {
 
 export const ENERGY_TYPES = Object.keys(TYPE_META);
 
+/** Colour token for a card type. Unknown or missing types fall back to Colorless rather than no colour. */
 export function typeColor(type?: string) {
   return (type && TYPE_META[type]?.color) || 'var(--color-colorless)';
 }

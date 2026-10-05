@@ -1,3 +1,10 @@
+/**
+ * Sharing hub. Two separate mechanisms live here:
+ * - Shared collections: real collections with members who can edit or view, opened via the
+ *   collection switcher like the personal one.
+ * - Share links: read-only snapshots of part of a collection (see ShareDialog), listed here
+ *   alongside links other people have shared with this user.
+ */
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, FolderPlus, LogOut, Pencil, Share2, Trash2, UserPlus, Users, X } from 'lucide-react';
@@ -43,6 +50,7 @@ function NameForm({ title, initial = '', action, onSave, onClose }: { title: str
   );
 }
 
+/** Members of a shared collection. Everyone can see who's in it; only the owner can change it. */
 function MembersDialog({ collection, onClose }: { collection: CollectionSummary; onClose: () => void }) {
   const qc = useQueryClient();
   const me = useAuth((s) => s.user?.id);
@@ -52,6 +60,7 @@ function MembersDialog({ collection, onClose }: { collection: CollectionSummary;
   const [pick, setPick] = useState('');
   const [role, setRole] = useState<Member['role']>('editor');
   const owner = collection.role === 'owner';
+  // People not already in the collection. The owner isn't in `members`, but is always `me` here.
   const candidates = (users.data ?? []).filter((u) => u.id !== me && !members.data?.some((m) => m.id === u.id));
   const refresh = () => qc.invalidateQueries({ queryKey: key });
   const onErr = (e: unknown) => toast(errorText(e), { tone: 'error' });
@@ -139,6 +148,7 @@ function CollectionsSection() {
   const [removing, setRemoving] = useState<CollectionSummary | null>(null);
   const [leaving, setLeaving] = useState<CollectionSummary | null>(null);
 
+  // Reloads the collection list and state, staying on the current collection unless told otherwise.
   const reload = (id?: string) => load(id ?? current ?? undefined);
 
   return (
@@ -226,6 +236,7 @@ function CollectionsSection() {
           action="Delete collection"
           onConfirm={async () => {
             await collectionsApi.remove(removing.id);
+            // If the open collection was deleted, fall back to the default pick (usually personal).
             await load(removing.id === current ? undefined : (current ?? undefined));
             toast(`Deleted ${removing.name}`);
           }}
@@ -238,6 +249,7 @@ function CollectionsSection() {
           body={`You'll lose access until ${leaving.ownerName} adds you again.`}
           action="Leave"
           onConfirm={async () => {
+            // Leaving is removing yourself as a member; the server allows that without owner rights.
             await collectionsApi.removeMember(leaving.id, me);
             await load(leaving.id === current ? undefined : (current ?? undefined));
           }}
@@ -266,6 +278,8 @@ function SharedWithMe() {
                   From {s.ownerName} · {SCOPE_LABEL[s.scope]}
                 </p>
               </div>
+              {/* Path only: the share URL embeds the server's configured public origin, which may differ
+                  from the one this user is browsing on, and a path keeps them on the same session. */}
               <a href={new URL(s.url, window.location.origin).pathname} className="btn btn-ghost !h-8 !text-xs">
                 <ExternalLink size={13} /> View
               </a>

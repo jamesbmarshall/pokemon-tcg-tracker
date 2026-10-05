@@ -1,3 +1,10 @@
+/**
+ * Collection valuation rules, shared so the server (nightly value history) and the web app
+ * (live totals) always agree on the numbers.
+ *
+ * Every amount is computed in USD, the currency the market prices come in. Rates map a currency
+ * to units per 1 USD; conversion to the user's display currency happens only at render time.
+ */
 import type { CardSnapshot, CollectionEntry, GradedCopy, Paid, ValuePoint } from './types';
 
 export type Currency = 'GBP' | 'EUR' | 'USD';
@@ -5,11 +12,14 @@ export type Rates = Record<Currency, number>;
 export const FALLBACK_RATES: Rates = { USD: 1, GBP: 0.76, EUR: 0.89 };
 export const CURRENCIES: readonly Currency[] = ['GBP', 'USD', 'EUR'];
 export const GRADING_COMPANIES = new Set(['PSA', 'BGS', 'CGC', 'SGC', 'TAG', 'ACE', 'Other']);
+/** Maximum note length. The server truncates to it; the web form limits input to match. */
 export const NOTE_MAX = 500;
 
+/** Deterministic collection entry id: one entry per card printing. Changing it would orphan stored entries. */
 export const entryKey = (cardId: string, variant: string) => `${cardId}::${variant}`;
 export const gradeRank = (grade: string) => (Number.isFinite(Number(grade)) ? Number(grade) : -1);
 
+/** Local-date key (YYYY-MM-DD) for value history, so one point is recorded per calendar day. */
 export function todayKey(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -26,6 +36,10 @@ export function isPaid(v: unknown): v is Paid {
   return !!p && typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount >= 0 && CURRENCIES.includes(p.currency);
 }
 
+/**
+ * Market price for a printing. Falls back to any price the card has, since a missing variant price
+ * (common for reverse holos) is closer to the card's other price than to zero.
+ */
 export function priceOf(card: CardSnapshot | undefined, variant: string) {
   if (!card) return undefined;
   return card.prices[variant] ?? Object.values(card.prices)[0];
@@ -36,6 +50,7 @@ export function gradedValue(g: GradedCopy, cards: Map<string, CardSnapshot>) {
   return g.valueUsd ?? priceOf(cards.get(g.cardId), g.variant) ?? 0;
 }
 
+/** Total market value and copy counts. Raw copies with no known price add to the count but not the value. */
 export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy> = []) {
   let valueUsd = 0;
   let count = 0;
@@ -97,6 +112,8 @@ export function valuePoint(
   const e = Array.from(entries);
   const g = Array.from(graded);
   const { valueUsd, count, unique } = computeValue(e, cards, g);
+  // An empty collection with no history has nothing to chart. With history, a zero point is real
+  // information (the user sold or removed everything) and is recorded.
   if (count === 0 && !hasHistory) return undefined;
   const point: ValuePoint = { date, valueUsd: round2(valueUsd), cards: count, unique };
   const cost = costBasis(e, cards, g, rates);

@@ -1,21 +1,33 @@
+/**
+ * Server-side card snapshots and collection reads. Card data (including prices) is stored once
+ * per card in the cards table and shared by every collection, so pricing work scales with the
+ * number of distinct cards, not with users. Value history is computed here from those prices.
+ */
 import { configureCatalog, getCardsByIds, toSnapshot } from '@poketracker/shared/catalog';
 import { FALLBACK_RATES, valuePoint, type Rates } from '@poketracker/shared/value';
 import type { CardSnapshot, CollectionEntry, GradedCopy, ValuePoint } from '@poketracker/shared/types';
 import { json, type Db } from './db.ts';
 import type { Ctx } from './context.ts';
 
+/** Latest stored FX rates, or built-in fallbacks before the first successful fx job. */
 export function currentRates(db: Db): Rates {
   const row = db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'fx'");
   return json<{ rates?: Rates }>(row?.value, {}).rates ?? FALLBACK_RATES;
 }
 
+/**
+ * Points the shared catalogue client at our configured TCGdex base. The rate is a callback so
+ * it picks up new FX rates without reconfiguring.
+ */
 export function initCatalog(ctx: Ctx) {
   configureCatalog({ base: ctx.config.tcgdexBase, eurPerUsd: () => currentRates(ctx.db).EUR });
 }
 
+/** Reads stored snapshots by id. Missing or corrupt rows are simply absent from the map. */
 export function readCards(db: Db, ids: Iterable<string>): Map<string, CardSnapshot> {
   const out = new Map<string, CardSnapshot>();
   const list = Array.from(new Set(ids));
+  // Chunked to stay well under SQLite's bound-parameter limit.
   for (let i = 0; i < list.length; i += 500) {
     const chunk = list.slice(i, i + 500);
     const rows = db.all<{ data: string }>(`SELECT data FROM cards WHERE id IN (${chunk.map(() => '?').join(',')})`, ...chunk);
@@ -48,10 +60,15 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
   });
 }
 
-/** Fetches full (priced) snapshots from TCGdex and stores them. Returns how many were refreshed. */
+/**
+ * Fetches full (priced) snapshots from TCGdex and stores them. Returns how many were refreshed.
+ * A failed batch is logged and skipped so the rest still refresh; the call only throws when
+ * every batch failed, which points at TCGdex being down rather than a few bad ids.
+ */
 export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
   let refreshed = 0;
   let failed = 0;
+  // Saved batch by batch so a long run keeps its progress if a later batch fails.
   for (let i = 0; i < ids.length; i += 40) {
     try {
       const fresh = await getCardsByIds(ids.slice(i, i + 40));
@@ -66,7 +83,11 @@ export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
   return refreshed;
 }
 
-/** Card ids anybody owns, wishlists, grades or lists. These are kept priced and cached. */
+/**
+ * Card ids anybody owns, wishlists, grades or lists. These are kept priced and cached.
+ * UNION (not UNION ALL) deduplicates across users and collections, so the price and image jobs
+ * fetch each card once however many people hold it.
+ */
 export function trackedCardIds(db: Db): string[] {
   return db
     .all<{ id: string }>(
@@ -76,9 +97,13 @@ export function trackedCardIds(db: Db): string[] {
     .map((r) => r.id);
 }
 
+/** Ids being hydrated right now, so rapid repeated mutations don't fetch the same card twice. */
 const inFlight = new Set<string>();
 
-/** Fetches snapshots for ids we have never priced. Fire-and-forget from mutations. */
+/**
+ * Fetches snapshots for ids we have never priced, so a newly added card shows a value without
+ * waiting for the next prices job. Fire-and-forget from mutations: it never rejects.
+ */
 export function hydrateMissing(ctx: Ctx, ids: string[]) {
   const known = readCards(ctx.db, ids);
   const missing = ids.filter((id) => !inFlight.has(id) && !Object.keys(known.get(id)?.prices ?? {}).length);
@@ -96,6 +121,7 @@ export interface Holdings {
   graded: GradedCopy[];
 }
 
+/** Maps an entries row to the shared type, leaving out empty optional fields rather than sending nulls. */
 export const rowToEntry = (r: Record<string, unknown>): CollectionEntry => ({
   id: r.id as string,
   cardId: r.card_id as string,
@@ -124,7 +150,11 @@ export function readHistory(db: Db, collectionId: string): ValuePoint[] {
   return db.all<{ data: string }>('SELECT data FROM value_history WHERE collection_id = ? ORDER BY date', collectionId).map((r) => json<ValuePoint>(r.data, {} as ValuePoint));
 }
 
-/** Records today's value point for one collection, computed from server-side prices. */
+/**
+ * Records today's value point for one collection, computed from server-side prices. Done on
+ * the server so history keeps growing while nobody has the app open. hasHistory lets
+ * valuePoint skip writing an empty first point for a collection that has never held anything.
+ */
 export function recordValue(ctx: Ctx, collectionId: string): ValuePoint | undefined {
   const entries = readEntries(ctx.db, collectionId);
   const graded = readGraded(ctx.db, collectionId);

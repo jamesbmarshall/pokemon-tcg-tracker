@@ -1,3 +1,8 @@
+/**
+ * The signed-in user's own account: display name, password, two-factor sign-in and active
+ * sessions. Password and two-factor changes ask for the password again, and the server checks it,
+ * so a session left open on a shared computer can't be used to take over the account.
+ */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, LogOut, Monitor, ShieldCheck, ShieldOff } from 'lucide-react';
@@ -10,6 +15,7 @@ import { CopyField, Field, FormError, Modal, PasswordPrompt, StatusPill } from '
 import { useSubmit } from '../components/formUtils';
 import { describeAgent, relativeTime } from '../utils/format';
 
+/** Two-column settings section (heading left, controls right), also used by the Admin page. */
 export function Section({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="grid gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
@@ -50,6 +56,7 @@ function ChangePassword({ user }: { user: User }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
+  // Same rules as the server (shared package), so most problems show before submitting.
   const problem = next ? passwordProblem(next, user.username) : undefined;
   const { busy, error, onSubmit } = useSubmit(async () => {
     if (problem) throw new Error(problem);
@@ -73,6 +80,7 @@ function ChangePassword({ user }: { user: User }) {
   );
 }
 
+// The server stores only hashes of recovery codes, so this is the one chance to see them.
 function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
   const text = codes.join('\n');
   return (
@@ -94,6 +102,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
             a.href = url;
             a.download = 'poketracker-recovery-codes.txt';
             a.click();
+            // Safe to revoke straight away: click() has already started the download.
             URL.revokeObjectURL(url);
           }}
         >
@@ -107,6 +116,11 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
   );
 }
 
+/**
+ * Two-factor enrolment is two-step: setup returns a secret that the server holds as pending, and
+ * 2FA is only switched on once the user proves their app works by entering a valid code. That
+ * avoids locking someone out with a half-scanned QR code.
+ */
 function TwoFactor({ user }: { user: User }) {
   const setUser = useAuth((s) => s.setUser);
   const [enrol, setEnrol] = useState<{ secret: string; qr: string } | null>(null);
@@ -144,6 +158,7 @@ function TwoFactor({ user }: { user: User }) {
             <li>Scan this with an authenticator app (1Password, Google Authenticator, Microsoft Authenticator…).</li>
             <li>Type the 6-digit code it shows.</li>
           </ol>
+          {/* Loaded as an <img>, not inlined, so the server-generated SVG can't run script. */}
           <img src={`data:image/svg+xml;utf8,${encodeURIComponent(enrol.qr)}`} alt="Two-factor QR code" className="h-44 w-44 rounded-xl bg-white p-2" />
           <details className="text-xs text-muted">
             <summary className="cursor-pointer">Can't scan it?</summary>
@@ -215,6 +230,7 @@ interface SessionRow {
   userAgent: string;
 }
 
+/** Every active session for this account. The current one can't be revoked here; use Sign out. */
 function Sessions() {
   const qc = useQueryClient();
   const { data, isPending } = useQuery({ queryKey: ['account', 'sessions'], queryFn: () => api<SessionRow[]>('/api/account/sessions') });

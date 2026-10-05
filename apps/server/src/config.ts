@@ -1,3 +1,8 @@
+/**
+ * Runtime configuration, read once from environment variables at startup. Defaults suit the
+ * container image; the launcher sets the variables that tie a process to its bundle
+ * (WEB_DIR, APP_MANIFEST, POKETRACKER_LAUNCHER*).
+ */
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -22,7 +27,11 @@ export interface Config {
   setupToken: string;
   imageCacheMb: number;
   backupsToKeep: number;
-  /** 'wal' on local disks; 'delete' for network shares where WAL locking is unreliable. */
+  /**
+   * 'wal' on local disks. 'delete' for network shares such as Azure Files (SMB): WAL relies on a
+   * memory-mapped -shm file and byte-range locks that SMB does not honour reliably, which can
+   * corrupt the database. Rollback journalling is slower but safe there.
+   */
   journalMode: 'wal' | 'delete';
   logLevel: string;
   jobs: boolean;
@@ -30,6 +39,10 @@ export interface Config {
   fxUrl: string;
 }
 
+/**
+ * The bundle's manifest is the source of truth for our version, because /health reports it and
+ * the launcher only accepts a new version once /health returns that exact string.
+ */
 function readVersion(): string {
   const candidates = [process.env.APP_MANIFEST, join(process.cwd(), 'manifest.json')].filter(Boolean) as string[];
   for (const file of candidates) {
@@ -42,6 +55,7 @@ function readVersion(): string {
   return process.env.APP_VERSION ?? '0.0.0-dev';
 }
 
+/** The Ed25519 public key that release bundles must be signed with; the image bakes in a file. */
 function readKey(): string {
   if (process.env.UPDATE_PUBLIC_KEY) return process.env.UPDATE_PUBLIC_KEY;
   const file = process.env.UPDATE_PUBLIC_KEY_FILE;
@@ -57,6 +71,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dataDir: resolve(env.DATA_DIR ?? './data'),
     webDir: env.WEB_DIR ? resolve(env.WEB_DIR) : '',
     publicUrl: (env.PUBLIC_URL ?? '').replace(/\/$/, ''),
+    // On by default because most installs sit behind a reverse proxy or Azure ingress.
     trustProxy: bool(env.TRUST_PROXY, true),
     version: readVersion(),
     supervised: env.POKETRACKER_LAUNCHER === '1',
@@ -67,6 +82,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     setupToken: env.SETUP_TOKEN ?? '',
     imageCacheMb: Number(env.IMAGE_CACHE_MB ?? 2048),
     backupsToKeep: Number(env.BACKUPS_TO_KEEP ?? 7),
+    // Anything other than an explicit 'delete' means WAL, so a typo can't produce an invalid PRAGMA.
     journalMode: env.SQLITE_JOURNAL_MODE === 'delete' ? 'delete' : 'wal',
     logLevel: env.LOG_LEVEL ?? 'info',
     jobs: bool(env.JOBS, true),

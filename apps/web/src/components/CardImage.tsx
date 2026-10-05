@@ -22,6 +22,7 @@ interface Props {
  * server's cache, which keeps owned cards' art even if the CDN changes.
  */
 export default function CardImage({ id, src, name, number, setName, types, hires = false, alt = '', className = '', loading = 'lazy', onLoad }: Props) {
+  // Ordered fallbacks. A change of card resets `failed`, because its key no longer matches.
   const sources = [src, legacyImageUrl(id, hires)].filter((s): s is string => !!s).map((s) => imageSrc(s));
   const key = sources.join('|');
   const [failed, setFailed] = useState({ key: '', n: 0 });

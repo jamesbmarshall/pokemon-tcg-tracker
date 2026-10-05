@@ -1,3 +1,11 @@
+/**
+ * Read-only Backend used on public share pages (/s/:token).
+ *
+ * The share payload is loaded separately via sharing.publicShare(); this backend only exists so
+ * components that talk to the collection store keep working. Refusing writes here is a courtesy
+ * for the UI: the real protection is that public routes on the server have no write endpoints and
+ * apply the share's privacy flags before returning anything.
+ */
 import type { Backend } from './backend';
 import { sharing } from './sharing';
 
@@ -21,6 +29,8 @@ export function publicBackend(token: string): Backend {
     photos: (_cid, gradedId) => sharing.publicPhotos(token, gradedId),
     addPhotos: refuse,
     deletePhoto: refuse,
+    // These are called as background side effects by normal pages, so they resolve quietly
+    // instead of throwing and surfacing an error toast to a visitor.
     recordValue: async () => null,
     importData: refuse,
     clear: refuse,

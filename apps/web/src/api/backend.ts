@@ -1,7 +1,16 @@
+/**
+ * Persistence contract for the collection store, plus the default HTTP implementation.
+ *
+ * The server is the source of truth; collectionStore keeps an optimistic in-memory copy
+ * and calls these methods to persist each change. Keeping the store behind this interface
+ * lets tests run against an in-memory fake and lets public share pages swap in a read-only
+ * backend without the store knowing the difference.
+ */
 import { api } from './http';
 import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, SetStat, ValuePoint, WishlistEntry } from './types';
 import type { CardNote } from './types';
 
+/** The caller's role on a collection. The server enforces it; the UI only uses it to hide edit controls. */
 export type CollectionRole = 'owner' | 'editor' | 'viewer';
 
 export interface CustomList {
@@ -14,15 +23,22 @@ export interface CustomList {
   cards: string[];
 }
 
+/** One entry in the collection switcher: the user's personal collection or one shared with them. */
 export interface CollectionSummary {
   id: string;
   name: string;
   kind: 'personal' | 'shared';
   role: CollectionRole;
   ownerName: string;
+  /** True when the caller owns it, as opposed to being a member via sharing. */
   mine: boolean;
 }
 
+/**
+ * Full snapshot of a collection, returned in one request when the user opens or switches
+ * collection. `cards` holds catalogue snapshots for every referenced card so pages can render
+ * without a round trip per card.
+ */
 export interface CollectionData {
   role: CollectionRole;
   entries: CollectionEntry[];
@@ -35,6 +51,7 @@ export interface CollectionData {
   lists: CustomList[];
 }
 
+/** A graded-copy photo. `url` is built client-side and is only fetchable with a valid session or share token. */
 export interface PhotoRef {
   id: string;
   side: GradedPhoto['side'];
@@ -42,6 +59,7 @@ export interface PhotoRef {
   url: string;
 }
 
+/** Per-kind counts from an import. `remapped` counts legacy card ids translated to current TCGdex ids. */
 export interface ImportResult {
   entries: number;
   graded: number;
@@ -55,7 +73,9 @@ export interface ImportResult {
 export interface SystemStatus {
   version: string;
   lastPriceSync: string | null;
+  /** Epoch ms of the last FX rate fetch, or null if rates have never been loaded. */
   fxAt: number | null;
+  /** Only reported to owners and admins; members get the base status without update details. */
   updateAvailable?: boolean;
   latest?: string | null;
 }
@@ -66,6 +86,7 @@ export interface SystemStatus {
  * read-only one.
  */
 export interface Backend {
+  /** When set, the store skips writes up front instead of attempting them and rolling back. */
   readonly readOnly?: boolean;
   collections(): Promise<CollectionSummary[]>;
   state(collectionId: string): Promise<CollectionData>;
@@ -85,6 +106,7 @@ export interface Backend {
   clear(collectionId: string): Promise<void>;
   /** Asks the server for full card details (prices), fetching them upstream if needed. */
   hydrate(ids: string[]): Promise<CardSnapshot[]>;
+  /** Records a set's master-set size (all variants) so progress can be computed without refetching the set. */
   putSetStat(setId: string, masterTotal: number): Promise<void>;
   createList(collectionId: string, name: string, description?: string): Promise<CustomList>;
   updateList(collectionId: string, listId: string, patch: { name?: string; description?: string; order?: string[] }): Promise<void>;
@@ -96,6 +118,8 @@ export interface Backend {
   refreshPrices(): Promise<void>;
 }
 
+// Every id goes into the path through encodeURIComponent so an id containing reserved
+// characters can never change which endpoint is hit.
 const enc = encodeURIComponent;
 const c = (id: string) => `/api/collections/${enc(id)}`;
 
@@ -109,6 +133,8 @@ export const httpBackend: Backend = {
   putNote: async (id, cardId, text) => void (await api(`${c(id)}/notes/${enc(cardId)}`, { method: 'PUT', body: { text } })),
   putGraded: async (id, copy) => void (await api(`${c(id)}/graded/${enc(copy.id)}`, { method: 'PUT', body: copy })),
   deleteGraded: async (id, gid) => void (await api(`${c(id)}/graded/${enc(gid)}`, { method: 'DELETE' })),
+  // Photo bytes are served by a separate authenticated route, so the list endpoint returns
+  // metadata only and the URL is derived here.
   photos: async (id, gid) => {
     const rows = await api<Omit<PhotoRef, 'url'>[]>(`${c(id)}/graded/${enc(gid)}/photos`);
     return rows.map((p) => ({ ...p, url: `${c(id)}/photos/${enc(p.id)}` }));
@@ -118,6 +144,7 @@ export const httpBackend: Backend = {
     form.append('side', side);
     files.forEach((f, i) => form.append('file', f, `photo-${i}.jpg`));
     const rows = await api<{ id: string; side: PhotoRef['side'] }[]>(`${c(id)}/graded/${enc(gid)}/photos`, { method: 'POST', body: form });
+    // The upload response omits timestamps; the local clock is close enough for display ordering.
     const at = new Date().toISOString();
     return rows.map((p) => ({ ...p, addedAt: at, url: `${c(id)}/photos/${enc(p.id)}` }));
   },
@@ -136,6 +163,7 @@ export const httpBackend: Backend = {
   refreshPrices: async () => void (await api('/api/admin/jobs/prices/run?wait=1', { method: 'POST' })),
 };
 
+// Module-level rather than React context because the zustand store is created outside React.
 let current: Backend = httpBackend;
 
 export const getBackend = () => current;

@@ -1,5 +1,5 @@
 /**
- * Catalogue adapter for TCGdex (https://tcgdex.dev) — free, open source and keyless.
+ * Catalogue adapter for TCGdex (https://tcgdex.dev): free, open source and keyless.
  * Everything that talks to the card data provider lives here, so the rest of the app only
  * ever sees PokemonCard / CardSet / CardSnapshot.
  */
@@ -14,6 +14,7 @@ export const TCGDEX_API = 'https://api.tcgdex.net/v2';
 let API = TCGDEX_API;
 let GRAPHQL = `${TCGDEX_API}/graphql`;
 let extraHeaders: () => Record<string, string> = () => ({});
+// Only used to convert Cardmarket (EUR) prices to USD when TCGplayer has none.
 let eurRate: () => number = () => 0.89;
 
 /**
@@ -35,6 +36,11 @@ const DIGITAL_SERIES = new Set(['tcgp']);
 
 const backoff = (attempt: number) => new Promise((r) => setTimeout(r, 400 * 2 ** attempt + Math.random() * 250));
 
+/**
+ * fetch with retries for network errors, 429 and 5xx (up to four attempts with jittered backoff).
+ * TCGdex is a free community service and has occasional blips; one should not break a page.
+ * Aborted requests are never retried.
+ */
 async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     let res: Response;
@@ -56,6 +62,7 @@ async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSig
 }
 
 export function rest<T>(path: string, params?: Record<string, string>, signal?: AbortSignal, lang: Lang = 'en'): Promise<T> {
+  // In the browser API is a relative path (/api/tcgdex/v2), so it needs the page as a base URL.
   const url = new URL(`${API}/${lang}${path}`, typeof location !== 'undefined' ? location.href : undefined);
   if (params) for (const [k, v] of Object.entries(params)) url.searchParams.append(k, v);
   return request<T>(url.toString(), {}, signal);
@@ -75,6 +82,7 @@ const str = (s: string) => JSON.stringify(s);
 /** GraphQL picks the catalogue language per field via a directive. */
 const loc = (lang: Lang) => (lang === 'en' ? '' : ` @locale(lang: ${str(lang)})`);
 
+/** Runs `fn` over `items` with at most `size` in flight, so bulk card fetches don't flood TCGdex. */
 async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
   const out: PromiseSettledResult<R>[] = new Array(items.length);
   let next = 0;
@@ -156,6 +164,7 @@ const logoUrl = (logo?: string) => (logo ? `${logo}.webp` : '');
 // Symbols are only served from the language path as PNG.
 const symbolUrl = (symbol: string | undefined, lang: Lang) => (symbol ? `${symbol.replace('/univ/', `/${lang}/`)}.png` : '');
 
+// Reverse of LEGACY_SET_MAP. Several legacy ids can map to one TCGdex set; the first one wins.
 const LEGACY_BY_TCGDEX = new Map<string, string>();
 for (const [legacy, id] of Object.entries(LEGACY_SET_MAP)) if (!LEGACY_BY_TCGDEX.has(id)) LEGACY_BY_TCGDEX.set(id, legacy);
 
@@ -174,6 +183,8 @@ export function legacyImageUrl(cardId: string, hires = false): string | undefine
 
 // ---------------------------------------------------------------- sets
 
+// Module-level set cache. Cards from listings carry only a brief set, so the full set (release
+// date, printed total) is looked up here.
 const setIndex = new Map<string, CardSet>();
 const loadedLangs = new Set<Lang>();
 
@@ -182,6 +193,7 @@ function toSet(raw: RawSet, lang: Lang = 'en'): CardSet {
     id: withLang(lang, raw.id),
     name: raw.name,
     series: raw.serie?.name ?? '',
+    // 'official' is the number printed on cards (e.g. /198); secret rares push 'total' beyond it.
     printedTotal: raw.cardCount?.official ?? raw.cardCount?.total ?? 0,
     total: raw.cardCount?.total ?? 0,
     releaseDate: raw.releaseDate ?? '',
@@ -198,6 +210,7 @@ export function primeSets(sets: CardSet[] | undefined, lang: Lang = 'en') {
   loadedLangs.add(lang);
 }
 
+// De-duplicates concurrent getSets() calls, which many components make on first load.
 const setsInFlight = new Map<Lang, Promise<CardSet[]>>();
 
 export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
@@ -208,6 +221,7 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
     )
       .then(({ sets }) => {
         const list = sets
+          // Drop digital-only and empty (announced but not yet catalogued) sets.
           .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
           .map((s) => toSet(s, lang))
           .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
@@ -244,6 +258,11 @@ function setFor(rawCardId: string, brief: RawSetBrief | undefined, lang: Lang): 
 
 const VARIANT_ORDER = ['normal', '1stEditionNormal', 'holofoil', '1stEditionHolofoil', 'reverseHolofoil', 'wPromo'];
 
+/**
+ * Maps TCGdex's variant flags to the variant keys stored in collections (pokemontcg.io names).
+ * A first-edition flag on a card with both normal and holo printings yields both 1st Edition
+ * variants. With no flags at all, guess from rarity so every card has at least one variant.
+ */
 function toVariants(v: RawVariants | undefined, rarity?: string): string[] {
   const out: string[] = [];
   if (v?.normal) out.push('normal');
@@ -258,12 +277,14 @@ function toVariants(v: RawVariants | undefined, rarity?: string): string[] {
   return out.sort((a, b) => VARIANT_ORDER.indexOf(a) - VARIANT_ORDER.indexOf(b));
 }
 
+// TCGplayer's price keys (after camel-casing) differ from our variant keys for base-era printings.
 const PRICE_KEY_ALIASES: Record<string, string> = {
   unlimited: 'normal',
   unlimitedHolofoil: 'holofoil',
   '1stEdition': '1stEditionNormal',
 };
 const camel = (k: string) => k.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+// Zero or missing means "no data" in TCGdex pricing, never a real price of zero.
 const num = (v: unknown) => (typeof v === 'number' && v > 0 ? v : undefined);
 
 function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSource | undefined {
@@ -276,6 +297,7 @@ function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSo
     const key = PRICE_KEY_ALIASES[camel(k)] ?? camel(k);
     const block = { low: num(p.lowPrice), mid: num(p.midPrice), high: num(p.highPrice), market: num(p.marketPrice), directLow: num(p.directLowPrice) };
     if (Object.values(block).some((x) => x !== undefined)) prices[key] = block;
+    // Every variant block points at the same product page, so the first id found is enough.
     productId ??= p.productId;
   }
   if (!Object.keys(prices).length) return undefined;
@@ -312,7 +334,10 @@ function eurPerUsd(): number {
   return r > 0 ? r : 0.89;
 }
 
-/** Best single market price per variant in USD: TCGplayer, falling back to converted Cardmarket. */
+/**
+ * Best single market price per variant in USD: TCGplayer, falling back to converted Cardmarket.
+ * USD is the base for every stored price; EUR figures are divided by the EUR-per-USD rate.
+ */
 export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | 'variants'>): Record<string, number> {
   const out: Record<string, number> = {};
   const rate = eurPerUsd();
@@ -322,6 +347,7 @@ export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | '
     if (usd) out[v] = usd;
     else {
       const eur = card.cardmarket?.prices[v]?.market;
+      // Rounded to cents so converted prices don't show spurious precision.
       if (eur) out[v] = Math.round((eur / rate) * 100) / 100;
     }
   }
@@ -341,10 +367,12 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     id: withLang(lang, raw.id),
     name: raw.name,
     supertype: CATEGORY[category] ?? category,
+    // TCGdex reports a non-special energy as energyType 'Normal', which isn't a meaningful subtype.
     subtypes: [raw.stage, raw.suffix, raw.trainerType, raw.energyType].filter((x): x is string => !!x && x !== 'Normal'),
     hp: raw.hp ? String(raw.hp) : undefined,
     types: raw.types?.map(type),
     evolvesFrom: raw.evolveFrom,
+    // Trainer and Energy text is shown as rules; Pokémon use attacks and abilities instead.
     rules: !isPokemon && raw.effect ? [raw.effect] : undefined,
     abilities: raw.abilities?.map((a) => ({ name: a.name, text: a.effect ?? '', type: a.type ?? 'Ability' })),
     attacks: raw.attacks?.map((a) => ({
@@ -380,6 +408,7 @@ const LIST_FIELDS = 'id localId name image category rarity illustrator types hp 
 /** A card with full text and prices. */
 export async function getCard(cardId: string): Promise<PokemonCard> {
   const { lang, raw } = splitId(cardId);
+  // Best effort: the set list adds release dates, but a card should still load without it.
   await ensureSets(lang).catch(() => undefined);
   return toCard(await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, undefined, lang), true, lang);
 }
@@ -388,6 +417,8 @@ export async function getCard(cardId: string): Promise<PokemonCard> {
 async function getCardsBrief(ids: string[], signal?: AbortSignal): Promise<PokemonCard[]> {
   if (!ids.length) return [];
   const parts = ids.map(splitId);
+  // One GraphQL request with an alias per id. Ids go through JSON.stringify so they can't break
+  // out of the string literal.
   const body = parts.map(({ lang, raw }, i) => `c${i}: card(id: ${str(raw)})${loc(lang)} { ${LIST_FIELDS} set { id name } }`).join('\n');
   const data = await gql<Record<string, RawCard | null>>(`{ ${body} }`, signal);
   return parts.flatMap(({ lang }, i) => {
@@ -401,6 +432,8 @@ export async function getCardsByIds(ids: string[]): Promise<PokemonCard[]> {
   await Promise.all(Array.from(new Set(ids.map((id) => splitId(id).lang)), (l) => ensureSets(l).catch(() => undefined)));
   const results = await pool(ids, 6, getCard);
   const ok = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+  // Partial failures are tolerated (that card just keeps its old snapshot). Only when everything
+  // failed, for a reason other than ids TCGdex no longer knows, is it treated as an outage.
   if (!ok.length && ids.length) {
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
     if (failure && !String(failure.reason).includes('Not found')) throw failure.reason;
@@ -416,6 +449,7 @@ export async function getSetCards(setId: string): Promise<PokemonCard[]> {
     (async () => {
       const all: RawCard[] = [];
       const per = 250;
+      // Capped at 19 pages (4,750 cards) as a guard against a pagination bug looping forever.
       for (let page = 1; page < 20; page++) {
         // The id filter is a substring match, so results are filtered to this exact set below.
         const { cards } = await gql<{ cards: RawCard[] }>(
@@ -470,8 +504,10 @@ function searchParams(f: SearchFilters, lang: Lang): Record<string, string> {
   if (f.types?.length) params.types = f.types.map((t) => fromEnglishType(lang, t)).join('|');
   if (f.supertype) {
     const cat = f.supertype.replace('é', 'e');
+    // The UI uses 'Pokémon'; TCGdex's English category is 'Pokemon'.
     params.category = lang === 'en' ? cat : fromEnglishCategory(lang, cat);
   }
+  // eq: forces an exact match; the default is substring, so "Rare" would also match "Rare Holo".
   if (f.rarity) params.rarity = `eq:${f.rarity}`;
   if (f.artist) params.illustrator = f.artist;
   return params;
@@ -487,6 +523,7 @@ function dexIdsFor(name: string, signal?: AbortSignal): Promise<number[]> {
     hit = gql<{ cards: { dexId?: number[] | null }[] }>(`{ cards(filters: { name: ${str(name)} }, pagination: { page: 1, itemsPerPage: 500 }) { dexId } }`, signal).then(({ cards }) =>
       Array.from(new Set(cards.flatMap((c) => c.dexId ?? []))),
     );
+    // Failed lookups are evicted so the next search retries instead of caching the error.
     hit.catch(() => dexCache.delete(key));
     dexCache.set(key, hit);
   }
@@ -521,6 +558,7 @@ function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]>
       const [, ...lists] = await Promise.all([Promise.all(langs.map((l) => ensureSets(l))), ...langs.map((l) => matchesInLang(f, l, signal))]);
       const seen = new Set<string>();
       const out = lists.flat().filter((c) => {
+        // Cards whose set isn't in the index belong to filtered-out (digital) sets.
         if (seen.has(c.id) || !setIndex.has(setIdFromCardId(c.id)) || (f.setId && setIdFromCardId(c.id) !== f.setId)) return false;
         seen.add(c.id);
         return true;
@@ -533,11 +571,13 @@ function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]>
     })();
     hit.catch(() => matchCache.delete(key));
     matchCache.set(key, hit);
+    // Keep the cache bounded: evict the oldest query (Map preserves insertion order).
     if (matchCache.size > 30) matchCache.delete(matchCache.keys().next().value!);
   }
   return hit;
 }
 
+/** One page of search results. Matching runs once per query; each page then fetches just its cards. */
 export async function searchCards(f: SearchFilters, page: number, signal?: AbortSignal): Promise<ApiResponse<PokemonCard[]>> {
   const all = await matchingCards(f, signal);
   const slice = all.slice((page - 1) * SEARCH_PAGE, page * SEARCH_PAGE);
@@ -577,14 +617,20 @@ export async function getRarities(lang: Lang = 'en'): Promise<string[]> {
 
 // ---------------------------------------------------------------- helpers
 
+/** A card's collectible variants, never empty: every card can be owned as at least a normal printing. */
 export function cardVariants(card: Pick<PokemonCard, 'variants'>): string[] {
   return card.variants?.length ? card.variants : ['normal'];
 }
 
+/** Natural sort for card numbers, so 2 comes before 10 and TG2 before TG10. */
 export function compareCardNumber(a: { number: string }, b: { number: string }) {
   return a.number.localeCompare(b.number, undefined, { numeric: true });
 }
 
+/**
+ * Flattens a card into the snapshot stored alongside collections. Listing cards carry no prices,
+ * so their snapshot has empty `prices`; the web store's merge keeps any earlier priced snapshot.
+ */
 export function toSnapshot(card: PokemonCard): CardSnapshot {
   return {
     id: card.id,
@@ -609,6 +655,7 @@ export function toSnapshot(card: PokemonCard): CardSnapshot {
   };
 }
 
+/** Set id from a card id. Uses the last '-' because set ids may themselves contain one. */
 export function setIdFromCardId(cardId: string): string {
   return cardId.slice(0, cardId.lastIndexOf('-'));
 }

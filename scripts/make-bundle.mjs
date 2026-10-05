@@ -27,8 +27,12 @@ const fail = (msg) => {
 };
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+// The version becomes a folder name under /data/app and is compared by the updater, so it
+// must be strict semver.
 const version = (opt('--version') || process.env.RELEASE_VERSION || pkg.version).replace(/^v/, '');
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) fail(`"${version}" is not a semver version`);
+// Raise package.json's poketracker.minLauncher when a bundle relies on new launcher behaviour;
+// older installs then refuse the in-app update and ask for a new image instead.
 const minLauncher = pkg.poketracker?.minLauncher ?? '1.0.0';
 
 const serverDist = join(root, 'apps/server/dist');
@@ -47,6 +51,7 @@ if (!commit) {
 
 const out = join(root, 'release');
 const stage = join(out, 'bundle');
+// Start from empty so files from a previous build can't slip into this bundle.
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
 cpSync(join(serverDist, 'server.mjs'), join(stage, 'server.mjs'));
@@ -55,26 +60,34 @@ cpSync(webDist, join(stage, 'web'), { recursive: true });
 const manifest = { version, minLauncher, ...(commit && { commit }), builtAt: new Date().toISOString() };
 writeFileSync(join(stage, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`make-bundle: staged ${version} in ${stage}`);
+// The image's bundle (--stage-only) needs no archive or signature: it is trusted by being in the image.
 if (flag('--stage-only')) process.exit(0);
 
 const name = `poketracker-${version}.tar.gz`;
 const file = join(out, name);
+// An explicit entry list keeps anything else in the stage folder out of the archive.
 const entries = ['manifest.json', 'server.mjs', ...(existsSync(join(stage, 'server.mjs.map')) ? ['server.mjs.map'] : []), 'web'];
+// portable + noMtime drop owner ids and timestamps: no build-machine details in the archive,
+// and nothing that would make ownership odd when the server extracts it.
 await tar.c({ gzip: { level: 9 }, file, cwd: stage, portable: true, noMtime: true }, entries);
 const bundle = readFileSync(file);
 const digest = createHash('sha256').update(bundle).digest('hex');
+// sha256sum format, so `sha256sum -c` works for anyone checking a download by hand.
 writeFileSync(`${file}.sha256`, `${digest}  ${name}\n`);
 console.log(`make-bundle: wrote ${name} (${(bundle.length / 1024 / 1024).toFixed(1)} MB, sha256 ${digest})`);
 
 const pem = process.env.UPDATE_SIGNING_KEY?.trim();
 if (!pem) {
   if (flag('--require-signature')) fail('UPDATE_SIGNING_KEY is not set, so the bundle cannot be signed');
+  // Remove any stale signature so it can't be published alongside a bundle it doesn't match.
   rmSync(`${file}.sig`, { force: true });
   console.warn('make-bundle: UPDATE_SIGNING_KEY not set; bundle is unsigned and in-app updates will refuse it');
   process.exit(0);
 }
 const key = createPrivateKey(pem);
+// The server verifies with Ed25519 only, so any other key type would yield unusable releases.
 if (key.asymmetricKeyType !== 'ed25519') fail('UPDATE_SIGNING_KEY must be an Ed25519 private key');
+// Signs the exact archive bytes the server downloads and verifies before extracting.
 const signature = sign(null, bundle, key);
 // Catch a secret that doesn't match the public key baked into the image before anything is published.
 const pubFile = join(root, 'deploy/update-public-key.pem');

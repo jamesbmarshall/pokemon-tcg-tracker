@@ -1,4 +1,6 @@
+/** Display formatting for dates, percentages, byte sizes and user agents. Dates are shown in en-GB style. */
 export function formatDate(iso: string) {
+  // TCGdex release dates use slashes (2023/09/22), which not every browser parses.
   const d = new Date(iso.replace(/\//g, '-'));
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -20,10 +22,12 @@ export function relativeTime(iso: string) {
   return formatDate(iso);
 }
 
+/** Percentage for progress bars, capped at 100 and returning 0 for an empty total instead of NaN. */
 export function pct(n: number, d: number) {
   return d > 0 ? Math.min(100, (n / d) * 100) : 0;
 }
 
+/** Today's date as YYYY-MM-DD in the user's local time zone (not UTC), so it matches the user's calendar. */
 export function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -49,6 +53,7 @@ export function bytes(n: number) {
   return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }
 
+/** Time until a future moment, for scheduled jobs. Anything in the past reads as "due now". */
 export function fromNow(iso: string) {
   const m = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
   if (m <= 0) return 'due now';

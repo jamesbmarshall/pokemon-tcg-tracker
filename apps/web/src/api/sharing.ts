@@ -1,3 +1,12 @@
+/**
+ * Client for sharing: share links, shares received from other users, and shared-collection
+ * membership.
+ *
+ * A share is a read-only window onto part of a collection (all of it, one set, the wishlist,
+ * graded copies or a custom list) for a chosen audience. The hide* privacy flags are applied by
+ * the server before anything leaves it, so a viewer never receives the hidden fields at all; any
+ * hiding done in the UI is cosmetic on top of that.
+ */
 import { api } from './http';
 import type { CollectionRole, CollectionSummary, CustomList, PhotoRef } from './backend';
 import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, SetStat, ValuePoint, WishlistEntry } from './types';
@@ -5,11 +14,13 @@ import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, SetStat, Valu
 export type ShareScope = 'collection' | 'set' | 'wishlist' | 'graded' | 'list';
 export type ShareAudience = 'public' | 'users' | 'instance';
 
+/** A share as seen by its owner (or by a recipient, in which case `ownerName` is set). */
 export interface Share {
   id: string;
   collectionId: string;
   collectionName: string;
   scope: ShareScope;
+  /** Set id or list id for 'set' and 'list' scopes; null otherwise. */
   target: string | null;
   audience: ShareAudience;
   title: string | null;
@@ -19,9 +30,11 @@ export interface Share {
   createdAt: string;
   expiresAt: string | null;
   revokedAt: string | null;
+  /** Server-computed: not revoked and not expired. Use this rather than re-deriving it from the dates. */
   active: boolean;
   views: number;
   lastViewedAt: string | null;
+  /** Recipients, only present for the 'users' audience. */
   users?: { id: string; displayName: string }[];
   url: string;
   ownerName?: string;
@@ -47,10 +60,15 @@ export interface UserRef {
   displayName: string;
 }
 
+/** A non-owner member of a shared collection. Ownership is not transferable, so 'owner' is excluded. */
 export interface Member extends UserRef {
   role: Exclude<CollectionRole, 'owner'>;
 }
 
+/**
+ * What a share link returns. Shaped like CollectionData so the normal pages can render it, but
+ * already filtered to the share's scope and stripped of hidden fields by the server.
+ */
 export interface PublicShare {
   share: {
     scope: ShareScope;
@@ -92,6 +110,8 @@ export const sharing = {
   revoke: (id: string) => api(`/api/shares/${enc(id)}/revoke`, { method: 'POST' }),
   remove: (id: string) => api(`/api/shares/${enc(id)}`, { method: 'DELETE' }),
   users: () => api<UserRef[]>('/api/users'),
+  // quiet401: a visitor without a session may legitimately get a 401 here (e.g. an 'instance' or
+  // 'users' share), and that must not trigger the global sign-out handling.
   open: (token: string) => api<PublicShare>(`/api/public/${enc(token)}`, { quiet401: true }),
   publicPhotos: async (token: string, gradedId: string): Promise<PhotoRef[]> => {
     const rows = await api<Omit<PhotoRef, 'url'>[]>(`/api/public/${enc(token)}/graded/${enc(gradedId)}/photos`);
