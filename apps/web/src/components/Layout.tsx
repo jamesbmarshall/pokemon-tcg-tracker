@@ -43,7 +43,7 @@ function ValueBadge() {
         <span className="tabular">{count.toLocaleString('en-GB')} cards</span>
         <button
           onClick={async () => {
-            if ((await syncPrices(true)) < 0) toast("Couldn't reach the card API. Prices weren't refreshed.", { tone: 'error' });
+            if ((await syncPrices(true)) < 0) toast(useCollectionStore.getState().syncError ?? "Prices weren't refreshed.", { tone: 'error' });
           }}
           disabled={syncing} className="inline-flex items-center gap-1 hover:text-fg" title="Refresh prices">
           <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} />

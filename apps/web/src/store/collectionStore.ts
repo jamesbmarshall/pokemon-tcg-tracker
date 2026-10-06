@@ -66,6 +66,8 @@ interface CollectionState {
   syncing: boolean;
   /** When the server last refreshed prices */
   lastSync: string | null;
+  /** Why the last syncPrices() failed, written for the user; null after a successful sync. */
+  syncError: string | null;
 
   /** Loads a collection: the given one, else the last one used, else the user's personal collection. */
   load: (collectionId?: string) => Promise<void>;
@@ -93,7 +95,7 @@ interface CollectionState {
   /**
    * Refreshes prices. With `force`, owners/admins make the server fetch fresh prices first;
    * everyone else just reloads what the server already has. Returns the number of cards
-   * with prices, or -1 if the server or card API was unreachable.
+   * with prices, or -1 on failure (the reason is in `syncError`).
    */
   syncPrices: (force?: boolean) => Promise<number>;
   /** Asks the server to record today's collection value point for the history chart. */
@@ -287,6 +289,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     setStats: new Map(),
     syncing: false,
     lastSync: null,
+    syncError: null,
 
     load: async (requested) => {
       const seq = ++loadSeq;
@@ -325,7 +328,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     reset: () => {
       loadSeq++;
       clearTimeout(valueTimer);
-      set({ ...EMPTY, isLoaded: false, loadError: null, collectionId: null, role: null, readOnly: false, collections: [], cards: new Map(), setStats: new Map(), syncing: false, lastSync: null });
+      set({ ...EMPTY, isLoaded: false, loadError: null, collectionId: null, role: null, readOnly: false, collections: [], cards: new Map(), setStats: new Map(), syncing: false, lastSync: null, syncError: null });
     },
 
     refresh: async () => {
@@ -474,7 +477,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     syncPrices: async (force = false) => {
       // A sync is already running; don't queue another server-side price refresh.
       if (get().syncing) return 0;
-      set({ syncing: true });
+      set({ syncing: true, syncError: null });
       const backend = getBackend();
       try {
         if (force && !get().readOnly) {
@@ -491,6 +494,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         return Array.from(get().cards.values()).filter((c) => Object.keys(c.prices).length).length;
       } catch (err) {
         console.warn('Price refresh failed', err);
+        // An unreachable PokéTracker server and a failed upstream fetch need different advice,
+        // and ApiError messages already say which (see api/http.ts and the 502 from the job route).
+        set({ syncError: err instanceof ApiError ? err.message : "Prices weren't refreshed. Try again in a minute." });
         return -1;
       } finally {
         set({ syncing: false });

@@ -125,14 +125,15 @@ describe('Layout', () => {
     renderLayout();
     await userEvent.click(screen.getByTitle('Refresh prices'));
     expect(syncPrices).toHaveBeenCalledWith(true);
-    expect(screen.queryByText(/Couldn't reach the card API/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/weren't refreshed|Couldn't reach/)).not.toBeInTheDocument();
   });
 
-  it('toasts when the price refresh fails', async () => {
-    useCollectionStore.setState({ syncPrices: vi.fn(async () => -1) });
+  it('toasts the reason when the price refresh fails', async () => {
+    const reason = "Couldn't reach the PokéTracker server. Check your connection.";
+    useCollectionStore.setState({ syncPrices: vi.fn(async () => (useCollectionStore.setState({ syncError: reason }), -1)) });
     renderLayout();
     await userEvent.click(screen.getByTitle('Refresh prices'));
-    expect(await screen.findByText("Couldn't reach the card API. Prices weren't refreshed.")).toBeInTheDocument();
+    expect(await screen.findByText(reason)).toBeInTheDocument();
   });
 
   it('shows sync state and last sync time', () => {

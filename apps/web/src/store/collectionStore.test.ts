@@ -296,6 +296,7 @@ describe('syncPrices', () => {
   it('returns -1 when the server refresh fails', async () => {
     m.getCardsByIds.mockRejectedValue(new Error('offline'));
     expect(await store().syncPrices(true)).toBe(-1);
+    expect(store().syncError).toMatch(/Try again/);
     expect(store().syncing).toBe(false);
     expect(store().lastSync).toBeNull();
   });

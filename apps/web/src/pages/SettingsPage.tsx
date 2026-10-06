@@ -140,7 +140,7 @@ export default function SettingsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={async () => {
               const n = await syncPrices(true);
-              if (n < 0) toast("Couldn't refresh prices. Try again in a minute.", { tone: 'error' });
+              if (n < 0) toast(useCollectionStore.getState().syncError ?? "Couldn't refresh prices. Try again in a minute.", { tone: 'error' });
               else toast(`Prices up to date for ${n} card${n === 1 ? '' : 's'}`, { tone: 'success' });
             }} disabled={syncing} className="btn btn-ghost">
             <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Refreshing…' : 'Refresh now'}
