@@ -13,18 +13,21 @@ export default function CardGrid({
   dimMissing,
   showSet,
   quickAdd,
+  listActions,
 }: {
   cards?: (PokemonCard | CardSnapshot)[];
   tiles?: GridTile[];
   dimMissing?: boolean;
   showSet?: boolean;
   quickAdd?: boolean;
+  /** Show wishlist and custom-list buttons on each tile. */
+  listActions?: boolean;
 }) {
   const items: GridTile[] = tiles ?? (cards ?? []).map((card) => ({ card }));
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]">
       {items.map(({ card, variant }, i) => (
-        <CardTile key={variant ? `${card.id}::${variant}` : card.id} card={card} variant={variant} index={i} dimMissing={dimMissing} showSet={showSet} quickAdd={quickAdd} />
+        <CardTile key={variant ? `${card.id}::${variant}` : card.id} card={card} variant={variant} index={i} dimMissing={dimMissing} showSet={showSet} quickAdd={quickAdd} listActions={listActions} />
       ))}
     </div>
   );

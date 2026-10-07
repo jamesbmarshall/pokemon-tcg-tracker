@@ -48,6 +48,14 @@ beforeEach(async () => {
 });
 
 describe('SettingsPage', () => {
+  it('switches the theme from the Appearance section', async () => {
+    renderWithProviders(<SettingsPage />);
+    expect(screen.getByRole('radio', { name: 'System' })).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    expect(useSettings.getState().theme).toBe('dark');
+    expect(screen.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('switches currency and shows the conversion rate', async () => {
     renderWithProviders(<SettingsPage />);
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();

@@ -104,15 +104,15 @@ export default function SetsPage() {
       )}
 
       {!isLoading && grouped.size === 0 && (
-        <p className="panel p-10 text-center text-sm text-muted">
+        <p className="border-y border-line py-12 text-center text-sm text-muted">
           {filter === 'started' ? 'You haven’t started any sets yet — open one and tap a card to begin.' : 'No sets match.'}
         </p>
       )}
 
       {Array.from(grouped, ([name, list]) => (
         <section key={name}>
-          <div className="sticky top-14 z-10 -mx-4 mb-4 flex items-baseline gap-3 bg-ink/85 px-4 py-2 backdrop-blur lg:top-0">
-            <h2 className="font-display text-lg font-semibold">{name}</h2>
+          <div className="sticky top-14 z-10 -mx-4 mb-5 flex items-baseline gap-3 border-b border-line bg-canvas/95 px-4 py-2.5 lg:top-0">
+            <h2 className="font-display text-2xl font-medium">{name}</h2>
             <span className="font-mono text-xs text-faint">{list.length} sets</span>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
@@ -123,20 +123,20 @@ export default function SetsPage() {
                 <Link
                   key={s.id}
                   to={`/sets/${s.id}`}
-                  className={`panel group relative flex flex-col overflow-hidden p-4 transition-all hover:-translate-y-0.5 hover:border-line-strong ${done ? 'ring-1 ring-volt/40' : ''}`}
+                  className={`group relative flex flex-col rounded-lg border bg-surface p-4 transition-colors hover:border-line-strong ${done ? 'border-accent/40' : 'border-line'}`}
                 >
-                  <div className="grid h-20 place-items-center rounded-xl bg-[radial-gradient(ellipse_at_center,rgb(255_255_255/0.06),transparent_70%)]">
+                  <div className="grid h-20 place-items-center">
                     <SetLogo
                       src={s.images.logo}
                       name={s.name}
-                      className="max-h-16 max-w-[80%] object-contain drop-shadow-[0_6px_14px_rgb(0_0_0/0.6)] transition-transform duration-300 group-hover:scale-105"
+                      className="max-h-16 max-w-[80%] object-contain drop-shadow-logo transition-transform duration-300 group-hover:scale-105"
                       fallbackClassName="px-4 text-center text-lg text-muted"
                     />
                   </div>
                   <div className="mt-3 flex items-start gap-2">
                     <SetSymbol src={s.images.symbol} className="mt-0.5 h-4 w-4 object-contain" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{s.name}</p>
+                      <p className="truncate font-display text-[1.05rem] font-medium leading-snug group-hover:text-accent">{s.name}</p>
                       <p className="font-mono text-[11px] text-faint">
                         {formatDate(s.releaseDate)}
                         {s.printedTotal || s.total ? ` · ${s.printedTotal || s.total}` : ''}
@@ -151,7 +151,7 @@ export default function SetsPage() {
                         <span className={done ? 'holo-text font-bold' : 'text-muted'}>
                           {done ? 'Base set complete' : `${p.baseOwned}/${s.printedTotal}`}
                           {p.uniqueOwned > p.baseOwned && (
-                            <span className="ml-1.5 text-volt" title="Cards numbered above the printed set total">
+                            <span className="ml-1.5 text-accent" title="Cards numbered above the printed set total">
                               +{p.uniqueOwned - p.baseOwned} secret
                             </span>
                           )}

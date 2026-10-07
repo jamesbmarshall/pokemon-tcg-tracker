@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client'
 // standard.css ships the full width + weight axes; the default entry is weight-only
 import '@fontsource-variable/mona-sans/standard.css'
 import '@fontsource-variable/martian-mono/standard.css'
+import '@fontsource-variable/source-serif-4/opsz.css'
 import './index.css'
 import { configureForServer } from './api/client'
 import App from './App'

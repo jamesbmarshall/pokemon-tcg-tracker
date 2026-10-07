@@ -7,6 +7,8 @@ import { errorResult, queryResult, resetStores, seedCollection } from '../test/u
 import { makeCard } from '../test/fixtures';
 import type { SearchFilters } from '../api/client';
 import type { PokemonCard } from '../api/types';
+import { memory } from '../test/memoryBackend';
+import { useCollectionStore } from '../store/collectionStore';
 
 const mocks = vi.hoisted(() => ({ useSearch: vi.fn(), useRarities: vi.fn() }));
 vi.mock('../api/hooks', () => ({ useSearch: mocks.useSearch, useRarities: mocks.useRarities }));
@@ -229,5 +231,37 @@ describe('SearchPage', () => {
     first.unmount();
     renderPage();
     expect(lastCall()[0].langs).toEqual(['fr']);
+  });
+
+  describe('wishlist and lists from results', () => {
+    const pika = makeCard({ id: 'sv03-025', name: 'Pikachu' });
+    const showResults = async () => {
+      mocks.useSearch.mockImplementation((_: SearchFilters, enabled: boolean) => (enabled ? searchResult(pages([pika])) : searchResult(undefined)));
+      renderPage('/search?q=Pikachu');
+      await screen.findByRole('button', { name: 'Add Pikachu to wishlist' });
+    };
+
+    it('toggles the wishlist straight from a result', async () => {
+      await showResults();
+      await userEvent.click(screen.getByRole('button', { name: 'Add Pikachu to wishlist' }));
+      const remove = await screen.findByRole('button', { name: 'Remove Pikachu from wishlist' });
+      expect(remove).toHaveAttribute('aria-pressed', 'true');
+      await waitFor(() => expect(memory.wishlist.has('sv03-025')).toBe(true));
+      await userEvent.click(remove);
+      await waitFor(() => expect(memory.wishlist.has('sv03-025')).toBe(false));
+    });
+
+    it('adds a result to an existing list or a new one', async () => {
+      const fire = { id: 'l1', name: 'Fire deck', createdAt: '2025-01-01', updatedAt: '2025-01-01', cards: [] as string[] };
+      useCollectionStore.setState({ lists: [fire] });
+      memory.lists = [{ ...fire, cards: [] }];
+      await showResults();
+      await userEvent.click(screen.getByRole('button', { name: 'Add Pikachu to a list' }));
+      await userEvent.click(screen.getByRole('checkbox', { name: /Fire deck/ }));
+      await waitFor(() => expect(memory.lists[0].cards).toEqual(['sv03-025']));
+      expect(screen.getByRole('button', { name: 'Add Pikachu to a list (in 1)' })).toBeInTheDocument();
+      await userEvent.type(screen.getByRole('textbox', { name: 'New list name' }), 'Electric{Enter}');
+      await waitFor(() => expect(memory.lists.find((l) => l.name === 'Electric')?.cards).toEqual(['sv03-025']));
+    });
   });
 });

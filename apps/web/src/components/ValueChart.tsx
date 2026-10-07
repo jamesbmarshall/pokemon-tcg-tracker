@@ -28,7 +28,7 @@ export default function ValueChart({ points, format, height = 160, metric = 'val
 
   if (data.length < 2) {
     return (
-      <div className="grid place-items-center rounded-xl border border-dashed border-line text-center text-xs text-faint" style={{ height }}>
+      <div className="grid place-items-center rounded-lg border border-dashed border-line text-center text-xs text-faint" style={{ height }}>
         <p className="max-w-60">
           {gain
             ? 'Gain and loss is tracked daily from the first day you record what you paid. Check back tomorrow.'
@@ -73,12 +73,12 @@ export default function ValueChart({ points, format, height = 160, metric = 'val
           </linearGradient>
         </defs>
         <path d={area} fill="url(#vc-fill)" />
-        {gain && <line x1="0" x2={W} y1={base} y2={base} stroke="rgb(255 255 255 / 0.25)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" data-testid="zero-line" />}
+        {gain && <line x1="0" x2={W} y1={base} y2={base} stroke="var(--color-faint)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" data-testid="zero-line" />}
         <path d={line} fill="none" stroke={stroke} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-        <line x1={x(h)} x2={x(h)} y1="0" y2={height} stroke="rgb(255 255 255 / 0.15)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        <line x1={x(h)} x2={x(h)} y1="0" y2={height} stroke="var(--color-line-strong)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
       </svg>
       <span
-        className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-ink"
+        className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-surface"
         style={{ left: `${(x(h) / W) * 100}%`, top: y(values[h]), background: stroke }}
       />
       <div className="mt-2 flex justify-between font-mono text-[10.5px] text-faint">

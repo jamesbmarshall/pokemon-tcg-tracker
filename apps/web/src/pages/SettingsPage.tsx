@@ -6,7 +6,7 @@ import { getBackend } from '../api/backend';
 import { isAdmin, useAuth } from '../store/authStore';
 import UpdatesSection from '../components/UpdatesSection';
 import { computeValue, gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
-import { useSettings, type Currency } from '../store/settingsStore';
+import { useSettings, type Currency, type ThemePref } from '../store/settingsStore';
 import { useMoney, useRates } from '../hooks/useMoney';
 import { PageHeader, Segmented } from '../components/ui';
 import { toast } from '../store/toastStore';
@@ -41,7 +41,7 @@ function Section({ title, description, children }: { title: string; description?
 }
 
 export default function SettingsPage() {
-  const { currency, setCurrency, pocketSize, setPocketSize } = useSettings();
+  const { currency, setCurrency, pocketSize, setPocketSize, theme, setTheme } = useSettings();
   const entries = useCollectionStore((s) => s.entries);
   const graded = useCollectionStore((s) => s.graded);
   const cards = useCollectionStore((s) => s.cards);
@@ -111,6 +111,18 @@ export default function SettingsPage() {
   return (
     <div className="max-w-4xl">
       <PageHeader title="Settings" />
+
+      <Section title="Appearance" description="Paper or charcoal. System follows your device, and the choice is kept on this device only.">
+        <Segmented<ThemePref>
+          value={theme}
+          onChange={setTheme}
+          options={[
+            { value: 'system', label: 'System' },
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ]}
+        />
+      </Section>
 
       <Section title="Currency" description="Prices come from TCGplayer (USD) and Cardmarket (EUR) and are converted at the latest ECB reference rate.">
         <Segmented<Currency>
