@@ -23,6 +23,7 @@ Once it's deployed, everything happens in the browser. Prices, set lists and exc
 - **Shared collections**: a household collection that several people can edit, alongside everyone's personal one.
 - **Sharing**: share a whole collection, one set, your wishlist, your slabs or a list. Pick who sees it (anyone with the link, specific people, or everyone on your instance), hide what you paid, values or notes, and set an expiry. Links can be revoked at any time.
 - **Your data stays yours**: export JSON or CSV at any time, and the server takes a database backup every day.
+- **Installable**: add PokéTracker to your home screen or app list as a PWA, with the app shell and card images cached for offline use.
 
 ## Deploy
 
