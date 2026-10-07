@@ -217,7 +217,7 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
   let p = setsInFlight.get(lang);
   if (!p) {
     p = gql<{ sets: RawSet[] }>(
-      `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } } }`,
+      `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } abbreviation { official } } }`,
     )
       .then(({ sets }) => {
         const list = sets
