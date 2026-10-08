@@ -3,7 +3,7 @@ import { indexGraded, indexHoldings, useCollectionStore } from '../store/collect
 import { useSettings } from '../store/settingsStore';
 import { useToasts } from '../store/toastStore';
 import { memory, TEST_COLLECTION } from './memoryBackend';
-import type { CardSnapshot, CollectionEntry, GradedCopy, SetStat, ValuePoint, WishlistEntry } from '../api/types';
+import type { CardSnapshot, CollectionEntry, GradedCopy, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 
 const initialCollection = useCollectionStore.getState();
 const initialSettings = useSettings.getState();
@@ -31,6 +31,7 @@ export function seedCollection({
   history = [],
   setStats = [],
   graded = [],
+  sealed = [],
   notes = {},
 }: {
   entries?: CollectionEntry[];
@@ -39,6 +40,7 @@ export function seedCollection({
   history?: ValuePoint[];
   setStats?: SetStat[];
   graded?: GradedCopy[];
+  sealed?: SealedItem[];
   notes?: Record<string, string>;
 } = {}) {
   const byCard = new Map<string, Record<string, number>>();
@@ -52,6 +54,7 @@ export function seedCollection({
     graded: gradedMap,
     gradedByCard: indexGraded(gradedMap),
     holdings: indexHoldings(byCard, gradedMap),
+    sealed: new Map(sealed.map((s) => [s.id, s])),
     cards: new Map(cards.map((c) => [c.id, c])),
     wishlist: new Map(wishlist.map((w) => [w.cardId, w])),
     notes: new Map(Object.entries(notes)),

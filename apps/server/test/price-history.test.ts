@@ -39,7 +39,7 @@ describe('price history ingestion', () => {
     db.exec(MIGRATIONS[0]); // simulate a database created before this feature shipped
     db.run('INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)', new Date().toISOString());
     db.run("INSERT INTO settings (key, value) VALUES ('fx', '{}')");
-    expect(db.migrate()).toBe(1); // applies only the new migration, not version 1 again
+    expect(db.migrate()).toBe(2); // applies the two new migrations (price history + sealed/graded), not version 1 again
     // entries.value_override exists and is nullable (no error inserting without it)
     expect(() => db.run("INSERT INTO price_history (card_id, variant, source, date, price, currency) VALUES ('a', 'normal', 'tcgplayer', '2024-01-01', 1, 'USD')")).not.toThrow();
     expect(db.get("SELECT value FROM settings WHERE key = 'fx'")).toEqual({ value: '{}' });

@@ -20,6 +20,18 @@ export const newId = () => randomBytes(12).toString('base64url');
 export const sha256 = (s: string | Buffer) => createHash('sha256').update(s).digest('hex');
 
 /**
+ * Redacts API-key-shaped query parameters (`t`, `token`, `key`, `api_key`) from any string that
+ * might contain an upstream URL: log lines, thrown error messages, and anything persisted where
+ * an admin or operator could read it back (job `last_error`, the audit log). Applied defensively
+ * to free-form error text too, since some runtimes (e.g. fetch failures) echo the request URL
+ * inside `Error#message` rather than a dedicated field.
+ */
+const SENSITIVE_QUERY_PARAM = /\b(t|token|key|api_key)=[^&\s"')]+/gi;
+export function redactSecrets(input: string): string {
+  return input.replace(SENSITIVE_QUERY_PARAM, (_, name: string) => `${name}=REDACTED`);
+}
+
+/**
  * Constant-time string comparison for secrets. Leaking the length is acceptable because callers
  * compare fixed-length hex digests.
  */

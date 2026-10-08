@@ -12,6 +12,9 @@ import type { Ctx } from './context.ts';
 import { readCards, recordValue, refreshCards, trackedCardIds, prunePriceHistory } from './cards.ts';
 import { cachedUpstream, ensureImage, pruneHttpCache, pruneImages, refreshFx, ttlFor } from './catalog.ts';
 import { deletePhotoFiles } from './collections.ts';
+import { refreshSealedPrices } from './sealed.ts';
+import { refreshGradedPrices } from './providers/pricecharting.ts';
+import { redactSecrets } from './security.ts';
 import { applyUpdate, autoUpdateBlockedFor, autoUpdateEnabled, checkForUpdate, pruneVersions, updateAvailable, updateBlocker } from './updater.ts';
 
 interface JobDef {
@@ -67,9 +70,12 @@ export const JOBS: JobDef[] = [
       const ids = trackedCardIds(ctx.db);
       const refreshed = await refreshCards(ctx, ids);
       ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_price_sync', ?)", new Date().toISOString());
+      // PriceCharting items refresh alongside card prices (no-ops with no key configured).
+      const sealed = await refreshSealedPrices(ctx);
+      const graded = await refreshGradedPrices(ctx);
       // Value snapshots depend on fresh prices.
       const values = await runJob(ctx, 'values');
-      return { cards: ids.length, refreshed, values };
+      return { cards: ids.length, refreshed, sealed, graded, values };
     },
   },
   {
@@ -240,8 +246,15 @@ export function runJob(ctx: Ctx, name: string): Promise<unknown> {
       ctx.log.info({ job: name, result }, 'job finished');
       return result;
     } catch (err) {
-      // Capped so a huge upstream error body can't bloat the jobs table.
-      ctx.db.run("UPDATE jobs SET last_finished_at = ?, last_status = 'error', last_error = ? WHERE name = ?", new Date().toISOString(), String((err as Error).message ?? err).slice(0, 500), name);
+      // Capped so a huge upstream error body can't bloat the jobs table, and redacted so a
+      // leaked provider API key (e.g. from a fetch error echoing its request URL) never lands
+      // in a place admins can read back.
+      ctx.db.run(
+        "UPDATE jobs SET last_finished_at = ?, last_status = 'error', last_error = ? WHERE name = ?",
+        new Date().toISOString(),
+        redactSecrets(String((err as Error).message ?? err)).slice(0, 500),
+        name,
+      );
       ctx.log.warn({ job: name, err }, 'job failed');
       throw err;
     } finally {

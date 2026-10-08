@@ -15,7 +15,8 @@ Once it's deployed, everything happens in the browser. Prices, set lists and exc
 - **Binder view**: 9- or 12-pocket pages shown as a two-page spread. Empty pockets show a ghost of the missing card. Arrow keys turn the pages.
 - **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices with a daily price history chart per source, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.
 - **Manual valuations**: set your own value for a card or graded slab when you'd rather trust your own judgement than the market price. Manually valued copies are marked with a "Manual" badge everywhere their value is shown.
-- **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab.
+- **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab. With a PriceCharting API key configured, link a slab to its product and its graded price is used instead of the raw market price.
+- **Sealed product**: booster boxes, ETBs and the like, with photos, what you paid and an optional PriceCharting link for a live price. Unopened items count towards your collection value and daily history; mark one opened to move it into a history section (with an optional jump to the set page to log what you pulled).
 - **Wishlist**: your chase list with the running cost to buy it all. "Got it" moves a card into your collection.
 - **Custom lists**: binders, trade piles, deck lists, whatever you need.
 - **Search** by name, type, card type, rarity and illustrator, plus a command palette (`⌘K` or `/`).
@@ -137,6 +138,10 @@ Everything has a sensible default. These are the settings you're most likely to 
 | `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 
+### PriceCharting (optional)
+
+Sealed-product pricing and graded-card values can optionally come from [PriceCharting](https://www.pricecharting.com), a paid third-party service. It's entirely opt-in: set a key under **Admin → Integrations** (owner or admin only) to enable it, or leave it unset. With no key configured, nothing in PokéTracker ever contacts PriceCharting — the search box and linking controls simply don't appear. The key is encrypted at rest and never sent back to the browser once saved; **Admin → Integrations** only ever shows whether a key is "Configured", plus a "Test connection" button.
+
 ## Security
 
 - **Accounts**: passwords are hashed with Argon2id. Sign-in is rate-limited per IP and per account, and errors don't reveal whether a username exists. Two-factor sign-in uses any authenticator app, with single-use recovery codes. TOTP secrets are encrypted at rest with a per-instance key in `/data/secret.key`.
@@ -145,6 +150,7 @@ Everything has a sensible default. These are the settings you're most likely to 
 - **Sharing**: share links contain a random 128-bit token stored only as a hash. Hidden fields are removed on the server before anything is sent, so they can't be dug out of the page. Share pages ask search engines not to index them.
 - **Updates** must be signed by the release key, and the container runs as an unprivileged user.
 - **Audit log**: sign-ins, admin changes, shares and updates are recorded, and admins can read them under **Admin → Activity**.
+- **PriceCharting**: the optional API key is encrypted at rest with the same per-instance key as TOTP secrets, is never returned to the browser, and the service is contacted only when a key is set.
 
 Found a problem? Please open a private security advisory on the repository rather than a public issue.
 

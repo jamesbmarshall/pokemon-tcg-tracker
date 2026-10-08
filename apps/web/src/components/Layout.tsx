@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
+import { BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
@@ -20,6 +20,7 @@ const NAV = [
   { to: '/sets', label: 'Sets', icon: Layers },
   { to: '/collection', label: 'Collection', icon: BookOpen },
   { to: '/wishlist', label: 'Wishlist', icon: Heart },
+  { to: '/sealed', label: 'Sealed', icon: Package },
   { to: '/search', label: 'Search', icon: Search },
 ];
 
@@ -31,11 +32,12 @@ function ValueBadge() {
   const entries = useCollectionStore((s) => s.entries);
   const cards = useCollectionStore((s) => s.cards);
   const graded = useCollectionStore((s) => s.graded);
+  const sealed = useCollectionStore((s) => s.sealed);
   const syncing = useCollectionStore((s) => s.syncing);
   const lastSync = useCollectionStore((s) => s.lastSync);
   const syncPrices = useCollectionStore((s) => s.syncPrices);
   const money = useMoney();
-  const { valueUsd, count } = useMemo(() => computeValue(entries.values(), cards, graded.values()), [entries, cards, graded]);
+  const { valueUsd, count } = useMemo(() => computeValue(entries.values(), cards, graded.values(), sealed.values()), [entries, cards, graded, sealed]);
   return (
     <div className="border-t border-line px-3 pt-4">
       <p className="eyebrow">Collection value</p>

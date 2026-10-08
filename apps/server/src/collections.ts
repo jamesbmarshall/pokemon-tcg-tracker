@@ -14,11 +14,13 @@ import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from '
 import { join } from 'node:path';
 import { cardVariants, getSetCards, setIdFromCardId } from '@poketracker/shared/catalog';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
-import type { CardNote, CollectionEntry, GradedCopy, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
+import type { CardNote, CollectionEntry, GradedCopy, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
 import { hydrateMissing, readCards, readEntries, readGraded, readHistory, readPriceHistory, biggestMovers, recordValue } from './cards.ts';
 import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
+import { cleanSealed, deleteSealedPhotoFiles, putSealed, readSealed, saveSealedPhoto } from './sealed.ts';
+import { pcGradedPrice, pcProduct } from './providers/pricecharting.ts';
 
 /** Set ids as TCGdex issues them, optionally prefixed with a language (e.g. `sv01`, `ja:SV1a`). */
 const SET_ID = /^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,40}$/;
@@ -132,6 +134,11 @@ export function cleanGraded(raw: unknown): GradedCopy | undefined {
     valueUsd: num(g.valueUsd, 0, 10_000_000),
     paid: isPaid(g.paid) ? { amount: g.paid!.amount, currency: g.paid!.currency } : undefined,
     notes: typeof g.notes === 'string' ? g.notes.trim().slice(0, NOTE_MAX) || undefined : undefined,
+    // Only ever set by the PriceCharting link endpoint, but preserved here so a plain edit
+    // (which resends the whole object) doesn't silently drop the link.
+    pcProductId: typeof g.pcProductId === 'string' ? g.pcProductId.slice(0, 64) : undefined,
+    pcPrice: num(g.pcPrice, 0, 10_000_000),
+    pcUpdatedAt: typeof g.pcUpdatedAt === 'string' ? g.pcUpdatedAt : undefined,
     addedAt: iso(g.addedAt),
     updatedAt: g.updatedAt ? iso(g.updatedAt) : undefined,
   };
@@ -198,6 +205,7 @@ export interface StateOptions {
 export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptions = {}) {
   let entries = readEntries(ctx.db, collectionId);
   let graded = readGraded(ctx.db, collectionId);
+  let sealed = readSealed(ctx, collectionId);
   const wishlist = ctx.db.all<{ card_id: string; added_at: string }>('SELECT card_id, added_at FROM wishlist WHERE collection_id = ?', collectionId).map((w) => ({ cardId: w.card_id, addedAt: w.added_at }));
   const notes = opts.hideNotes ? [] : ctx.db.all<{ card_id: string; text: string; updated_at: string }>('SELECT * FROM notes WHERE collection_id = ?', collectionId).map((n) => ({ cardId: n.card_id, text: n.text, updatedAt: n.updated_at }));
   let lists = readLists(ctx, collectionId);
@@ -205,6 +213,7 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   if (opts.hidePaid || opts.hideNotes || opts.hideValue) {
     entries = entries.map((e) => ({ ...e, paid: opts.hidePaid ? undefined : e.paid, notes: opts.hideNotes ? undefined : e.notes, valueUsd: opts.hideValue ? undefined : e.valueUsd }));
     graded = graded.map((g) => ({ ...g, paid: opts.hidePaid ? undefined : g.paid, notes: opts.hideNotes ? undefined : g.notes, valueUsd: opts.hideValue ? undefined : g.valueUsd }));
+    sealed = sealed.map((s) => ({ ...s, paid: opts.hidePaid ? undefined : s.paid, notes: opts.hideNotes ? undefined : s.notes, valueUsd: opts.hideValue ? undefined : s.valueUsd, pcPrice: opts.hideValue ? undefined : s.pcPrice }));
   }
   let history: ValuePoint[] = opts.hideValue ? [] : readHistory(ctx.db, collectionId);
   // Rebuild each point from an allow-list so costUsd / costedValueUsd (what the owner paid) are dropped.
@@ -215,7 +224,7 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
   // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
   const setStats = ctx.db.all<{ set_id: string; master_total: number; synced_at: string }>('SELECT * FROM set_stats').map((s) => ({ setId: s.set_id, masterTotal: s.master_total, syncedAt: s.synced_at }));
-  return { entries, graded, wishlist, notes, history, cards, setStats, lists };
+  return { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
 }
 
 export function readLists(ctx: Ctx, collectionId: string) {
@@ -286,6 +295,7 @@ export const photosFor = (ctx: Ctx, collectionId: string, gradedId: string) =>
 export interface ImportResult {
   entries: number;
   graded: number;
+  sealed: number;
   wishlist: number;
   notes: number;
   history: number;
@@ -308,9 +318,11 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
   const rawEntries: unknown[] = Array.isArray(data) ? data : Array.isArray(obj.collection) ? obj.collection : [];
   const rawWishlist: unknown[] = Array.isArray(obj.wishlist) ? obj.wishlist : [];
   const rawGraded: unknown[] = Array.isArray(obj.graded) ? obj.graded : [];
+  const rawSealed: unknown[] = Array.isArray(obj.sealed) ? obj.sealed : [];
   const rawNotes: unknown[] = Array.isArray(obj.notes) ? obj.notes : [];
   const rawHistory: unknown[] = Array.isArray(obj.history) ? obj.history : [];
   const rawPhotos: unknown[] = Array.isArray(obj.photos) ? obj.photos : [];
+  const rawSealedPhotos: unknown[] = Array.isArray(obj.sealedPhotos) ? obj.sealedPhotos : [];
 
   // Backups from the pokemontcg.io era use different ids; remap them first.
   const legacy = await migrateImport(ctx, rawEntries, rawWishlist);
@@ -327,6 +339,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
     entries.set(e.id, prev ? { ...prev, quantity: prev.quantity + e.quantity } : e);
   }
   const graded = rawGraded.map((g) => cleanGraded(remap(g))).filter((g): g is GradedCopy => !!g);
+  const sealed = rawSealed.map((s) => cleanSealed(s)).filter((s): s is SealedItem => !!s);
   const wishlist = rawWishlist
     .map((w) => remap(w) as Partial<WishlistEntry>)
     .filter((w) => typeof w?.cardId === 'string' && CARD_ID.test(w.cardId))
@@ -346,12 +359,13 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
       ...(typeof p.costUsd === 'number' ? { costUsd: p.costUsd, costedValueUsd: Number(p.costedValueUsd) || 0 } : {}),
     }));
 
-  if (!entries.size && !graded.length && !wishlist.length && !notes.length && !history.length) throw bad('No collection entries found in that file');
+  if (!entries.size && !graded.length && !sealed.length && !wishlist.length && !notes.length && !history.length) throw bad('No collection entries found in that file');
 
   let photos = 0;
   ctx.db.tx(() => {
     for (const e of entries.values()) putEntry(ctx, collectionId, e);
     for (const g of graded) putGraded(ctx, collectionId, g);
+    for (const s of sealed) putSealed(ctx, collectionId, s);
     for (const w of wishlist) ctx.db.run('INSERT OR REPLACE INTO wishlist (collection_id, card_id, added_at) VALUES (?, ?, ?)', collectionId, w.cardId, w.addedAt);
     for (const n of notes) ctx.db.run('INSERT OR REPLACE INTO notes (collection_id, card_id, text, updated_at) VALUES (?, ?, ?, ?)', collectionId, n.cardId, n.text, n.updatedAt);
     // Never overwrite days the server already recorded.
@@ -370,10 +384,23 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
         /* skip unreadable photo: savePhoto re-sniffs the decoded bytes rather than trusting the data URL's type */
       }
     }
+    const sealedIds = new Set(sealed.map((s) => s.id));
+    for (const raw of rawSealedPhotos) {
+      const p = raw as { sealedId?: string; dataUrl?: string };
+      if (!p?.sealedId || !sealedIds.has(p.sealedId) || typeof p.dataUrl !== 'string') continue;
+      const m = /^data:image\/[a-z+]+;base64,(.+)$/.exec(p.dataUrl);
+      if (!m) continue;
+      try {
+        saveSealedPhoto(ctx, collectionId, p.sealedId, Buffer.from(m[1], 'base64'));
+        photos++;
+      } catch {
+        /* skip unreadable photo */
+      }
+    }
   });
   void hydrateMissing(ctx, [...entries.values()].map((e) => e.cardId).concat(graded.map((g) => g.cardId), wishlist.map((w) => w.cardId))).then(() => recordValue(ctx, collectionId))
     .catch((err) => ctx.log.warn({ err }, 'post-import value snapshot failed'));
-  return { entries: entries.size, graded: graded.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
+  return { entries: entries.size, graded: graded.length, sealed: sealed.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
 }
 
 // ---------------------------------------------------------------- routes
@@ -408,8 +435,10 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     if (c.kind === 'personal') throw bad("Your personal collection can't be deleted");
     // Collect photo ids before the cascade removes their rows, then delete the files afterwards.
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
+    const sealedPhotos = ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos WHERE collection_id = ?', id).map((p) => p.id);
     ctx.db.run('DELETE FROM collections WHERE id = ?', id);
     deletePhotoFiles(ctx, photos);
+    deleteSealedPhotoFiles(ctx, sealedPhotos);
     audit(ctx, req, 'collection.deleted', id);
     return { ok: true };
   });
@@ -512,6 +541,22 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return copy;
   });
 
+  /** Links a slab to a PriceCharting product and fetches its price for the slab's company + grade. */
+  app.post('/api/collections/:id/graded/:gid/link', async (req) => {
+    const { id } = need(ctx, req, 'write');
+    const { gid } = req.params as { gid: string };
+    const row = ctx.db.get<{ data: string }>('SELECT data FROM graded WHERE collection_id = ? AND id = ? AND deleted_at IS NULL', id, gid);
+    if (!row) throw notFound('Graded copy not found');
+    const copy = JSON.parse(row.data) as GradedCopy;
+    const pid = str((req.body as { pcProductId?: unknown })?.pcProductId, 64);
+    if (!pid) throw bad('Pick a product to link');
+    const product = await pcProduct(ctx, pid);
+    const price = pcGradedPrice(product, copy.company, copy.grade);
+    const updated: GradedCopy = { ...copy, pcProductId: pid, pcPrice: price, pcUpdatedAt: now() };
+    putGraded(ctx, id, updated);
+    return updated;
+  });
+
   /** Soft delete so "Undo" can restore the slab and its photos. Purged by the cleanup job. */
   app.delete('/api/collections/:id/graded/:gid', async (req) => {
     const { id } = need(ctx, req, 'write');
@@ -588,11 +633,12 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     reply.header('content-disposition', `attachment; filename="poketracker-${new Date().toISOString().slice(0, 10)}.json"`);
     return {
       app: 'poketracker',
-      version: 4,
+      version: 5,
       exportedAt: now(),
       collection: s.entries,
       wishlist: s.wishlist,
       graded: s.graded,
+      sealed: s.sealed,
       notes: s.notes,
       history: s.history,
       lists: s.lists,
@@ -604,11 +650,13 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.post('/api/collections/:id/clear', async (req) => {
     const { id } = need(ctx, req, 'own');
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
+    const sealedPhotos = ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos WHERE collection_id = ?', id).map((p) => p.id);
     ctx.db.tx(() => {
       // Table names are a fixed list, never user input, so interpolating them is safe.
-      for (const t of ['entries', 'wishlist', 'notes', 'graded', 'graded_photos', 'value_history', 'lists']) ctx.db.run(`DELETE FROM ${t} WHERE collection_id = ?`, id);
+      for (const t of ['entries', 'wishlist', 'notes', 'graded', 'graded_photos', 'sealed', 'sealed_photos', 'value_history', 'lists']) ctx.db.run(`DELETE FROM ${t} WHERE collection_id = ?`, id);
     });
     deletePhotoFiles(ctx, photos);
+    deleteSealedPhotoFiles(ctx, sealedPhotos);
     audit(ctx, req, 'collection.cleared', id);
     return { ok: true };
   });

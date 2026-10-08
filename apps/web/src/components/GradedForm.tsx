@@ -1,11 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, Search, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import type { GradedCopy, GradingCompany, PokemonCard, Subgrades } from '../api/types';
 import { cardVariants } from '../api/client';
+import { getBackend } from '../api/backend';
 import { useCollectionStore, type GradedInput } from '../store/collectionStore';
 import { addPhotos, removePhotos, useGradedPhotos } from '../db/gradedPhotos';
 import { useFx } from '../hooks/useMoney';
+import { useDebounced } from '../hooks/useDebounced';
 import { parseAmount } from './Paid';
 import { COMPANIES, GRADE_SCALES, SUBGRADE_COMPANIES, SUBGRADE_KEYS, defaultLabel, labelOptions } from '../utils/grading';
 import { variantLabel } from '../utils/variants';
@@ -24,6 +27,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const variants = useMemo(() => cardVariants(card), [card]);
   const byCard = useCollectionStore((s) => s.byCard);
   const saveGraded = useCollectionStore((s) => s.saveGraded);
+  const linkGraded = useCollectionStore((s) => s.linkGraded);
   const { currency, rate } = useFx();
   const existingPhotos = useGradedPhotos(copy?.id);
   const uid = useId();
@@ -41,6 +45,9 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const [value, setValue] = useState(copy?.valueUsd != null ? String(round2(copy.valueUsd * rate)) : '');
   const [notes, setNotes] = useState(copy?.notes ?? '');
   const [paid, setPaid] = useState(copy?.paid ? copy.paid.amount.toFixed(2) : '');
+  const [pcQuery, setPcQuery] = useState(card.name);
+  const [selectedPc, setSelectedPc] = useState<string | undefined>(copy?.pcProductId);
+  const debouncedPcQuery = useDebounced(pcQuery, 300);
   // Default: a slab fills the set slot only if there's no raw copy of the same printing already in the binder.
   const smartDefault = (v: string) => !byCard.get(card.id)?.[v];
   const [counts, setCounts] = useState(copy?.countsTowardSet ?? smartDefault(variant));
@@ -53,6 +60,17 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const labels = labelOptions(company, grade);
   const previews = useMemo(() => newFiles.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })), [newFiles]);
   useEffect(() => () => previews.forEach((p) => URL.revokeObjectURL(p.url)), [previews]);
+
+  const { data: pcConfigured } = useQuery({
+    queryKey: ['graded-pc-configured'],
+    queryFn: () => getBackend().pcConfigured(),
+    staleTime: 5 * 60_000,
+  });
+  const { data: pcResults = [] } = useQuery({
+    queryKey: ['graded-pc-search', debouncedPcQuery],
+    queryFn: () => getBackend().pcSearch(debouncedPcQuery),
+    enabled: pcConfigured === true && debouncedPcQuery.trim().length > 1,
+  });
 
   useEffect(() => {
     first.current?.focus();
@@ -99,6 +117,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
         notes,
       };
       const saved = await saveGraded(card, input);
+      if (selectedPc && selectedPc !== copy?.pcProductId) await linkGraded(saved.id, selectedPc);
       if (dropIds.length) await removePhotos(dropIds, saved.id);
       if (newFiles.length) await addPhotos(saved.id, newFiles);
       toast(copy ? 'Graded copy updated' : `Added ${card.name} · ${company === 'Other' ? companyName : company} ${grade}`, { tone: 'success' });
@@ -265,9 +284,45 @@ export default function GradedForm({ card, copy, onClose }: Props) {
               <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" placeholder="Optional" className="input font-mono" />
             </label>
             <p className="col-span-2 -mt-1 text-[11px] leading-snug text-faint">
-              Include grading fees in what you paid. Leave the valuation blank to use the raw market price; graded prices aren't in the price feed.
+              Include grading fees in what you paid. Leave the valuation blank to use the linked PriceCharting graded price, if any, else the raw market price.
             </p>
           </div>
+
+          {pcConfigured === true && (
+            <fieldset className="space-y-1.5">
+              <legend className={field}>Link to PriceCharting</legend>
+              <div className="relative">
+                <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+                <input
+                  value={pcQuery}
+                  onChange={(e) => setPcQuery(e.target.value)}
+                  placeholder="Search PriceCharting…"
+                  aria-label="Search PriceCharting"
+                  className="input !pl-8"
+                />
+              </div>
+              {pcResults.length > 0 && (
+                <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line p-1">
+                  {pcResults.map((r) => (
+                    <li key={r.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPc(r.id)}
+                        aria-pressed={selectedPc === r.id}
+                        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                          selectedPc === r.id ? 'bg-accent/15 text-accent' : 'hover:bg-surface-2'
+                        }`}
+                      >
+                        <span className="truncate">{r.name}</span>
+                        {r.consoleName && <span className="shrink-0 text-faint">{r.consoleName}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {selectedPc && <p className="text-[11px] text-faint">Linked on save; its {company} {grade} price is used automatically if you leave your valuation blank.</p>}
+            </fieldset>
+          )}
 
           <label className="block space-y-1.5">
             <span className={field}>Notes</span>
