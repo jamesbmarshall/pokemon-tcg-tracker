@@ -110,8 +110,21 @@ export function resetProviderHealth(name?: string) {
   else registry.clear();
 }
 
+/**
+ * Decides whether this call may proceed, and performs the open → half-open transition as a side
+ * effect when a probe becomes due.
+ *
+ * - closed: always allowed.
+ * - half-open: a probe is already in flight (`probing` is only ever set here, and cleared by
+ *   onSuccess/onFailure), so every other concurrent caller is rejected until it resolves. This
+ *   is the guard the old `r.state !== 'open'` check accidentally skipped for 'half-open', which
+ *   let unlimited concurrent callers all probe the upstream at once.
+ * - open: rejected unless the cooldown has elapsed, in which case exactly one caller flips the
+ *   breaker to half-open, marks a probe in flight, and is let through.
+ */
 function mayAttempt(r: Rec): boolean {
-  if (r.state !== 'open') return true;
+  if (r.state === 'closed') return true;
+  if (r.state === 'half-open') return false;
   if (r.probing) return false;
   if (r.openedAt != null && Date.now() - r.openedAt >= COOLDOWN_MS) {
     r.state = 'half-open';
@@ -164,23 +177,31 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function withResilience<T>(name: string, attempt: (attemptNo: number) => Promise<T>): Promise<T> {
   const r = rec(name);
   if (!mayAttempt(r)) throw new BreakerOpenError(name);
-  let lastErr: unknown;
-  for (let i = 0; i < MAX_ATTEMPTS; i++) {
-    try {
-      const result = await attempt(i);
-      onSuccess(r);
-      return result;
-    } catch (err) {
-      lastErr = err;
-      if (!(err instanceof RetryableError) || i === MAX_ATTEMPTS - 1) {
-        onFailure(r, err);
-        throw err;
+  try {
+    let lastErr: unknown;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      try {
+        const result = await attempt(i);
+        onSuccess(r);
+        return result;
+      } catch (err) {
+        lastErr = err;
+        if (!(err instanceof RetryableError) || i === MAX_ATTEMPTS - 1) {
+          onFailure(r, err);
+          throw err;
+        }
+        await sleep(jitteredDelay(i, err.retryAfterMs));
       }
-      await sleep(jitteredDelay(i, err.retryAfterMs));
     }
+    // Unreachable (the loop above always returns or throws), kept for type-narrowing.
+    throw lastErr;
+  } finally {
+    // Last-resort safety net: onSuccess/onFailure above are the normal way `probing` clears, but
+    // this guarantees it even if `attempt` does something exotic (hangs past its own abort, or
+    // throws from outside the try, e.g. a synchronous error before the first await). A half-open
+    // breaker that never clears `probing` would reject every future call forever.
+    r.probing = false;
   }
-  // Unreachable (the loop above always returns or throws), kept for type-narrowing.
-  throw lastErr;
 }
 
 /**
@@ -198,6 +219,10 @@ export async function withBreaker<T>(name: string, fn: () => Promise<T>): Promis
   } catch (err) {
     onFailure(r, err);
     throw err;
+  } finally {
+    // See withResilience's matching comment: belt-and-braces so a half-open probe that exits
+    // unexpectedly can never leave the breaker stuck.
+    r.probing = false;
   }
 }
 

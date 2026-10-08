@@ -118,6 +118,46 @@ describe('circuit breaker', () => {
     expect(getProviderHealth(NAME).state).toBe('open');
   });
 
+  it('allows exactly one upstream call when many concurrent requests arrive right after cooldown', async () => {
+    for (let i = 0; i < 5; i++) {
+      await expect(runWithFakeDelays(async () => { throw new RetryableError('down'); })).rejects.toThrow();
+    }
+    expect(getProviderHealth(NAME).state).toBe('open');
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const upstreamCalls = vi.fn(async () => 'recovered');
+    // Ten concurrent callers race to be the half-open probe; only the first should reach upstream.
+    const results = await Promise.allSettled(Array.from({ length: 10 }, () => withResilience(NAME, upstreamCalls)));
+    expect(upstreamCalls).toHaveBeenCalledTimes(1);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(9);
+    for (const r of rejected) expect(r.reason).toBeInstanceOf(BreakerOpenError);
+    expect(getProviderHealth(NAME).state).toBe('closed');
+  });
+
+  it('clears probing and reopens with a fresh cooldown when the half-open probe throws', async () => {
+    for (let i = 0; i < 5; i++) {
+      await expect(runWithFakeDelays(async () => { throw new RetryableError('down'); })).rejects.toThrow();
+    }
+    await vi.advanceTimersByTimeAsync(30_000);
+    // The probe fails immediately with a non-retryable error, so it doesn't go through the
+    // backoff loop; it should still clear `probing` and move back to 'open'.
+    await expect(withResilience(NAME, async () => { throw new Error('probe exploded'); })).rejects.toThrow('probe exploded');
+    expect(getProviderHealth(NAME).state).toBe('open');
+
+    // A second concurrent attempt right away must be rejected (breaker open, no new probe due).
+    await expect(withResilience(NAME, vi.fn())).rejects.toBeInstanceOf(BreakerOpenError);
+
+    // But after a fresh cooldown, a new probe is allowed again — proof `probing` isn't stuck true.
+    await vi.advanceTimersByTimeAsync(30_000);
+    const probe = vi.fn(async () => 'recovered');
+    await expect(withResilience(NAME, probe)).resolves.toBe('recovered');
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(getProviderHealth(NAME).state).toBe('closed');
+  });
+
   it('withBreaker participates in the same breaker without adding its own retries', async () => {
     const attempt = vi.fn(async () => {
       throw new Error('boom');
