@@ -210,7 +210,7 @@ describe('Layout', () => {
   });
 
   it('shows a dismissible demo banner when the server reports demoMode, and hides it on sign-off', async () => {
-    vi.spyOn(getBackend(), 'status').mockResolvedValue({ version: 'test', lastPriceSync: null, fxAt: null, demoMode: true });
+    vi.spyOn(getBackend(), 'status').mockResolvedValue({ version: 'test', lastPriceSync: null, fxAt: null, demoMode: true, catalogDegraded: false });
     renderLayout();
     const banner = await screen.findByText(/viewing a demo/i);
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -218,7 +218,7 @@ describe('Layout', () => {
   });
 
   it('shows no demo banner for an ordinary server', async () => {
-    vi.spyOn(getBackend(), 'status').mockResolvedValue({ version: 'test', lastPriceSync: null, fxAt: null });
+    vi.spyOn(getBackend(), 'status').mockResolvedValue({ version: 'test', lastPriceSync: null, fxAt: null, catalogDegraded: false });
     renderLayout();
     await screen.findByText('Home content');
     expect(screen.queryByText(/viewing a demo/i)).not.toBeInTheDocument();
