@@ -84,9 +84,19 @@ export function parseScanText(text: string, knownCodeList: string[] = knownCodes
     if (overlaps(span, consumed)) continue;
     const number = fixDigits(m[1]);
     const total = fixDigits(m[2]);
-    // A lone "1/1" or similar very short pair is too common in unrelated OCR noise to trust.
-    if (number.length < 1 || total.length < 1) continue;
-    out.push({ number, total, setCode: nearbyCode(upper, span, codes), confidence: 0.8, raw: m[0] });
+    // Real printed set totals are almost always 2+ digits; a single-digit total like "1/1" or
+    // "3/4" is too common in unrelated OCR noise (page numbers, ratios, etc.) to trust.
+    if (total.length < 2) continue;
+    // The number is normally <= the total, but secret rares legitimately print a number above
+    // the set total (e.g. "201/198"), so that case is kept, just with lower confidence.
+    const isSecretRare = Number(number) > Number(total);
+    out.push({
+      number,
+      total,
+      setCode: nearbyCode(upper, span, codes),
+      confidence: isSecretRare ? 0.6 : 0.8,
+      raw: m[0],
+    });
     consumed.push(span);
   }
 
