@@ -15,13 +15,13 @@ import { entryKey } from '../utils/variants';
 import { gradeRank } from '../utils/grading';
 import { toSnapshot } from '../api/client';
 import { isPaid } from '../utils/fx';
-import { getBackend, type CollectionRole, type CollectionSummary, type CustomList } from '../api/backend';
+import { getBackend, type CollectionRole, type CollectionSummary, type CustomList, type DeckFormat } from '../api/backend';
 import { ApiError } from '../api/http';
 import { toast } from './toastStore';
-import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, PokemonCard, SetStat, ValuePoint, WishlistEntry } from '../api/types';
+import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, PokemonCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { NOTE_MAX } from '@poketracker/shared/value';
 
-export { computeValue, costBasis, gradedValue, NOTE_MAX, priceOf, type CostBasis } from '@poketracker/shared/value';
+export { computeValue, costBasis, entryValue, gradedValue, NOTE_MAX, priceOf, sealedValue, type CostBasis } from '@poketracker/shared/value';
 
 type CardLike = PokemonCard | CardSnapshot;
 type VariantQty = Record<string, number>;
@@ -52,7 +52,8 @@ interface CollectionState {
   gradedByCard: Map<string, GradedCopy[]>;
   /** cardId -> variant -> copies that count towards set progress (raw + included slabs) */
   holdings: Map<string, VariantQty>;
-  /**
+  /** Sealed products (booster boxes, ETBs, etc.) by id */
+  sealed: Map<string, SealedItem>;  /**
    * Catalogue snapshots for cards the user has touched. Kept across collection switches, since
    * it is reference data rather than user data; only reset() (sign-out) clears it.
    */
@@ -76,13 +77,13 @@ interface CollectionState {
   /** Forgets everything held locally (on sign-out), without touching the server. */
   reset: () => void;
   /** Shows a collection loaded elsewhere (e.g. a public share), read-only. */
-  show: (data: Partial<Pick<CollectionState, 'entries' | 'graded' | 'cards' | 'wishlist' | 'notes' | 'history' | 'lists' | 'setStats'>> & { collectionId: string }) => void;
+  show: (data: Partial<Pick<CollectionState, 'entries' | 'graded' | 'sealed' | 'cards' | 'wishlist' | 'notes' | 'history' | 'lists' | 'setStats'>> & { collectionId: string }) => void;
   /** Caches card snapshots locally so owned/wishlisted cards can render without a catalogue fetch. */
   remember: (cards: CardLike[]) => Promise<void>;
   /** Changes a variant's raw quantity by `delta`, creating or deleting the entry as needed. */
   adjust: (card: CardLike, variant: string, delta: number) => Promise<void>;
   setQuantity: (cardId: string, variant: string, quantity: number) => Promise<void>;
-  updateEntry: (cardId: string, variant: string, patch: Partial<Pick<CollectionEntry, 'condition' | 'notes' | 'paid'>>) => Promise<void>;
+  updateEntry: (cardId: string, variant: string, patch: Partial<Pick<CollectionEntry, 'condition' | 'notes' | 'paid' | 'valueUsd'>>) => Promise<void>;
   /** Removes every variant of a card, returning the removed entries for undo (empty if nothing was removed). */
   removeCard: (cardId: string) => Promise<CollectionEntry[]>;
   restoreEntries: (entries: CollectionEntry[]) => Promise<void>;
@@ -108,17 +109,33 @@ interface CollectionState {
    */
   removeGraded: (id: string) => Promise<{ copy: GradedCopy; photos: GradedPhoto[] } | undefined>;
   restoreGraded: (copy: GradedCopy, photos?: GradedPhoto[]) => Promise<void>;
+  /** Links a graded copy to a PriceCharting product and merges in the returned price fields. */
+  linkGraded: (id: string, pcProductId: string) => Promise<GradedCopy | undefined>;
+  /** Adds or updates a sealed product. Returns the saved item. */
+  saveSealed: (item: SealedInput) => Promise<SealedItem>;
+  /** Deletes a sealed item, returning it for undo. */
+  removeSealed: (id: string) => Promise<SealedItem | undefined>;
+  /** Marks a sealed item opened: it stays in history but stops counting towards value. */
+  markSealedOpened: (id: string) => Promise<SealedItem | undefined>;
+  /** Links a sealed item to a PriceCharting product and merges in the returned price fields. */
+  linkSealed: (id: string, pcProductId: string) => Promise<SealedItem | undefined>;
   /** Imports a backup file server-side, then reloads. Returns the number of entries plus graded copies imported. */
   importData: (data: unknown) => Promise<number>;
   clearAll: () => Promise<void>;
-  createList: (name: string, description?: string) => Promise<CustomList | undefined>;
-  updateList: (id: string, patch: { name?: string; description?: string; order?: string[] }) => Promise<void>;
+  createList: (name: string, description?: string, opts?: { kind?: 'list' | 'deck'; format?: DeckFormat }) => Promise<CustomList | undefined>;
+  updateList: (id: string, patch: { name?: string; description?: string; order?: string[]; format?: DeckFormat }) => Promise<void>;
   deleteList: (id: string) => Promise<void>;
   /** Adds the card to the list, or removes it if it's already there. Returns whether it's now in the list. */
   toggleInList: (listId: string, card: CardLike) => Promise<boolean>;
+  /**
+   * Sets a card's quantity in a deck (list), adding it if new. A qty of 0 or less removes the
+   * card instead, mirroring a quantity stepper hitting zero.
+   */
+  setDeckCardQty: (listId: string, card: CardLike, qty: number) => Promise<void>;
 }
 
 export type GradedInput = Omit<GradedCopy, 'id' | 'cardId' | 'setId' | 'addedAt' | 'updatedAt'> & { id?: string };
+export type SealedInput = Omit<SealedItem, 'id' | 'addedAt' | 'updatedAt' | 'status' | 'openedAt'> & { id?: string };
 
 // Full catalogue cards carry a nested `set` object; snapshots flatten it to setId.
 const isSnapshot = (c: CardLike): c is CardSnapshot => !('set' in c);
@@ -173,6 +190,7 @@ const EMPTY = {
   graded: new Map<string, GradedCopy>(),
   gradedByCard: new Map<string, GradedCopy[]>(),
   holdings: new Map<string, VariantQty>(),
+  sealed: new Map<string, SealedItem>(),
   wishlist: new Map<string, WishlistEntry>(),
   notes: new Map<string, string>(),
   history: [] as ValuePoint[],
@@ -206,6 +224,10 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     set({ graded, gradedByCard: indexGraded(graded), holdings: indexHoldings(get().byCard, graded) });
     scheduleValue();
   };
+  const commitSealed = (sealed: Map<string, SealedItem>) => {
+    set({ sealed });
+    scheduleValue();
+  };
 
   /** The collection to write to; undefined (and nothing happens) when read-only. */
   const writable = () => {
@@ -222,7 +244,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
    * user has already been shown an error toast.
    */
   async function persist(apply: () => void, save: () => Promise<unknown>) {
-    const before = { entries: get().entries, graded: get().graded, wishlist: get().wishlist, notes: get().notes, lists: get().lists };
+    const before = { entries: get().entries, graded: get().graded, sealed: get().sealed, wishlist: get().wishlist, notes: get().notes, lists: get().lists };
     apply();
     try {
       await save();
@@ -268,6 +290,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       graded,
       gradedByCard: indexGraded(graded),
       holdings: indexHoldings(byCard, graded),
+      sealed: new Map(data.sealed.map((item) => [item.id, item])),
       cards,
       wishlist: new Map(data.wishlist.map((w) => [w.cardId, w])),
       notes: new Map(data.notes.map((n) => [n.cardId, n.text])),
@@ -419,6 +442,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         if (patch.paid === undefined) delete entry.paid;
         else entry.paid = existing.paid;
       }
+      // Same idea for the manual value override: undefined clears it, an out-of-range number is ignored.
+      if ('valueUsd' in patch) {
+        if (patch.valueUsd === undefined) delete entry.valueUsd;
+        else if (!Number.isFinite(patch.valueUsd) || patch.valueUsd < 0 || patch.valueUsd > 10_000_000) entry.valueUsd = existing.valueUsd;
+      }
       const entries = new Map(get().entries);
       entries.set(key, entry);
       await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, [entry]));
@@ -532,11 +560,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       if (!data || typeof data !== 'object') throw new Error('No collection entries found in file');
       const result = await getBackend().importData(cid, data);
       // A file containing an empty wishlist array is a valid (if empty) backup, not a wrong file.
-      if (!result.entries && !result.graded && !result.wishlist && !result.notes && !Array.isArray((data as { wishlist?: unknown }).wishlist)) {
+      if (!result.entries && !result.graded && !result.sealed && !result.wishlist && !result.notes && !Array.isArray((data as { wishlist?: unknown }).wishlist)) {
         throw new Error('No collection entries found in file');
       }
       await get().refresh();
-      return result.entries + result.graded;
+      return result.entries + result.graded + result.sealed;
     },
 
     saveGraded: async (card, input) => {
@@ -583,6 +611,79 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       await persist(() => commitGraded(new Map(get().graded).set(copy.id, copy)), () => getBackend().putGraded(cid, copy));
     },
 
+    linkGraded: async (id, pcProductId) => {
+      const cid = writable();
+      const copy = get().graded.get(id);
+      if (!cid || !copy) return undefined;
+      try {
+        const updated = await getBackend().linkGraded(cid, id, pcProductId);
+        commitGraded(new Map(get().graded).set(id, updated));
+        return updated;
+      } catch (err) {
+        failed(err);
+        return undefined;
+      }
+    },
+
+    saveSealed: async (input) => {
+      const cid = writable();
+      const prev = input.id ? get().sealed.get(input.id) : undefined;
+      const now = new Date().toISOString();
+      const item: SealedItem = {
+        ...input,
+        id: prev?.id ?? input.id ?? newId(),
+        notes: input.notes?.trim() || undefined,
+        paid: isPaid(input.paid) ? input.paid : undefined,
+        status: prev?.status ?? 'sealed',
+        openedAt: prev?.openedAt,
+        addedAt: prev?.addedAt ?? now,
+        ...(prev ? { updatedAt: now } : {}),
+      };
+      // Read-only: hand back the normalised item without saving, so callers needn't special-case it.
+      if (!cid) return item;
+      const ok = await persist(() => commitSealed(new Map(get().sealed).set(item.id, item)), () => getBackend().putSealed(cid, item));
+      if (!ok) throw new Error("Couldn't save the sealed product");
+      return item;
+    },
+
+    removeSealed: async (id) => {
+      const cid = writable();
+      const item = get().sealed.get(id);
+      if (!cid || !item) return undefined;
+      const sealed = new Map(get().sealed);
+      sealed.delete(id);
+      const ok = await persist(() => commitSealed(sealed), () => getBackend().deleteSealed(cid, id));
+      return ok ? item : undefined;
+    },
+
+    markSealedOpened: async (id) => {
+      const cid = writable();
+      const item = get().sealed.get(id);
+      if (!cid || !item) return undefined;
+      try {
+        const updated = await getBackend().openSealed(cid, id);
+        commitSealed(new Map(get().sealed).set(id, updated));
+        return updated;
+      } catch (err) {
+        failed(err);
+        return undefined;
+      }
+    },
+
+    linkSealed: async (id, pcProductId) => {
+      const cid = writable();
+      const item = get().sealed.get(id);
+      if (!cid || !item) return undefined;
+      try {
+        const updated = await getBackend().linkSealed(cid, id, pcProductId);
+        commitSealed(new Map(get().sealed).set(id, updated));
+        return updated;
+      } catch (err) {
+        failed(err);
+        return undefined;
+      }
+    },
+
     // Not optimistic: wiping everything is destructive enough to wait for the server to confirm.
     clearAll: async () => {
       const cid = writable();
@@ -592,11 +693,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     },
 
     // Not optimistic: the list id comes from the server.
-    createList: async (name, description) => {
+    createList: async (name, description, opts) => {
       const cid = writable();
       if (!cid) return undefined;
       try {
-        const list = await getBackend().createList(cid, name, description);
+        const list = await getBackend().createList(cid, name, description, opts);
         set((s) => ({ lists: [...s.lists, list] }));
         return list;
       } catch (err) {
@@ -617,6 +718,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
               // The new order may come from a filtered view, so cards it doesn't mention keep
               // their relative order at the end instead of being dropped.
               ...(patch.order ? { cards: [...patch.order, ...l.cards.filter((c) => !patch.order!.includes(c))] } : {}),
+              ...(patch.format !== undefined ? { format: patch.format } : {}),
               updatedAt: new Date().toISOString(),
             }
           : l,
@@ -646,6 +748,30 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       );
       if (ok && !has) hydrate(get().cards.get(s.id) ?? s);
       return ok ? !has : has;
+    },
+
+    setDeckCardQty: async (listId, card, qty) => {
+      const cid = writable();
+      const list = get().lists.find((l) => l.id === listId);
+      if (!cid || !list) return;
+      const s = snap(card);
+      if (qty <= 0) {
+        // A stepper going to zero removes the card, same as the plain-list remove button.
+        if (!list.cards.includes(s.id)) return;
+        const cards = list.cards.filter((c) => c !== s.id);
+        const cardQtys = { ...list.cardQtys };
+        delete cardQtys[s.id];
+        const lists = get().lists.map((l) => (l.id === listId ? { ...l, cards, cardQtys, updatedAt: new Date().toISOString() } : l));
+        await persist(() => set({ lists }), () => getBackend().removeFromList(cid, listId, s.id));
+        return;
+      }
+      const isNew = !list.cards.includes(s.id);
+      if (isNew && (!isSnapshot(card) || !get().cards.has(s.id))) await get().remember([s]);
+      const cards = isNew ? [...list.cards, s.id] : list.cards;
+      const cardQtys = { ...list.cardQtys, [s.id]: qty };
+      const lists = get().lists.map((l) => (l.id === listId ? { ...l, cards, cardQtys, updatedAt: new Date().toISOString() } : l));
+      const ok = await persist(() => set({ lists }), () => getBackend().setListCardQty(cid, listId, s.id, qty));
+      if (ok && isNew) hydrate(get().cards.get(s.id) ?? s);
     },
   };
 });

@@ -12,17 +12,27 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { cardVariants, getSetCards, setIdFromCardId } from '@poketracker/shared/catalog';
+import { cardVariants, getCardsByIds, getSetCards, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
+import { buildCodeIndex, setIdsForCode, SUBSET_PREFIXES } from '@poketracker/shared/setCodes';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
-import type { CardNote, CollectionEntry, GradedCopy, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
-import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
-import { hydrateMissing, readCards, readEntries, readGraded, readHistory, recordValue } from './cards.ts';
+import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
+import { DEFAULT_BANNED_CARDS, DEFAULT_REGULATION_MARKS, type DeckFormat, type RegulationMarkSettings } from '@poketracker/shared/decks/legality';
+import { parseDeckText, type DeckTextLine } from '@poketracker/shared/decks/ptcgl';
+import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireRole, requireUser, str, type Ctx } from './context.ts';
+import { hydrateMissing, readCards, readEntries, readGraded, readHistory, readPriceHistory, biggestMovers, recordValue, saveSnapshots } from './cards.ts';
+import { json } from './db.ts';
 import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
+import { cleanSealed, deleteSealedPhotoFiles, putSealed, readSealed, saveSealedPhoto } from './sealed.ts';
+import { pcGradedPrice, pcProduct } from './providers/pricecharting.ts';
+import { tcgdexProvider } from './providers/tcgdex.ts';
 
 /** Set ids as TCGdex issues them, optionally prefixed with a language (e.g. `sv01`, `ja:SV1a`). */
 const SET_ID = /^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,40}$/;
 const SET_STAT_TTL_MS = 12 * 60 * 60_000;
+// Printed set code (e.g. "SVI", "PR-SV") and printed collector number/total (e.g. "123", "TG05"), as read off a card.
+const SCAN_SET_CODE = /^[A-Za-z0-9-]{2,8}$/;
+const SCAN_NUMBER = /^[A-Za-z0-9]{1,10}$/;
 
 export type Access = 'owner' | 'editor' | 'viewer';
 
@@ -96,6 +106,7 @@ export function cleanEntry(raw: unknown): CollectionEntry | undefined {
     condition: CONDITIONS.has(e.condition as string) ? e.condition : undefined,
     notes: typeof e.notes === 'string' ? e.notes.slice(0, NOTE_MAX) : undefined,
     paid: isPaid(e.paid) ? { amount: e.paid!.amount, currency: e.paid!.currency } : undefined,
+    valueUsd: num(e.valueUsd, 0, 10_000_000),
     addedAt: iso(e.addedAt),
     updatedAt: e.updatedAt ? iso(e.updatedAt) : undefined,
   };
@@ -131,6 +142,11 @@ export function cleanGraded(raw: unknown): GradedCopy | undefined {
     valueUsd: num(g.valueUsd, 0, 10_000_000),
     paid: isPaid(g.paid) ? { amount: g.paid!.amount, currency: g.paid!.currency } : undefined,
     notes: typeof g.notes === 'string' ? g.notes.trim().slice(0, NOTE_MAX) || undefined : undefined,
+    // Only ever set by the PriceCharting link endpoint, but preserved here so a plain edit
+    // (which resends the whole object) doesn't silently drop the link.
+    pcProductId: typeof g.pcProductId === 'string' ? g.pcProductId.slice(0, 64) : undefined,
+    pcPrice: num(g.pcPrice, 0, 10_000_000),
+    pcUpdatedAt: typeof g.pcUpdatedAt === 'string' ? g.pcUpdatedAt : undefined,
     addedAt: iso(g.addedAt),
     updatedAt: g.updatedAt ? iso(g.updatedAt) : undefined,
   };
@@ -138,8 +154,8 @@ export function cleanGraded(raw: unknown): GradedCopy | undefined {
 
 export function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
   ctx.db.run(
-    `INSERT OR REPLACE INTO entries (collection_id, id, card_id, set_id, variant, quantity, condition, notes, paid, added_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO entries (collection_id, id, card_id, set_id, variant, quantity, condition, notes, paid, value_override, added_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     collectionId,
     e.id,
     e.cardId,
@@ -149,6 +165,7 @@ export function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
     e.condition ?? null,
     e.notes ?? null,
     e.paid ? JSON.stringify(e.paid) : null,
+    e.valueUsd != null ? JSON.stringify(e.valueUsd) : null,
     e.addedAt,
     e.updatedAt ?? null,
   );
@@ -196,13 +213,15 @@ export interface StateOptions {
 export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptions = {}) {
   let entries = readEntries(ctx.db, collectionId);
   let graded = readGraded(ctx.db, collectionId);
+  let sealed = readSealed(ctx, collectionId);
   const wishlist = ctx.db.all<{ card_id: string; added_at: string }>('SELECT card_id, added_at FROM wishlist WHERE collection_id = ?', collectionId).map((w) => ({ cardId: w.card_id, addedAt: w.added_at }));
   const notes = opts.hideNotes ? [] : ctx.db.all<{ card_id: string; text: string; updated_at: string }>('SELECT * FROM notes WHERE collection_id = ?', collectionId).map((n) => ({ cardId: n.card_id, text: n.text, updatedAt: n.updated_at }));
   let lists = readLists(ctx, collectionId);
   if (opts.hideNotes) lists = lists.map((l) => ({ ...l, description: undefined }));
   if (opts.hidePaid || opts.hideNotes || opts.hideValue) {
-    entries = entries.map((e) => ({ ...e, paid: opts.hidePaid ? undefined : e.paid, notes: opts.hideNotes ? undefined : e.notes }));
+    entries = entries.map((e) => ({ ...e, paid: opts.hidePaid ? undefined : e.paid, notes: opts.hideNotes ? undefined : e.notes, valueUsd: opts.hideValue ? undefined : e.valueUsd }));
     graded = graded.map((g) => ({ ...g, paid: opts.hidePaid ? undefined : g.paid, notes: opts.hideNotes ? undefined : g.notes, valueUsd: opts.hideValue ? undefined : g.valueUsd }));
+    sealed = sealed.map((s) => ({ ...s, paid: opts.hidePaid ? undefined : s.paid, notes: opts.hideNotes ? undefined : s.notes, valueUsd: opts.hideValue ? undefined : s.valueUsd, pcPrice: opts.hideValue ? undefined : s.pcPrice }));
   }
   let history: ValuePoint[] = opts.hideValue ? [] : readHistory(ctx.db, collectionId);
   // Rebuild each point from an allow-list so costUsd / costedValueUsd (what the owner paid) are dropped.
@@ -213,19 +232,28 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
   // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
   const setStats = ctx.db.all<{ set_id: string; master_total: number; synced_at: string }>('SELECT * FROM set_stats').map((s) => ({ setId: s.set_id, masterTotal: s.master_total, syncedAt: s.synced_at }));
-  return { entries, graded, wishlist, notes, history, cards, setStats, lists };
+  return { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
 }
 
 export function readLists(ctx: Ctx, collectionId: string) {
-  const lists = ctx.db.all<{ id: string; name: string; description: string | null; created_at: string; updated_at: string }>('SELECT * FROM lists WHERE collection_id = ? ORDER BY created_at', collectionId);
-  return lists.map((l) => ({
-    id: l.id,
-    name: l.name,
-    description: l.description ?? undefined,
-    createdAt: l.created_at,
-    updatedAt: l.updated_at,
-    cards: ctx.db.all<{ card_id: string }>('SELECT card_id FROM list_cards WHERE list_id = ? ORDER BY position, added_at', l.id).map((r) => r.card_id),
-  }));
+  const lists = ctx.db.all<{ id: string; name: string; description: string | null; kind: 'list' | 'deck'; format: DeckFormat | null; created_at: string; updated_at: string }>(
+    'SELECT * FROM lists WHERE collection_id = ? ORDER BY created_at',
+    collectionId,
+  );
+  return lists.map((l) => {
+    const rows = ctx.db.all<{ card_id: string; qty: number }>('SELECT card_id, qty FROM list_cards WHERE list_id = ? ORDER BY position, added_at', l.id);
+    return {
+      id: l.id,
+      name: l.name,
+      description: l.description ?? undefined,
+      kind: l.kind,
+      format: l.format ?? undefined,
+      createdAt: l.created_at,
+      updatedAt: l.updated_at,
+      cards: rows.map((r) => r.card_id),
+      cardQtys: Object.fromEntries(rows.map((r) => [r.card_id, r.qty])),
+    };
+  });
 }
 
 // Files are named by random photo id only, never by anything user-supplied, so there is no path traversal.
@@ -284,6 +312,7 @@ export const photosFor = (ctx: Ctx, collectionId: string, gradedId: string) =>
 export interface ImportResult {
   entries: number;
   graded: number;
+  sealed: number;
   wishlist: number;
   notes: number;
   history: number;
@@ -306,9 +335,11 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
   const rawEntries: unknown[] = Array.isArray(data) ? data : Array.isArray(obj.collection) ? obj.collection : [];
   const rawWishlist: unknown[] = Array.isArray(obj.wishlist) ? obj.wishlist : [];
   const rawGraded: unknown[] = Array.isArray(obj.graded) ? obj.graded : [];
+  const rawSealed: unknown[] = Array.isArray(obj.sealed) ? obj.sealed : [];
   const rawNotes: unknown[] = Array.isArray(obj.notes) ? obj.notes : [];
   const rawHistory: unknown[] = Array.isArray(obj.history) ? obj.history : [];
   const rawPhotos: unknown[] = Array.isArray(obj.photos) ? obj.photos : [];
+  const rawSealedPhotos: unknown[] = Array.isArray(obj.sealedPhotos) ? obj.sealedPhotos : [];
 
   // Backups from the pokemontcg.io era use different ids; remap them first.
   const legacy = await migrateImport(ctx, rawEntries, rawWishlist);
@@ -325,6 +356,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
     entries.set(e.id, prev ? { ...prev, quantity: prev.quantity + e.quantity } : e);
   }
   const graded = rawGraded.map((g) => cleanGraded(remap(g))).filter((g): g is GradedCopy => !!g);
+  const sealed = rawSealed.map((s) => cleanSealed(s)).filter((s): s is SealedItem => !!s);
   const wishlist = rawWishlist
     .map((w) => remap(w) as Partial<WishlistEntry>)
     .filter((w) => typeof w?.cardId === 'string' && CARD_ID.test(w.cardId))
@@ -344,12 +376,13 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
       ...(typeof p.costUsd === 'number' ? { costUsd: p.costUsd, costedValueUsd: Number(p.costedValueUsd) || 0 } : {}),
     }));
 
-  if (!entries.size && !graded.length && !wishlist.length && !notes.length && !history.length) throw bad('No collection entries found in that file');
+  if (!entries.size && !graded.length && !sealed.length && !wishlist.length && !notes.length && !history.length) throw bad('No collection entries found in that file');
 
   let photos = 0;
   ctx.db.tx(() => {
     for (const e of entries.values()) putEntry(ctx, collectionId, e);
     for (const g of graded) putGraded(ctx, collectionId, g);
+    for (const s of sealed) putSealed(ctx, collectionId, s);
     for (const w of wishlist) ctx.db.run('INSERT OR REPLACE INTO wishlist (collection_id, card_id, added_at) VALUES (?, ?, ?)', collectionId, w.cardId, w.addedAt);
     for (const n of notes) ctx.db.run('INSERT OR REPLACE INTO notes (collection_id, card_id, text, updated_at) VALUES (?, ?, ?, ?)', collectionId, n.cardId, n.text, n.updatedAt);
     // Never overwrite days the server already recorded.
@@ -368,10 +401,52 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
         /* skip unreadable photo: savePhoto re-sniffs the decoded bytes rather than trusting the data URL's type */
       }
     }
+    const sealedIds = new Set(sealed.map((s) => s.id));
+    for (const raw of rawSealedPhotos) {
+      const p = raw as { sealedId?: string; dataUrl?: string };
+      if (!p?.sealedId || !sealedIds.has(p.sealedId) || typeof p.dataUrl !== 'string') continue;
+      const m = /^data:image\/[a-z+]+;base64,(.+)$/.exec(p.dataUrl);
+      if (!m) continue;
+      try {
+        saveSealedPhoto(ctx, collectionId, p.sealedId, Buffer.from(m[1], 'base64'));
+        photos++;
+      } catch {
+        /* skip unreadable photo */
+      }
+    }
   });
   void hydrateMissing(ctx, [...entries.values()].map((e) => e.cardId).concat(graded.map((g) => g.cardId), wishlist.map((w) => w.cardId))).then(() => recordValue(ctx, collectionId))
     .catch((err) => ctx.log.warn({ err }, 'post-import value snapshot failed'));
-  return { entries: entries.size, graded: graded.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
+  return { entries: entries.size, graded: graded.length, sealed: sealed.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
+}
+
+// -------------------------------------------------------------- scan lookup
+
+const SCAN_SET_CARDS_TTL_MS = 10 * 60_000;
+// Per-set brief card listing, so repeated scans against the same set within a short window
+// (every OCR frame while a card sits under the camera) don't each hit TCGdex.
+const scanSetCardsCache = new Map<string, { cards: PokemonCard[]; at: number }>();
+
+async function scanSetCards(setId: string): Promise<PokemonCard[]> {
+  const hit = scanSetCardsCache.get(setId);
+  if (hit && Date.now() - hit.at < SCAN_SET_CARDS_TTL_MS) return hit.cards;
+  const cards = await getSetCards(setId).catch(() => [] as PokemonCard[]);
+  scanSetCardsCache.set(setId, { cards, at: Date.now() });
+  return cards;
+}
+
+/** Printed numbers match case-insensitively; purely numeric ones also ignore leading zeros. */
+function numbersMatch(requested: string, printed: string): boolean {
+  if (/^\d+$/.test(requested) && /^\d+$/.test(printed)) return Number(requested) === Number(printed);
+  return requested.toUpperCase() === printed.toUpperCase();
+}
+
+/** Every TCGdex set id worth searching for a sub-printing (Trainer/Galarian Gallery, SV shiny vault). */
+function subsetIds(index: Map<string, Set<string>>): string[] {
+  const regexes = Object.values(SUBSET_PREFIXES);
+  const ids = new Set<string>();
+  for (const perCode of index.values()) for (const id of perCode) if (regexes.some((r) => r.test(id))) ids.add(id);
+  return Array.from(ids).slice(0, 20);
 }
 
 // ---------------------------------------------------------------- routes
@@ -406,8 +481,10 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     if (c.kind === 'personal') throw bad("Your personal collection can't be deleted");
     // Collect photo ids before the cascade removes their rows, then delete the files afterwards.
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
+    const sealedPhotos = ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos WHERE collection_id = ?', id).map((p) => p.id);
     ctx.db.run('DELETE FROM collections WHERE id = ?', id);
     deletePhotoFiles(ctx, photos);
+    deleteSealedPhotoFiles(ctx, sealedPhotos);
     audit(ctx, req, 'collection.deleted', id);
     return { ok: true };
   });
@@ -510,6 +587,22 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return copy;
   });
 
+  /** Links a slab to a PriceCharting product and fetches its price for the slab's company + grade. */
+  app.post('/api/collections/:id/graded/:gid/link', async (req) => {
+    const { id } = need(ctx, req, 'write');
+    const { gid } = req.params as { gid: string };
+    const row = ctx.db.get<{ data: string }>('SELECT data FROM graded WHERE collection_id = ? AND id = ? AND deleted_at IS NULL', id, gid);
+    if (!row) throw notFound('Graded copy not found');
+    const copy = JSON.parse(row.data) as GradedCopy;
+    const pid = str((req.body as { pcProductId?: unknown })?.pcProductId, 64);
+    if (!pid) throw bad('Pick a product to link');
+    const product = await pcProduct(ctx, pid);
+    const price = pcGradedPrice(product, copy.company, copy.grade);
+    const updated: GradedCopy = { ...copy, pcProductId: pid, pcPrice: price, pcUpdatedAt: now() };
+    putGraded(ctx, id, updated);
+    return updated;
+  });
+
   /** Soft delete so "Undo" can restore the slab and its photos. Purged by the cleanup job. */
   app.delete('/api/collections/:id/graded/:gid', async (req) => {
     const { id } = need(ctx, req, 'write');
@@ -560,6 +653,13 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { point: recordValue(ctx, id) ?? null };
   });
 
+  // "Biggest movers": the cards in the collection whose value has changed most over the window.
+  app.get('/api/collections/:id/movers', async (req) => {
+    const { id } = need(ctx, req, 'read');
+    const days = [7, 30].includes(Number((req.query as { days?: string }).days)) ? Number((req.query as { days?: string }).days) : 7;
+    return { days, ...biggestMovers(ctx, id, days) };
+  });
+
   // Backups can carry slab photos as data URLs.
   // Hence the much larger body limit than the global default, on this route only.
   app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req) => {
@@ -579,11 +679,12 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     reply.header('content-disposition', `attachment; filename="poketracker-${new Date().toISOString().slice(0, 10)}.json"`);
     return {
       app: 'poketracker',
-      version: 4,
+      version: 5,
       exportedAt: now(),
       collection: s.entries,
       wishlist: s.wishlist,
       graded: s.graded,
+      sealed: s.sealed,
       notes: s.notes,
       history: s.history,
       lists: s.lists,
@@ -595,11 +696,13 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.post('/api/collections/:id/clear', async (req) => {
     const { id } = need(ctx, req, 'own');
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
+    const sealedPhotos = ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos WHERE collection_id = ?', id).map((p) => p.id);
     ctx.db.tx(() => {
       // Table names are a fixed list, never user input, so interpolating them is safe.
-      for (const t of ['entries', 'wishlist', 'notes', 'graded', 'graded_photos', 'value_history', 'lists']) ctx.db.run(`DELETE FROM ${t} WHERE collection_id = ?`, id);
+      for (const t of ['entries', 'wishlist', 'notes', 'graded', 'graded_photos', 'sealed', 'sealed_photos', 'value_history', 'lists']) ctx.db.run(`DELETE FROM ${t} WHERE collection_id = ?`, id);
     });
     deletePhotoFiles(ctx, photos);
+    deleteSealedPhotoFiles(ctx, sealedPhotos);
     audit(ctx, req, 'collection.cleared', id);
     return { ok: true };
   });
@@ -615,16 +718,37 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return listId;
   };
 
+  /** Validates an optional deck format field, returning undefined when absent. Throws on anything else. */
+  function deckFormat(v: unknown): DeckFormat | undefined {
+    if (v === undefined) return undefined;
+    if (v === 'standard' || v === 'expanded' || v === 'unlimited') return v;
+    throw bad('Invalid deck format');
+  }
+
   app.post('/api/collections/:id/lists', async (req) => {
     const { id } = need(ctx, req, 'write');
     const body = (req.body ?? {}) as Record<string, unknown>;
     const name = str(body.name, 80);
     if (!name) throw bad('Give the list a name');
     if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM lists WHERE collection_id = ?', id)!.n >= 200) throw bad('Too many lists');
+    const kind = body.kind === undefined ? 'list' : body.kind;
+    if (kind !== 'list' && kind !== 'deck') throw bad('Invalid list kind');
+    const format = deckFormat(body.format);
+    if (format && kind !== 'deck') throw bad('Only decks have a format');
     const listId = newId();
     const t = now();
-    ctx.db.run('INSERT INTO lists (id, collection_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', listId, id, name, str(body.description, 500) || null, t, t);
-    return { id: listId, name, description: str(body.description, 500) || undefined, createdAt: t, updatedAt: t, cards: [] };
+    ctx.db.run(
+      'INSERT INTO lists (id, collection_id, name, description, kind, format, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      listId,
+      id,
+      name,
+      str(body.description, 500) || null,
+      kind,
+      format ?? null,
+      t,
+      t,
+    );
+    return { id: listId, name, description: str(body.description, 500) || undefined, kind, format, createdAt: t, updatedAt: t, cards: [], cardQtys: {} };
   });
 
   app.patch('/api/collections/:id/lists/:listId', async (req) => {
@@ -636,6 +760,14 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       ctx.db.run('UPDATE lists SET name = ?, updated_at = ? WHERE id = ?', name, now(), listId);
     }
     if (body.description !== undefined) ctx.db.run('UPDATE lists SET description = ?, updated_at = ? WHERE id = ?', str(body.description, 500) || null, now(), listId);
+    // Kind is immutable after creation (a deck's quantities and a plain list's semantics don't
+    // interchange cleanly), so it is silently ignored here rather than accepted or rejected loudly.
+    if (body.format !== undefined) {
+      const format = deckFormat(body.format);
+      const row = ctx.db.get<{ kind: 'list' | 'deck' }>('SELECT kind FROM lists WHERE id = ?', listId)!;
+      if (format && row.kind !== 'deck') throw bad('Only decks have a format');
+      ctx.db.run('UPDATE lists SET format = ?, updated_at = ? WHERE id = ?', format ?? null, now(), listId);
+    }
     if (Array.isArray(body.order)) {
       // Position is the array index; ids not already in the list are ignored by the WHERE clause.
       ctx.db.tx(() => (body.order as unknown[]).forEach((c, i) => typeof c === 'string' && ctx.db.run('UPDATE list_cards SET position = ? WHERE list_id = ? AND card_id = ?', i, listId, c)));
@@ -652,9 +784,17 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.put('/api/collections/:id/lists/:listId/cards/:cardId', async (req) => {
     const listId = ownList(req, 'write');
     const card = cardId((req.params as { cardId: string }).cardId);
-    if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM list_cards WHERE list_id = ?', listId)!.n >= 2000) throw bad('That list is full');
-    const pos = ctx.db.get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM list_cards WHERE list_id = ?', listId)!.p;
-    ctx.db.run('INSERT OR IGNORE INTO list_cards (list_id, card_id, position, added_at) VALUES (?, ?, ?, ?)', listId, card, pos, now());
+    const body = (req.body ?? {}) as { qty?: unknown };
+    const qty = body.qty === undefined ? 1 : Math.floor(Number(body.qty));
+    if (!Number.isFinite(qty) || qty < 1 || qty > 60) throw bad('Quantity must be between 1 and 60');
+    const existing = ctx.db.get('SELECT 1 FROM list_cards WHERE list_id = ? AND card_id = ?', listId, card);
+    if (existing) {
+      ctx.db.run('UPDATE list_cards SET qty = ? WHERE list_id = ? AND card_id = ?', qty, listId, card);
+    } else {
+      if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM list_cards WHERE list_id = ?', listId)!.n >= 2000) throw bad('That list is full');
+      const pos = ctx.db.get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM list_cards WHERE list_id = ?', listId)!.p;
+      ctx.db.run('INSERT INTO list_cards (list_id, card_id, position, qty, added_at) VALUES (?, ?, ?, ?, ?)', listId, card, pos, qty, now());
+    }
     ctx.db.run('UPDATE lists SET updated_at = ? WHERE id = ?', now(), listId);
     void hydrateMissing(ctx, [card]);
     return { ok: true };
@@ -669,6 +809,14 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   // ------------------------------------------------------------ shared catalogue data
   // Card and set data is instance-wide, not per collection, so any signed-in user may fill it in.
 
+  /** Per-variant, per-source daily price history for a card, used by the card page's chart. */
+  app.get('/api/cards/:id/prices/history', async (req) => {
+    requireUser(req);
+    const id = cardId((req.params as { id: string }).id);
+    const days = Math.min(Math.max(Math.floor(Number((req.query as { days?: string }).days ?? 90)) || 90, 1), 1825);
+    return readPriceHistory(ctx.db, id, days);
+  });
+
   app.post('/api/cards/hydrate', async (req) => {
     requireUser(req);
     const ids = (req.body as { ids?: unknown[] })?.ids;
@@ -676,6 +824,53 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     const clean = ids.filter((i): i is string => typeof i === 'string' && CARD_ID.test(i));
     await hydrateMissing(ctx, clean);
     return Array.from(readCards(ctx.db, clean).values());
+  });
+
+  /**
+   * Resolves an OCR-read set code + collector number (or number + printed total, when no code
+   * was read reliably) to candidate cards for the camera-scan feature. A misread or unknown set
+   * code resolves to zero candidate sets rather than a 400: the scan should keep trying, not die
+   * on one bad frame.
+   */
+  const scanLookupLimiter = new Limiter(120, 60_000);
+  app.get('/api/cards/lookup', async (req, reply) => {
+    const u = requireUser(req);
+    scanLookupLimiter.check(u.id, reply);
+    const q = req.query as { set?: string; number?: string; total?: string };
+    const setCode = str(q.set, 8);
+    const number = str(q.number, 10);
+    const total = str(q.total, 10);
+    if (setCode && !SCAN_SET_CODE.test(setCode)) throw bad('Invalid set code');
+    if (!number || !SCAN_NUMBER.test(number)) throw bad('Invalid collector number');
+    if (total && !SCAN_NUMBER.test(total)) throw bad('Invalid printed total');
+
+    const sets = await getSets('en').catch(() => []);
+    const index = buildCodeIndex(sets);
+    let setIds: string[];
+    if (setCode) {
+      setIds = setIdsForCode(setCode, index);
+    } else if (total && /^\d+$/.test(total)) {
+      const printedTotal = Number(total);
+      setIds = sets.filter((s) => s.printedTotal === printedTotal).map((s) => s.id).slice(0, 20);
+    } else {
+      setIds = subsetIds(index);
+    }
+
+    const matchedIds: string[] = [];
+    for (const setId of setIds) {
+      if (matchedIds.length >= 10) break;
+      const cards = await scanSetCards(setId);
+      for (const card of cards) {
+        if (numbersMatch(number, card.number)) matchedIds.push(card.id);
+        if (matchedIds.length >= 10) break;
+      }
+    }
+    if (!matchedIds.length) return { candidates: [] };
+
+    const cards = await getCardsByIds(matchedIds);
+    const snaps: CardSnapshot[] = cards.map(toSnapshot);
+    saveSnapshots(ctx.db, snaps);
+    return { candidates: snaps };
   });
 
   /**
@@ -698,7 +893,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     setStatLimiter.check(u.id, reply);
     let job = counting.get(setId);
     if (!job) {
-      job = getSetCards(setId)
+      job = tcgdexProvider
+        .getSetCards(setId)
         .then((cards) => cards.reduce((n, c) => n + cardVariants(c).length, 0))
         .finally(() => counting.delete(setId));
       counting.set(setId, job);
@@ -707,10 +903,113 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     try {
       total = await job;
     } catch {
+      // TCGdex is down (or its breaker is open): serve the last count we have rather than a
+      // hard error, even though it is past its normal TTL.
+      if (existing) return { ok: true, masterTotal: existing.master_total, stale: true };
       throw new HttpError(502, 'Could not reach the card catalogue', 'upstream');
     }
     if (total < 1) throw notFound('Unknown set');
     ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, synced_at) VALUES (?, ?, ?)', setId, total, now());
     return { ok: true, masterTotal: total };
+  });
+
+  // ------------------------------------------------------------ deck import and legality settings
+  // Not collection-scoped: resolving deck text and reading/editing the legality rules are
+  // instance-wide catalogue concerns, the same way /api/cards/lookup and /api/set-stats are.
+
+  const MAX_DECK_TEXT = 20_000;
+  const deckResolveLimiter = new Limiter(60, 60_000);
+
+  /**
+   * Parses PTCGL/Limitless deck text and resolves each line to a real card via its printed set
+   * code + collector number, the same way GET /api/cards/lookup resolves an OCR read. Lines
+   * with no set code/number, or whose code+number match nothing, come back unresolved rather
+   * than guessed at by name, so the import dialog can show them for manual fixing.
+   */
+  app.post('/api/decks/resolve', async (req, reply) => {
+    const u = requireUser(req);
+    deckResolveLimiter.check(u.id, reply);
+    const body = (req.body ?? {}) as { text?: unknown };
+    if (typeof body.text !== 'string' || !body.text.length || body.text.length > MAX_DECK_TEXT) throw bad(`Send deck text (up to ${MAX_DECK_TEXT.toLocaleString()} characters)`);
+    const parsed = parseDeckText(body.text);
+
+    const sets = await getSets('en').catch(() => []);
+    const index = buildCodeIndex(sets);
+
+    // First pass: resolve each line to a candidate TCGdex card id (set codes + collector number
+    // only), without fetching full snapshots yet, so the priced fetch below is one batched call
+    // across every line rather than one call per line.
+    const lineCardIds = new Map<DeckTextLine, string>();
+    for (const line of parsed.lines) {
+      if (!line.setCode || !line.number) continue;
+      for (const setId of setIdsForCode(line.setCode, index)) {
+        const cards = await scanSetCards(setId);
+        const match = cards.find((c) => numbersMatch(line.number!, c.number));
+        if (match) {
+          lineCardIds.set(line, match.id);
+          break;
+        }
+      }
+    }
+
+    let snaps = new Map<string, CardSnapshot>();
+    if (lineCardIds.size) {
+      const cards = await getCardsByIds(Array.from(new Set(lineCardIds.values())));
+      const snapped = cards.map(toSnapshot);
+      saveSnapshots(ctx.db, snapped);
+      snaps = new Map(snapped.map((s) => [s.id, s]));
+    }
+
+    const resolved: (DeckTextLine & { card: CardSnapshot })[] = [];
+    const unresolved: DeckTextLine[] = [];
+    for (const line of parsed.lines) {
+      const card = snaps.get(lineCardIds.get(line) ?? '');
+      if (card) resolved.push({ ...line, card });
+      else unresolved.push(line);
+    }
+    return { resolved, unresolved, totalCards: parsed.totalCards };
+  });
+
+  function readDeckSettings(): { regulationMarks: RegulationMarkSettings; bannedCardIds: string[] } {
+    const marks = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'deck_regulation_marks'");
+    const banned = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'deck_banned_cards'");
+    return {
+      regulationMarks: marks ? json(marks.value, DEFAULT_REGULATION_MARKS) : DEFAULT_REGULATION_MARKS,
+      bannedCardIds: banned ? json(banned.value, DEFAULT_BANNED_CARDS) : DEFAULT_BANNED_CARDS,
+    };
+  }
+
+  /** Any signed-in user reads the legality rules; they're applied client-side when checking a deck. */
+  app.get('/api/decks/settings', async (req) => {
+    requireUser(req);
+    return readDeckSettings();
+  });
+
+  const REGULATION_MARK = /^[A-Za-z0-9]{1,3}$/;
+  app.put('/api/admin/deck-settings', async (req) => {
+    requireRole(req, 'owner', 'admin');
+    const body = (req.body ?? {}) as { regulationMarks?: { standard?: unknown; expanded?: unknown }; bannedCardIds?: unknown };
+    const current = readDeckSettings();
+
+    const cleanMarks = (v: unknown): string[] => {
+      if (!Array.isArray(v) || v.length > 20) throw bad('Invalid regulation marks');
+      return v.map((m) => {
+        if (typeof m !== 'string' || !REGULATION_MARK.test(m)) throw bad('Invalid regulation mark');
+        return m;
+      });
+    };
+    const regulationMarks =
+      body.regulationMarks === undefined ? current.regulationMarks : { standard: cleanMarks(body.regulationMarks.standard), expanded: cleanMarks(body.regulationMarks.expanded) };
+
+    let bannedCardIds = current.bannedCardIds;
+    if (body.bannedCardIds !== undefined) {
+      if (!Array.isArray(body.bannedCardIds) || body.bannedCardIds.length > 500) throw bad('Invalid banned card list');
+      bannedCardIds = body.bannedCardIds.map((v) => cardId(v));
+    }
+
+    ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('deck_regulation_marks', ?)", JSON.stringify(regulationMarks));
+    ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('deck_banned_cards', ?)", JSON.stringify(bannedCardIds));
+    audit(ctx, req, 'admin.deck_settings', undefined, body);
+    return { regulationMarks, bannedCardIds };
   });
 }

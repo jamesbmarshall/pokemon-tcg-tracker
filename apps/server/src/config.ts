@@ -44,6 +44,8 @@ export interface Config {
    * on an instance that holds real data.
    */
   demoMode: boolean;
+  /** How many days of per-card price history to keep; older rows are pruned by the cleanup job. */
+  priceHistoryDays: number;
 }
 
 /**
@@ -111,5 +113,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     tcgdexBase: env.TCGDEX_BASE ?? 'https://api.tcgdex.net/v2',
     fxUrl: env.FX_URL ?? 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=GBP,EUR',
     demoMode: bool(env.DEMO_MODE, false),
+    priceHistoryDays: Number(env.PRICE_HISTORY_DAYS ?? 730),
   };
 }

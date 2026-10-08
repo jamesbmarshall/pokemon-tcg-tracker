@@ -15,11 +15,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
 import { access, collectionState, photosFor, streamPhoto } from './collections.ts';
+import { sealedPhotosFor, streamSealedPhoto } from './sealed.ts';
 import { isSecure, linkBase } from './auth.ts';
 import { newId, randomToken, sha256 } from './security.ts';
 
 export const SHARE_COOKIE = 'pt_share';
-const SCOPES = ['collection', 'set', 'wishlist', 'graded', 'list'] as const;
+const SCOPES = ['collection', 'set', 'wishlist', 'graded', 'sealed', 'list'] as const;
 const AUDIENCES = ['public', 'users', 'instance'] as const;
 type Scope = (typeof SCOPES)[number];
 type Audience = (typeof AUDIENCES)[number];
@@ -89,7 +90,7 @@ export function attachShare(ctx: Ctx, req: FastifyRequest) {
 export function shareView(ctx: Ctx, s: ShareRow) {
   const full = collectionState(ctx, s.collection_id, { hidePaid: !!s.hide_paid, hideValue: !!s.hide_value, hideNotes: !!s.hide_notes });
   const pick = (ids: Set<string>) => full.cards.filter((c) => ids.has(c.id));
-  const empty = { entries: [], graded: [], wishlist: [], notes: [], history: [], lists: [], cards: [], setStats: [] } as unknown as typeof full;
+  const empty = { entries: [], graded: [], sealed: [], wishlist: [], notes: [], history: [], lists: [], cards: [], setStats: [] } as unknown as typeof full;
   switch (s.scope) {
     case 'collection':
       return full;
@@ -99,10 +100,11 @@ export function shareView(ctx: Ctx, s: ShareRow) {
       const inSet = <T extends { cardId: string }>(x: T) => full.cards.find((c) => c.id === x.cardId)?.setId === s.target || x.cardId.startsWith(`${s.target}-`);
       const entries = full.entries.filter((e) => e.setId === s.target);
       const graded = full.graded.filter((g) => g.setId === s.target);
+      const sealed = full.sealed.filter((se) => se.setId === s.target);
       const wishlist = full.wishlist.filter(inSet);
       const notes = full.notes.filter(inSet);
       const ids = new Set([...entries, ...graded, ...wishlist].map((x) => x.cardId));
-      return { ...empty, entries, graded, wishlist, notes, cards: pick(ids), setStats: full.setStats.filter((x) => x.setId === s.target) };
+      return { ...empty, entries, graded, sealed, wishlist, notes, cards: pick(ids), setStats: full.setStats.filter((x) => x.setId === s.target) };
     }
     case 'wishlist': {
       const ids = new Set(full.wishlist.map((w) => w.cardId));
@@ -112,6 +114,8 @@ export function shareView(ctx: Ctx, s: ShareRow) {
       const ids = new Set(full.graded.map((g) => g.cardId));
       return { ...empty, graded: full.graded, notes: full.notes.filter((n) => ids.has(n.cardId)), cards: pick(ids) };
     }
+    case 'sealed':
+      return { ...empty, sealed: full.sealed };
     case 'list': {
       // A list deleted after sharing yields an empty view rather than an error.
       const list = full.lists.find((l) => l.id === s.target);
@@ -397,6 +401,25 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     if (!p || !visibleGraded(s).has(p.graded_id)) throw notFound();
     const { mime, stream } = streamPhoto(ctx, s.collection_id, pid);
     // Shorter and not immutable (unlike the member route) so revoking a share takes effect sooner.
+    reply.header('cache-control', 'private, max-age=3600').type(mime);
+    return reply.send(stream);
+  });
+
+  const visibleSealed = (s: ShareRow) => new Set(shareView(ctx, s).sealed.map((se) => se.id));
+
+  app.get('/api/public/:token/sealed/:sid/photos', async (req, reply) => {
+    const { s } = open(req, reply);
+    const sid = (req.params as { sid: string }).sid;
+    if (!visibleSealed(s).has(sid)) throw notFound();
+    return sealedPhotosFor(ctx, s.collection_id, sid);
+  });
+
+  app.get('/api/public/:token/sealed-photos/:pid', async (req, reply) => {
+    const { s } = open(req, reply);
+    const pid = (req.params as { pid: string }).pid;
+    const p = ctx.db.get<{ sealed_id: string }>('SELECT sealed_id FROM sealed_photos WHERE id = ? AND collection_id = ?', pid, s.collection_id);
+    if (!p || !visibleSealed(s).has(p.sealed_id)) throw notFound();
+    const { mime, stream } = streamSealedPhoto(ctx, s.collection_id, pid);
     reply.header('cache-control', 'private, max-age=3600').type(mime);
     return reply.send(stream);
   });

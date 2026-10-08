@@ -40,11 +40,19 @@ describe('CommandPalette', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('opens focused with a hint', () => {
+  it('opens focused with a scan shortcut and a hint', () => {
     setup();
     expect(screen.getByRole('dialog', { name: 'Search' })).toBeInTheDocument();
     expect(input()).toHaveFocus();
+    expect(screen.getByText('Scan a card')).toBeInTheDocument();
     expect(screen.getByText(/Try “Charizard”/)).toBeInTheDocument();
+  });
+
+  it('navigates to the scan page when the scan shortcut is chosen', async () => {
+    const { user, onClose } = setup();
+    await user.click(screen.getByText('Scan a card'));
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/scan');
   });
 
   it('matches sets by name', async () => {

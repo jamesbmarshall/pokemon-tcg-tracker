@@ -5,7 +5,7 @@
  * Every amount is computed in USD, the currency the market prices come in. Rates map a currency
  * to units per 1 USD; conversion to the user's display currency happens only at render time.
  */
-import type { CardSnapshot, CollectionEntry, GradedCopy, Paid, ValuePoint } from './types';
+import type { CardSnapshot, CollectionEntry, GradedCopy, Paid, SealedItem, ValuePoint } from './types';
 
 export type Currency = 'GBP' | 'EUR' | 'USD';
 export type Rates = Record<Currency, number>;
@@ -45,20 +45,39 @@ export function priceOf(card: CardSnapshot | undefined, variant: string) {
   return card.prices[variant] ?? Object.values(card.prices)[0];
 }
 
-/** A slab is worth the owner's valuation, else the raw market price of its printing. */
+/** A slab is worth the owner's valuation, else its linked PriceCharting graded price, else the raw market price. */
 export function gradedValue(g: GradedCopy, cards: Map<string, CardSnapshot>) {
-  return g.valueUsd ?? priceOf(cards.get(g.cardId), g.variant) ?? 0;
+  return g.valueUsd ?? g.pcPrice ?? priceOf(cards.get(g.cardId), g.variant) ?? 0;
 }
 
-/** Total market value and copy counts. Raw copies with no known price add to the count but not the value. */
-export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy> = []) {
+/** A raw entry is worth the owner's per-copy valuation, else the market price of its printing. */
+export function entryValue(e: CollectionEntry, cards: Map<string, CardSnapshot>): number | undefined {
+  return e.valueUsd ?? priceOf(cards.get(e.cardId), e.variant);
+}
+
+/**
+ * A sealed item is worth the owner's valuation, else its linked PriceCharting price times how
+ * many copies are held. Opened items are worth nothing: they no longer count towards value, only
+ * towards history.
+ */
+export function sealedValue(s: SealedItem): number {
+  if (s.status === 'opened') return 0;
+  return s.valueUsd ?? (s.pcPrice != null ? s.pcPrice * s.quantity : 0);
+}
+
+/**
+ * Total market value and copy counts. Raw copies with no known price add to the count but not
+ * the value. Sealed items add to value only (unopened ones), not to the card/unique counts,
+ * since they aren't individual cards.
+ */
+export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy> = [], sealed: Iterable<SealedItem> = []) {
   let valueUsd = 0;
   let count = 0;
   const unique = new Set<string>();
   for (const e of entries) {
     count += e.quantity;
     unique.add(e.cardId);
-    const price = priceOf(cards.get(e.cardId), e.variant);
+    const price = entryValue(e, cards);
     if (price) valueUsd += price * e.quantity;
   }
   for (const g of graded) {
@@ -66,6 +85,7 @@ export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<stri
     unique.add(g.cardId);
     valueUsd += gradedValue(g, cards);
   }
+  for (const s of sealed) valueUsd += sealedValue(s);
   return { valueUsd, count, unique: unique.size };
 }
 
@@ -79,13 +99,13 @@ export interface CostBasis {
 }
 
 /** Cost basis vs. market value, counting only copies whose purchase price is known. */
-export function costBasis(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy>, rates: Rates): CostBasis {
+export function costBasis(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy>, rates: Rates, sealed: Iterable<SealedItem> = []): CostBasis {
   const out = { costUsd: 0, valueUsd: 0, costed: 0 };
   for (const e of entries) {
     const each = paidUsd(e.paid, rates);
     if (each == null) continue;
     out.costUsd += each * e.quantity;
-    out.valueUsd += (priceOf(cards.get(e.cardId), e.variant) ?? 0) * e.quantity;
+    out.valueUsd += (entryValue(e, cards) ?? 0) * e.quantity;
     out.costed += e.quantity;
   }
   for (const g of graded) {
@@ -93,6 +113,14 @@ export function costBasis(entries: Iterable<CollectionEntry>, cards: Map<string,
     if (cost == null) continue;
     out.costUsd += cost;
     out.valueUsd += gradedValue(g, cards);
+    out.costed++;
+  }
+  for (const s of sealed) {
+    if (s.status === 'opened') continue;
+    const cost = paidUsd(s.paid, rates);
+    if (cost == null) continue;
+    out.costUsd += cost;
+    out.valueUsd += sealedValue(s);
     out.costed++;
   }
   return out;
@@ -107,16 +135,18 @@ export function valuePoint(
   graded: Iterable<GradedCopy>,
   rates: Rates,
   hasHistory: boolean,
+  sealed: Iterable<SealedItem> = [],
   date = todayKey(),
 ): ValuePoint | undefined {
   const e = Array.from(entries);
   const g = Array.from(graded);
-  const { valueUsd, count, unique } = computeValue(e, cards, g);
+  const s = Array.from(sealed);
+  const { valueUsd, count, unique } = computeValue(e, cards, g, s);
   // An empty collection with no history has nothing to chart. With history, a zero point is real
   // information (the user sold or removed everything) and is recorded.
-  if (count === 0 && !hasHistory) return undefined;
+  if (count === 0 && !s.length && !hasHistory) return undefined;
   const point: ValuePoint = { date, valueUsd: round2(valueUsd), cards: count, unique };
-  const cost = costBasis(e, cards, g, rates);
+  const cost = costBasis(e, cards, g, rates, s);
   if (cost.costed) Object.assign(point, { costUsd: round2(cost.costUsd), costedValueUsd: round2(cost.valueUsd) });
   return point;
 }

@@ -15,7 +15,26 @@ const A = makeSnapshot({ id: 'sv03-001', name: 'Charmander', prices: { normal: 2
 const B = makeSnapshot({ id: 'sv03-004', name: 'Charmeleon', prices: { normal: 4 } });
 const C = makeSnapshot({ id: 'sv03-006', name: 'Charizard', prices: { holofoil: 40 } });
 
-const list = (over: Partial<CustomList> = {}): CustomList => ({ id: 'l1', name: 'Fire deck', description: 'Burn it all', createdAt: '2025-01-01', updatedAt: '2025-01-01', cards: [A.id, B.id, C.id], ...over });
+const list = (over: Partial<CustomList> = {}): CustomList => {
+  const cards = over.cards ?? [A.id, B.id, C.id];
+  return { id: 'l1', name: 'Fire deck', description: 'Burn it all', createdAt: '2025-01-01', updatedAt: '2025-01-01', cards, kind: 'list', cardQtys: Object.fromEntries(cards.map((id) => [id, 1])), ...over };
+};
+
+const deck = (over: Partial<CustomList> = {}): CustomList => {
+  const cards = over.cards ?? [A.id, B.id, C.id];
+  return {
+    id: 'd1',
+    name: 'Charizard deck',
+    description: undefined,
+    createdAt: '2025-01-01',
+    updatedAt: '2025-01-01',
+    cards,
+    kind: 'deck',
+    format: 'standard',
+    cardQtys: Object.fromEntries(cards.map((id) => [id, 1])),
+    ...over,
+  };
+};
 
 function seedLists(lists: CustomList[]) {
   seedCollection({ cards: [A, B, C] });
@@ -65,6 +84,27 @@ describe('ListsPage', () => {
     useCollectionStore.setState({ readOnly: true, role: 'viewer' });
     renderWithProviders(<ListsPage />);
     expect(screen.queryByRole('button', { name: /New list/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /New deck/ })).not.toBeInTheDocument();
+  });
+
+  it('shows a deck with a Deck badge and an X/60 count', () => {
+    seedLists([deck({ cards: [A.id], cardQtys: { [A.id]: 4 } })]);
+    renderWithProviders(<ListsPage />);
+    const card = screen.getByRole('link', { name: /Charizard deck/ });
+    expect(card).toHaveTextContent('Deck · Standard');
+    expect(card).toHaveTextContent('4/60 cards');
+  });
+
+  it('creates a deck with a chosen format and opens it', async () => {
+    seedLists([]);
+    renderWithProviders(<ListsPage />);
+    await userEvent.click(screen.getByRole('button', { name: /New deck/ }));
+    const dialog = screen.getByRole('dialog', { name: 'New deck' });
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'Lugia VSTAR');
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'Expanded' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create deck' }));
+    await waitFor(() => expect(memory.lists).toMatchObject([{ name: 'Lugia VSTAR', kind: 'deck', format: 'expanded' }]));
+    expect(lastLocation()).toBe(`/lists/${memory.lists[0].id}`);
   });
 });
 

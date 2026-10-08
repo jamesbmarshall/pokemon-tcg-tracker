@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Download, FileJson, FileSpreadsheet, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getBackend } from '../api/backend';
 import { isAdmin, useAuth } from '../store/authStore';
+import InstallPrompt from '../components/InstallPrompt';
 import UpdatesSection from '../components/UpdatesSection';
-import { computeValue, gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
+import { computeValue, entryValue, gradedValue, useCollectionStore } from '../store/collectionStore';
 import { useSettings, type Currency, type ThemePref } from '../store/settingsStore';
 import { useMoney, useRates } from '../hooks/useMoney';
 import { PageHeader, Segmented } from '../components/ui';
@@ -13,6 +14,7 @@ import { toast } from '../store/toastStore';
 import { relativeTime, todayKey } from '../utils/format';
 import { variantLabel } from '../utils/variants';
 import { formatGrade } from '../utils/grading';
+import { toCsv } from '@poketracker/shared/csv';
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -22,11 +24,6 @@ function download(name: string, content: string, type: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
-const csvCell = (v: unknown) => {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 function Section({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -44,6 +41,7 @@ export default function SettingsPage() {
   const { currency, setCurrency, pocketSize, setPocketSize, theme, setTheme } = useSettings();
   const entries = useCollectionStore((s) => s.entries);
   const graded = useCollectionStore((s) => s.graded);
+  const sealed = useCollectionStore((s) => s.sealed);
   const cards = useCollectionStore((s) => s.cards);
   const wishlist = useCollectionStore((s) => s.wishlist);
   const notes = useCollectionStore((s) => s.notes);
@@ -62,7 +60,7 @@ export default function SettingsPage() {
   const money = useMoney();
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmText, setConfirmText] = useState('');
-  const value = useMemo(() => computeValue(entries.values(), cards, graded.values()), [entries, cards, graded]);
+  const value = useMemo(() => computeValue(entries.values(), cards, graded.values(), sealed.values()), [entries, cards, graded, sealed]);
 
   const exportJson = () => {
     const payload = {
@@ -73,6 +71,7 @@ export default function SettingsPage() {
       wishlist: Array.from(wishlist.values()),
       // Slab photos stay on the server (and in its backups); only slab details are exported.
       graded: Array.from(graded.values()),
+      sealed: Array.from(sealed.values()),
       notes: Array.from(notes, ([cardId, text]) => ({ cardId, text })),
       history,
       lists,
@@ -85,7 +84,7 @@ export default function SettingsPage() {
     const rate = rates?.[currency] ?? 1;
     const rows = Array.from(entries.values()).map((e) => {
       const c = cards.get(e.cardId);
-      const p = priceOf(c, e.variant);
+      const p = entryValue(e, cards);
       return [e.cardId, c?.name, c?.setName, c?.number, c?.rarity, variantLabel(e.variant), e.quantity, e.condition ?? '', p ? (p * rate).toFixed(2) : '', e.addedAt.slice(0, 10), '', '', '', e.paid?.amount.toFixed(2) ?? '', e.paid?.currency ?? '', notes.get(e.cardId) ?? ''];
     });
     for (const g of graded.values()) {
@@ -93,7 +92,7 @@ export default function SettingsPage() {
       const v = gradedValue(g, cards);
       rows.push([g.cardId, c?.name, c?.setName, c?.number, c?.rarity, variantLabel(g.variant), 1, g.label ?? '', v ? (v * rate).toFixed(2) : '', g.addedAt.slice(0, 10), formatGrade(g), g.certNumber ?? '', g.countsTowardSet ? 'Yes' : 'No', g.paid?.amount.toFixed(2) ?? '', g.paid?.currency ?? '', notes.get(g.cardId) ?? '']);
     }
-    download(`poketracker-${todayKey()}.csv`, [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    download(`poketracker-${todayKey()}.csv`, toCsv([header, ...rows]), 'text/csv');
   };
 
   const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,6 +122,8 @@ export default function SettingsPage() {
           ]}
         />
       </Section>
+
+      <InstallPrompt />
 
       <Section title="Currency" description="Prices come from TCGplayer (USD) and Cardmarket (EUR) and are converted at the latest ECB reference rate.">
         <Segmented<Currency>

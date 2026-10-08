@@ -29,6 +29,20 @@ export function publicBackend(token: string): Backend {
     photos: (_cid, gradedId) => sharing.publicPhotos(token, gradedId),
     addPhotos: refuse,
     deletePhoto: refuse,
+    linkGraded: refuse,
+    putSealed: refuse,
+    deleteSealed: refuse,
+    openSealed: refuse,
+    linkSealed: refuse,
+    sealedPhotos: (_cid, sealedId) => sharing.publicSealedPhotos(token, sealedId),
+    addSealedPhotos: refuse,
+    deleteSealedPhoto: refuse,
+    pcConfigured: async () => false,
+    pcSearch: async () => [],
+    pcAdminStatus: async () => false,
+    pcSetKey: refuse,
+    pcClearKey: refuse,
+    pcTest: refuse,
     // These are called as background side effects by normal pages, so they resolve quietly
     // instead of throwing and surfacing an error toast to a visitor.
     recordValue: async () => null,
@@ -41,7 +55,15 @@ export function publicBackend(token: string): Backend {
     deleteList: refuse,
     addToList: refuse,
     removeFromList: refuse,
-    status: async () => ({ version: '', lastPriceSync: null, fxAt: null }),
+    setListCardQty: refuse,
+    resolveDeckText: refuse,
+    getDeckSettings: async () => ({ regulationMarks: { standard: [], expanded: [] }, bannedCardIds: [] }),
+    putDeckSettings: refuse,
+    status: async () => ({ version: '', lastPriceSync: null, fxAt: null, catalogDegraded: false }),
     refreshPrices: refuse,
+    // Card price history needs a signed-in session the share token doesn't have; render the card
+    // page's chart as "no history" rather than surfacing an error to a visitor.
+    priceHistory: async (cardId) => ({ cardId, series: [] }),
+    movers: refuse,
   };
 }

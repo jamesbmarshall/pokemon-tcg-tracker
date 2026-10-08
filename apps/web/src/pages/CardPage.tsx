@@ -5,11 +5,13 @@ import { useCard, usePrintings, useSetCards } from '../api/hooks';
 import { langOf } from '../api/languages';
 import { LanguageBadge } from '../components/Language';
 import { cardVariants, compareCardNumber, toSnapshot, usdPrices } from '../api/client';
-import { costBasis, ownedTotal, priceOf, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
+import { costBasis, entryValue, ownedTotal, priceOf, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
 import AddToList from '../components/AddToList';
 import { useFx, useMoney, useRates } from '../hooks/useMoney';
 import { useSwipe } from '../hooks/useSwipe';
 import { Gain, PaidInput } from '../components/Paid';
+import { ManualBadge, ValueInput } from '../components/ValueOverride';
+import PriceHistory from '../components/PriceHistory';
 import { paidUsd } from '../utils/fx';
 import { toast } from '../store/toastStore';
 import HoloCard from '../components/HoloCard';
@@ -35,6 +37,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const market = usdPrices(card)[variant];
   const low = card.tcgplayer?.prices[variant]?.low;
   const paidEach = n ? paidUsd(entry?.paid, rates) : undefined;
+  const manualValue = n > 0 ? entry?.valueUsd : undefined;
 
   return (
     <div className="flex flex-wrap items-center gap-3 py-3">
@@ -42,10 +45,18 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
       <div className="min-w-48 flex-1">
         <p className="text-sm font-semibold">{variantLabel(variant)}</p>
         <p className="font-mono text-[11px] text-muted tabular">
-          {market ? `${money(market)} market` : 'No price data'}
+          {manualValue != null ? (
+            <>
+              <span>{money(manualValue)}</span> your value <ManualBadge className="normal-case" />
+            </>
+          ) : market ? (
+            `${money(market)} market`
+          ) : (
+            'No price data'
+          )}
           {low ? ` · from ${money(low)}` : ''}
         </p>
-        {paidEach != null && market != null && <Gain valueUsd={market * n} costUsd={paidEach * n} className="text-[11px]" />}
+        {paidEach != null && market != null && <Gain valueUsd={(manualValue ?? market) * n} costUsd={paidEach * n} className="text-[11px]" />}
       </div>
       {readOnly ? (
         n > 0 && (
@@ -63,6 +74,16 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
           onCommit={(paid) => {
             void updateEntry(card.id, variant, { paid });
             toast(paid ? 'Purchase price saved' : 'Purchase price cleared');
+          }}
+        />
+      )}
+      {n > 0 && entry && (
+        <ValueInput
+          value={entry.valueUsd}
+          label={`Your value per ${variantLabel(variant)} copy`}
+          onCommit={(valueUsd) => {
+            void updateEntry(card.id, variant, { valueUsd });
+            toast(valueUsd != null ? 'Your value saved' : 'Your value cleared');
           }}
         />
       )}
@@ -104,6 +125,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
       )}
         </>
       )}
+      <PriceHistory cardId={card.id} variant={variant} />
     </div>
   );
 }
@@ -213,11 +235,14 @@ export default function CardPage() {
   // Slabs are owned copies whether or not they count towards set completion.
   const total = rawTotal + slabs.length;
   const snap = toSnapshot(card);
-  const ownedValue =
-    (owned ? Object.entries(owned).reduce((s, [v, q]) => s + (priceOf(snap, v) ?? 0) * q, 0) : 0) +
-    slabs.reduce((s, g) => s + (g.valueUsd ?? priceOf(snap, g.variant) ?? 0), 0);
+  const cardsMap = new Map([[card.id, snap]]);
   const cardEntries = Array.from(allEntries.values()).filter((e) => e.cardId === card.id);
-  const cost = rates ? costBasis(cardEntries, new Map([[card.id, snap]]), slabs, rates) : undefined;
+  // Each owned variant's contribution uses its manual override (entryValue) when set, else market price.
+  const ownedValue =
+    cardEntries.reduce((s, e) => s + (entryValue(e, cardsMap) ?? 0) * e.quantity, 0) +
+    slabs.reduce((s, g) => s + (g.valueUsd ?? priceOf(snap, g.variant) ?? 0), 0);
+  const cost = rates ? costBasis(cardEntries, cardsMap, slabs, rates) : undefined;
+  const hasManualValue = cardEntries.some((e) => e.valueUsd != null) || slabs.some((g) => g.valueUsd != null);
   const foilish = /holo|rare|ex|illustration|secret|ultra|gx|vmax|vstar/i.test(card.rarity ?? '') || variants.some(isFoil);
 
   return (
@@ -309,6 +334,7 @@ export default function CardPage() {
                   {total ? (
                     <>
                       {total} {total === 1 ? 'copy' : 'copies'} <span className="text-muted">· {money(ownedValue)}</span>
+                      {hasManualValue && <ManualBadge className="ml-1.5 align-middle normal-case" />}
                       {slabs.length > 0 && (
                         <span className="ml-2 align-middle text-xs font-normal text-muted">
                           {rawTotal ? `${rawTotal} raw · ` : ''}

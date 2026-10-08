@@ -33,23 +33,28 @@ See [Deploy](#deploy) below for Azure and a bare VPS, or [`deploy/nas/README.md`
 
 ## Features
 
-- **Dashboard**: collection value with a daily history chart, sets in progress, most valuable cards, recent additions and the sets you're closest to finishing.
+- **Dashboard**: collection value with a daily history chart, biggest movers over the last 7 or 30 days, sets in progress, most valuable cards, recent additions and the sets you're closest to finishing.
 - **Sets**: every set in every TCGdex language, grouped by series, with progress bars. Each set page shows three kinds of completion:
   - **Base**: numbered cards up to the printed total.
   - **Full**: base plus the secret rares.
   - **Master**: every printing, including reverse holos and other variants.
 - **Fast entry**: each card shows its printings as chips (N, RH, H, 1st…). Click a chip to add a copy and right-click to remove one. Quick add mode adds a − button for touch screens. Anything you remove can be undone.
 - **Binder view**: 9- or 12-pocket pages shown as a two-page spread. Empty pockets show a ghost of the missing card. Arrow keys turn the pages.
-- **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.
-- **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab.
+- **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices with a daily price history chart per source, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.
+- **Manual valuations**: set your own value for a card or graded slab when you'd rather trust your own judgement than the market price. Manually valued copies are marked with a "Manual" badge everywhere their value is shown.
+- **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab. With a PriceCharting API key configured, link a slab to its product and its graded price is used instead of the raw market price.
+- **Sealed product**: booster boxes, ETBs and the like, with photos, what you paid and an optional PriceCharting link for a live price. Unopened items count towards your collection value and daily history; mark one opened to move it into a history section (with an optional jump to the set page to log what you pulled).
 - **Wishlist**: your chase list with the running cost to buy it all. "Got it" moves a card into your collection.
-- **Custom lists**: binders, trade piles, deck lists, whatever you need.
+- **Custom lists**: binders, trade piles, whatever you need.
+- **Decks**: build a 60-card deck, grouped into Pokémon/Trainer/Energy with quantity steppers, a live legality check (Standard, Expanded or Unlimited) with the issues spelled out, and owned-vs-needed counts across every printing of each card. Paste a PTCGL or Limitless decklist to import it, or copy your deck back out as text, and add whatever you're missing straight to your wishlist.
 - **Search** by name, type, card type, rarity and illustrator, plus a command palette (`⌘K` or `/`).
 - **GBP, EUR or USD**, converted at the daily ECB reference rate.
 - **Multi-user**: an owner account, admins and members, invite links and optional two-factor sign-in.
 - **Shared collections**: a household collection that several people can edit, alongside everyone's personal one.
 - **Sharing**: share a whole collection, one set, your wishlist, your slabs or a list. Pick who sees it (anyone with the link, specific people, or everyone on your instance), hide what you paid, values or notes, and set an expiry. Links can be revoked at any time.
 - **Your data stays yours**: export JSON or CSV at any time, and the server takes a database backup every day.
+- **Installable**: add PokéTracker to your home screen or app list as a PWA, with the app shell and card images cached for offline use.
+- **Scan a card**: point your camera at a card's bottom strip and on-device OCR reads the collector number to look it up — no photo ever leaves your device. Needs HTTPS, since browsers only allow camera access on a secure connection (`localhost` is exempt for local testing). A manual set code/number entry always works too.
 
 ## Deploy
 
@@ -158,6 +163,7 @@ Everything has a sensible default. These are the settings you're most likely to 
 | `PUID` / `PGID` | `1000` | Who owns `/data` and runs the app. |
 | `IMAGE_CACHE_MB` | `2048` | Disk space for cached card images. |
 | `BACKUPS_TO_KEEP` | `7` | Nightly database backups to keep. |
+| `PRICE_HISTORY_DAYS` | `730` | How many days of daily per-card price history to keep before the cleanup job prunes older rows. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
 | `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
@@ -173,6 +179,18 @@ From there, almost everything is read-only. A single server-side check rejects e
 
 `deploy/azure/demo.bicep` deploys a standalone demo instance on Azure Container Apps; see the comments in that file for the `az deployment group create` command. Don't set `DEMO_MODE=1` on an instance you actually want to use — your own data would be reset every night.
 
+### PriceCharting (optional)
+
+Sealed-product pricing and graded-card values can optionally come from [PriceCharting](https://www.pricecharting.com), a paid third-party service. It's entirely opt-in: set a key under **Admin → Integrations** (owner or admin only) to enable it, or leave it unset. With no key configured, nothing in PokéTracker ever contacts PriceCharting — the search box and linking controls simply don't appear. The key is encrypted at rest and never sent back to the browser once saved; **Admin → Integrations** only ever shows whether a key is "Configured", plus a "Test connection" button.
+
+## Resilience
+
+TCGdex is the only catalogue source, so PokéTracker is built to cope when it's slow or unreachable rather than break pages. Every call retries network errors, 5xx and 429 responses with exponential backoff and jitter (honouring a 429's `Retry-After` header), capped at a few seconds and a handful of attempts; a plain 4xx (e.g. a genuine 404) is never retried. If TCGdex keeps failing, a per-host circuit breaker opens after several failures in a row, so the app stops hammering a service that's already down — it tries again with a single "probe" request after a cool-down, and closes again once that succeeds.
+
+Whether the breaker is open or a single call fails, PokéTracker falls back to whatever it already has rather than erroring: a stale cached catalogue response past its normal refresh window, or the last synced card/set-stats snapshot. Pages still show set lists, card details and collection stats — card data just "may be out of date" until TCGdex recovers. A small, non-sensitive flag on the status endpoint drives a banner for every signed-in user when this is happening; **Admin → Jobs** shows the fuller picture (breaker state, last error, how many requests were served stale) for TCGdex and PriceCharting.
+
+When TCGdex has no TCGplayer or Cardmarket price at all for one of a card's variants, and a PriceCharting key is configured, PriceCharting is tried as a fallback price source for just that variant (a single ungraded price, since PriceCharting doesn't break prices down by printing). Price precedence is TCGplayer, then converted Cardmarket, then PriceCharting, then nothing — a manual value override always wins over any of them. The card page shows "PriceCharting" as the source when a fallback price was used.
+
 ## Security
 
 - **Accounts**: passwords are hashed with Argon2id. Sign-in is rate-limited per IP and per account, and errors don't reveal whether a username exists. Two-factor sign-in uses any authenticator app, with single-use recovery codes. TOTP secrets are encrypted at rest with a per-instance key in `/data/secret.key`.
@@ -181,6 +199,7 @@ From there, almost everything is read-only. A single server-side check rejects e
 - **Sharing**: share links contain a random 128-bit token stored only as a hash. Hidden fields are removed on the server before anything is sent, so they can't be dug out of the page. Share pages ask search engines not to index them.
 - **Updates** must be signed by the release key, and the container runs as an unprivileged user.
 - **Audit log**: sign-ins, admin changes, shares and updates are recorded, and admins can read them under **Admin → Activity**.
+- **PriceCharting**: the optional API key is encrypted at rest with the same per-instance key as TOTP secrets, is never returned to the browser, and the service is contacted only when a key is set.
 
 Found a problem? Please open a private security advisory on the repository rather than a public issue.
 
@@ -258,7 +277,7 @@ If you change `deploy/azure/*.bicep`, rebuild the JSON the Deploy buttons use wi
 | What | Source |
 | --- | --- |
 | Cards, sets, images | [TCGdex](https://tcgdex.dev) (free, open source, no key) |
-| Prices | TCGplayer (US) and Cardmarket (EU), both supplied by TCGdex |
+| Prices | TCGplayer (US) and Cardmarket (EU), both supplied by TCGdex; [PriceCharting](https://www.pricecharting.com) (optional) as a fallback when TCGdex has none, and for sealed/graded prices |
 | Currency conversion | [Frankfurter](https://frankfurter.dev) (ECB reference rates) |
 
 The server fetches all of this, caches it and shares it between users, so TCGdex sees one request per card rather than one per person. Card images are cached on disk too, up to `IMAGE_CACHE_MB`. About 1,600 older cards, mostly promos, have no TCGdex scan; those fall back to the old pokemontcg.io image CDN, then to a styled placeholder.

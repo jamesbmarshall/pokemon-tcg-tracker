@@ -143,6 +143,7 @@ interface RawCard {
   description?: string;
   effect?: string;
   regulationMark?: string;
+  legal?: { standard?: boolean; expanded?: boolean };
   dexId?: number[];
   abilities?: { type?: string; name: string; effect?: string }[];
   attacks?: { cost?: string[]; name: string; effect?: string; damage?: string | number }[];
@@ -217,7 +218,7 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
   let p = setsInFlight.get(lang);
   if (!p) {
     p = gql<{ sets: RawSet[] }>(
-      `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } } }`,
+      `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } abbreviation { official } } }`,
     )
       .then(({ sets }) => {
         const list = sets
@@ -335,10 +336,14 @@ function eurPerUsd(): number {
 }
 
 /**
- * Best single market price per variant in USD: TCGplayer, falling back to converted Cardmarket.
- * USD is the base for every stored price; EUR figures are divided by the EUR-per-USD rate.
+ * Best single market price per variant in USD: TCGplayer, falling back to converted Cardmarket,
+ * then to a PriceCharting fallback price (if supplied) for any variant still missing a price.
+ * `pricechartingPrice` is a single ungraded-card price (PriceCharting doesn't break prices down
+ * per printing variant the way TCGplayer/Cardmarket do), applied to every variant TCGdex had
+ * nothing for. USD is the base for every stored price; EUR figures are divided by the
+ * EUR-per-USD rate.
  */
-export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | 'variants'>): Record<string, number> {
+export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | 'variants'>, pricechartingPrice?: number): Record<string, number> {
   const out: Record<string, number> = {};
   const rate = eurPerUsd();
   for (const v of new Set([...card.variants, ...Object.keys(card.tcgplayer?.prices ?? {})])) {
@@ -349,6 +354,7 @@ export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | '
       const eur = card.cardmarket?.prices[v]?.market;
       // Rounded to cents so converted prices don't show spurious precision.
       if (eur) out[v] = Math.round((eur / rate) * 100) / 100;
+      else if (pricechartingPrice) out[v] = pricechartingPrice;
     }
   }
   return out;
@@ -392,6 +398,7 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     flavorText: isPokemon ? raw.description : undefined,
     nationalPokedexNumbers: raw.dexId,
     regulationMark: raw.regulationMark,
+    legal: raw.legal,
     images: { small: imageUrl(raw.image, 'low'), large: imageUrl(raw.image, 'high') },
     variants,
     detailed,
@@ -631,7 +638,7 @@ export function compareCardNumber(a: { number: string }, b: { number: string }) 
  * Flattens a card into the snapshot stored alongside collections. Listing cards carry no prices,
  * so their snapshot has empty `prices`; the web store's merge keeps any earlier priced snapshot.
  */
-export function toSnapshot(card: PokemonCard): CardSnapshot {
+export function toSnapshot(card: PokemonCard, pricechartingPrice?: number): CardSnapshot {
   return {
     id: card.id,
     name: card.name,
@@ -641,16 +648,22 @@ export function toSnapshot(card: PokemonCard): CardSnapshot {
     series: card.set.series,
     releaseDate: card.set.releaseDate,
     printedTotal: card.set.printedTotal,
+    setCode: card.set.ptcgoCode ?? SET_CODES[card.set.id],
     rarity: card.rarity,
     supertype: card.supertype,
+    subtypes: card.subtypes,
     types: card.types,
     artist: card.artist,
     image: card.images.small,
     imageLarge: card.images.large,
     variants: cardVariants(card),
-    prices: card.detailed ? usdPrices(card) : {},
+    prices: card.detailed ? usdPrices(card, pricechartingPrice) : {},
     tcgplayerUrl: card.tcgplayer?.url || undefined,
     cardmarketUrl: card.cardmarket?.url,
+    regulationMark: card.regulationMark,
+    legal: card.legal,
+    tcgplayerUpdatedAt: card.tcgplayer?.updatedAt || undefined,
+    cardmarketUpdatedAt: card.cardmarket?.updatedAt || undefined,
     syncedAt: new Date().toISOString(),
   };
 }

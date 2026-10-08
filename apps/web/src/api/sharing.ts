@@ -9,9 +9,9 @@
  */
 import { api } from './http';
 import type { CollectionRole, CollectionSummary, CustomList, PhotoRef } from './backend';
-import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, SetStat, ValuePoint, WishlistEntry } from './types';
+import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, SealedItem, SetStat, ValuePoint, WishlistEntry } from './types';
 
-export type ShareScope = 'collection' | 'set' | 'wishlist' | 'graded' | 'list';
+export type ShareScope = 'collection' | 'set' | 'wishlist' | 'graded' | 'sealed' | 'list';
 export type ShareAudience = 'public' | 'users' | 'instance';
 
 /** A share as seen by its owner (or by a recipient, in which case `ownerName` is set). */
@@ -83,6 +83,7 @@ export interface PublicShare {
   role: 'viewer';
   entries: CollectionEntry[];
   graded: GradedCopy[];
+  sealed: SealedItem[];
   wishlist: WishlistEntry[];
   notes: CardNote[];
   history: ValuePoint[];
@@ -117,6 +118,10 @@ export const sharing = {
     const rows = await api<Omit<PhotoRef, 'url'>[]>(`/api/public/${enc(token)}/graded/${enc(gradedId)}/photos`);
     return rows.map((p) => ({ ...p, url: `/api/public/${enc(token)}/photos/${enc(p.id)}` }));
   },
+  publicSealedPhotos: async (token: string, sealedId: string): Promise<PhotoRef[]> => {
+    const rows = await api<{ id: string; addedAt: string }[]>(`/api/public/${enc(token)}/sealed/${enc(sealedId)}/photos`);
+    return rows.map((p) => ({ ...p, side: 'other' as const, url: `/api/public/${enc(token)}/sealed-photos/${enc(p.id)}` }));
+  },
 };
 
 export const collectionsApi = {
@@ -133,6 +138,7 @@ export const SCOPE_LABEL: Record<ShareScope, string> = {
   set: 'One set',
   wishlist: 'Wishlist',
   graded: 'Graded cards',
+  sealed: 'Sealed products',
   list: 'Custom list',
 };
 
@@ -142,6 +148,7 @@ export const SCOPE_NOUN: Record<ShareScope, string> = {
   set: 'set',
   wishlist: 'wishlist',
   graded: 'graded cards',
+  sealed: 'sealed products',
   list: 'list',
 };
 

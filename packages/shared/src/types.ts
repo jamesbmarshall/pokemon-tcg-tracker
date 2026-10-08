@@ -14,6 +14,8 @@ export interface PokemonCard {
   evolvesFrom?: string;
   evolvesTo?: string[];
   rules?: string[];
+  /** Per-format legality as reported by TCGdex (its `legal` object); absent when TCGdex has no opinion. */
+  legal?: { standard?: boolean; expanded?: boolean };
   abilities?: Ability[];
   attacks?: Attack[];
   weaknesses?: Weakness[];
@@ -108,6 +110,8 @@ export interface CollectionEntry {
   notes?: string;
   /** Price paid per copy (an average if copies cost different amounts) */
   paid?: Paid;
+  /** Owner's valuation per copy, in USD; falls back to the raw market price (mirrors GradedCopy.valueUsd) */
+  valueUsd?: number;
   addedAt: string;
   updatedAt?: string;
 }
@@ -127,8 +131,12 @@ export interface CardSnapshot {
   series: string;
   releaseDate: string;
   printedTotal: number;
+  /** Printed/PTCGO set code, e.g. 'OBF', 'SVE'. Used for PTCGL/Limitless deck text export. */
+  setCode?: string;
   rarity?: string;
   supertype: string;
+  /** Stage / suffix / trainerType / energyType, e.g. 'Radiant', 'ACE SPEC', 'Basic', 'Item'. */
+  subtypes?: string[];
   types?: string[];
   artist?: string;
   image: string;
@@ -138,7 +146,52 @@ export interface CardSnapshot {
   prices: Record<string, number>;
   tcgplayerUrl?: string;
   cardmarketUrl?: string;
+  /** Regulation mark printed in the bottom corner, e.g. 'G', 'H'. Used as a format-legality fallback. */
+  regulationMark?: string;
+  /** Per-format legality as reported by TCGdex; absent when TCGdex has no opinion (falls back to regulationMark). */
+  legal?: { standard?: boolean; expanded?: boolean };
+  /** When each source's prices were last reported upstream, for "updated …" provenance on the card page. */
+  tcgplayerUpdatedAt?: string;
+  cardmarketUpdatedAt?: string;
+  /** Set when one or more variants' prices came from the PriceCharting fallback, not TCGdex. */
+  pricechartingUpdatedAt?: string;
   syncedAt: string;
+}
+
+/** Source of one price-history series: TCGplayer/Cardmarket from TCGdex, or the PriceCharting fallback. */
+export type PriceHistorySource = 'tcgplayer' | 'cardmarket' | 'pricecharting';
+
+export interface PriceHistoryPoint {
+  date: string; // YYYY-MM-DD
+  price: number;
+}
+
+/** Daily price history for one printing from one source, in that source's native currency. */
+export interface PriceHistorySeries {
+  variant: string;
+  source: PriceHistorySource;
+  currency: 'USD' | 'EUR';
+  points: PriceHistoryPoint[];
+  updatedAt?: string;
+  url?: string;
+}
+
+export interface CardPriceHistory {
+  cardId: string;
+  series: PriceHistorySeries[];
+}
+
+/** One card in the "biggest movers" widget: its market value now vs. `days` ago. */
+export interface MoverCard {
+  cardId: string;
+  name: string;
+  image: string;
+  setName: string;
+  variant: string;
+  valueUsd: number;
+  previousValueUsd: number;
+  changeUsd: number;
+  changePct: number;
 }
 
 /** A free-text note about a card, independent of variants or copies owned. */
@@ -196,11 +249,45 @@ export interface GradedCopy {
   subgrades?: Subgrades;
   /** Whether this slab fills the card's slot for set / master-set progress */
   countsTowardSet: boolean;
-  /** Owner's valuation in USD; falls back to the raw market price */
+  /** Owner's valuation in USD; falls back to the PriceCharting graded price, then the raw market price */
   valueUsd?: number;
   /** Total paid for the slab, including any grading fees */
   paid?: Paid;
   notes?: string;
+  /** PriceCharting product this slab is linked to, if any (set via the "Link" action in GradedForm) */
+  pcProductId?: string;
+  /** PriceCharting price (USD) for this slab's company + grade, fetched when linked */
+  pcPrice?: number;
+  pcUpdatedAt?: string;
+  addedAt: string;
+  updatedAt?: string;
+}
+
+/** Sealed product types tracked by PokéTracker; 'other' covers anything not in this list. */
+export type SealedProductType = 'booster_box' | 'etb' | 'booster_bundle' | 'tin' | 'collection_box' | 'blister' | 'booster_pack' | 'other';
+
+/**
+ * A sealed (or since-opened) product: a booster box, ETB and so on. Unopened items count
+ * towards collection value; opened ones are kept for history but excluded from totals.
+ */
+export interface SealedItem {
+  id: string;
+  name: string;
+  productType: SealedProductType;
+  setId?: string;
+  language?: string;
+  quantity: number;
+  paid?: Paid;
+  /** Owner's valuation in USD (total, not per unit); falls back to the PriceCharting price */
+  valueUsd?: number;
+  notes?: string;
+  /** PriceCharting product this item is linked to, if any */
+  pcProductId?: string;
+  /** PriceCharting loose/sealed price (USD), per unit */
+  pcPrice?: number;
+  pcUpdatedAt?: string;
+  status: 'sealed' | 'opened';
+  openedAt?: string;
   addedAt: string;
   updatedAt?: string;
 }
