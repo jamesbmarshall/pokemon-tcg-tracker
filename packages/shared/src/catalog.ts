@@ -143,6 +143,7 @@ interface RawCard {
   description?: string;
   effect?: string;
   regulationMark?: string;
+  legal?: { standard?: boolean; expanded?: boolean };
   dexId?: number[];
   abilities?: { type?: string; name: string; effect?: string }[];
   attacks?: { cost?: string[]; name: string; effect?: string; damage?: string | number }[];
@@ -392,6 +393,7 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     flavorText: isPokemon ? raw.description : undefined,
     nationalPokedexNumbers: raw.dexId,
     regulationMark: raw.regulationMark,
+    legal: raw.legal,
     images: { small: imageUrl(raw.image, 'low'), large: imageUrl(raw.image, 'high') },
     variants,
     detailed,
@@ -641,8 +643,10 @@ export function toSnapshot(card: PokemonCard): CardSnapshot {
     series: card.set.series,
     releaseDate: card.set.releaseDate,
     printedTotal: card.set.printedTotal,
+    setCode: card.set.ptcgoCode ?? SET_CODES[card.set.id],
     rarity: card.rarity,
     supertype: card.supertype,
+    subtypes: card.subtypes,
     types: card.types,
     artist: card.artist,
     image: card.images.small,
@@ -651,6 +655,8 @@ export function toSnapshot(card: PokemonCard): CardSnapshot {
     prices: card.detailed ? usdPrices(card) : {},
     tcgplayerUrl: card.tcgplayer?.url || undefined,
     cardmarketUrl: card.cardmarket?.url,
+    regulationMark: card.regulationMark,
+    legal: card.legal,
     syncedAt: new Date().toISOString(),
   };
 }

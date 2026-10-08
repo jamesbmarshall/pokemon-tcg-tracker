@@ -14,6 +14,8 @@ export interface PokemonCard {
   evolvesFrom?: string;
   evolvesTo?: string[];
   rules?: string[];
+  /** Per-format legality as reported by TCGdex (its `legal` object); absent when TCGdex has no opinion. */
+  legal?: { standard?: boolean; expanded?: boolean };
   abilities?: Ability[];
   attacks?: Attack[];
   weaknesses?: Weakness[];
@@ -127,8 +129,12 @@ export interface CardSnapshot {
   series: string;
   releaseDate: string;
   printedTotal: number;
+  /** Printed/PTCGO set code, e.g. 'OBF', 'SVE'. Used for PTCGL/Limitless deck text export. */
+  setCode?: string;
   rarity?: string;
   supertype: string;
+  /** Stage / suffix / trainerType / energyType, e.g. 'Radiant', 'ACE SPEC', 'Basic', 'Item'. */
+  subtypes?: string[];
   types?: string[];
   artist?: string;
   image: string;
@@ -138,6 +144,10 @@ export interface CardSnapshot {
   prices: Record<string, number>;
   tcgplayerUrl?: string;
   cardmarketUrl?: string;
+  /** Regulation mark printed in the bottom corner, e.g. 'G', 'H'. Used as a format-legality fallback. */
+  regulationMark?: string;
+  /** Per-format legality as reported by TCGdex; absent when TCGdex has no opinion (falls back to regulationMark). */
+  legal?: { standard?: boolean; expanded?: boolean };
   syncedAt: string;
 }
 
