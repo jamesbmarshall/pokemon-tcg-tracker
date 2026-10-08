@@ -18,7 +18,8 @@ Once it's deployed, everything happens in the browser. Prices, set lists and exc
 - **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab. With a PriceCharting API key configured, link a slab to its product and its graded price is used instead of the raw market price.
 - **Sealed product**: booster boxes, ETBs and the like, with photos, what you paid and an optional PriceCharting link for a live price. Unopened items count towards your collection value and daily history; mark one opened to move it into a history section (with an optional jump to the set page to log what you pulled).
 - **Wishlist**: your chase list with the running cost to buy it all. "Got it" moves a card into your collection.
-- **Custom lists**: binders, trade piles, deck lists, whatever you need.
+- **Custom lists**: binders, trade piles, whatever you need.
+- **Decks**: build a 60-card deck, grouped into Pokémon/Trainer/Energy with quantity steppers, a live legality check (Standard, Expanded or Unlimited) with the issues spelled out, and owned-vs-needed counts across every printing of each card. Paste a PTCGL or Limitless decklist to import it, or copy your deck back out as text, and add whatever you're missing straight to your wishlist.
 - **Search** by name, type, card type, rarity and illustrator, plus a command palette (`⌘K` or `/`).
 - **GBP, EUR or USD**, converted at the daily ECB reference rate.
 - **Multi-user**: an owner account, admins and members, invite links and optional two-factor sign-in.

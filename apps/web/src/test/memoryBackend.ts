@@ -1,7 +1,8 @@
 import { getCardsByIds, setIdFromCardId, toSnapshot } from '../api/client';
-import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PcProduct, PhotoRef, SystemStatus } from '../api/backend';
+import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, DeckFormat, DeckResolveResult, DeckSettings, ImportResult, PcProduct, PhotoRef, SystemStatus } from '../api/backend';
 import type { CardNote, CardPriceHistory, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, MoverCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX, valuePoint } from '@poketracker/shared/value';
+import { parseDeckText } from '@poketracker/shared/decks/ptcgl';
 import { currentRates } from '../utils/fx';
 
 export const TEST_COLLECTION = 'c-personal';
@@ -43,6 +44,7 @@ export class MemoryBackend implements Backend {
   sealedPhotosStore = new Map<string, StoredSealedPhoto>();
   notes = new Map<string, CardNote>();
   lists: CustomList[] = [];
+  deckSettings: DeckSettings = { regulationMarks: { standard: ['H', 'I', 'J'], expanded: ['D', 'E', 'F', 'G', 'H', 'I', 'J'] }, bannedCardIds: [] };
   lastPriceSync: string | null = null;
   /** Fake per-card price history, keyed by cardId. Tests seed this directly; defaults to no history. */
   priceHistories = new Map<string, CardPriceHistory>();
@@ -372,22 +374,23 @@ export class MemoryBackend implements Backend {
     return this.call('putSetStat', () => void this.setStats.set(setId, { setId, masterTotal, syncedAt: new Date().toISOString() }));
   }
 
-  createList(cid: string, name: string, description?: string) {
+  createList(cid: string, name: string, description?: string, opts?: { kind?: 'list' | 'deck'; format?: DeckFormat }) {
     return this.callIn(cid, 'createList', () => {
       const t = new Date().toISOString();
-      const list: CustomList = { id: id(), name, description, createdAt: t, updatedAt: t, cards: [] };
+      const list: CustomList = { id: id(), name, description, createdAt: t, updatedAt: t, cards: [], kind: opts?.kind ?? 'list', format: opts?.format, cardQtys: {} };
       this.lists.push(list);
-      return { ...list, cards: [] };
+      return { ...list, cards: [], cardQtys: {} };
     });
   }
 
-  updateList(cid: string, listId: string, patch: { name?: string; description?: string; order?: string[] }) {
+  updateList(cid: string, listId: string, patch: { name?: string; description?: string; order?: string[]; format?: DeckFormat }) {
     return this.callIn(cid, 'updateList', () => {
       const l = this.lists.find((x) => x.id === listId);
       if (!l) throw new Error('List not found');
       if (patch.name !== undefined) l.name = patch.name;
       if (patch.description !== undefined) l.description = patch.description || undefined;
       if (patch.order) l.cards = [...patch.order.filter((c) => l.cards.includes(c)), ...l.cards.filter((c) => !patch.order!.includes(c))];
+      if (patch.format !== undefined) l.format = patch.format;
     });
   }
 
@@ -398,14 +401,49 @@ export class MemoryBackend implements Backend {
   addToList(cid: string, listId: string, cardId: string) {
     return this.callIn(cid, 'addToList', () => {
       const l = this.lists.find((x) => x.id === listId);
-      if (l && !l.cards.includes(cardId)) l.cards.push(cardId);
+      if (l && !l.cards.includes(cardId)) {
+        l.cards.push(cardId);
+        l.cardQtys[cardId] = 1;
+      }
     });
   }
 
   removeFromList(cid: string, listId: string, cardId: string) {
     return this.callIn(cid, 'removeFromList', () => {
       const l = this.lists.find((x) => x.id === listId);
-      if (l) l.cards = l.cards.filter((c) => c !== cardId);
+      if (l) {
+        l.cards = l.cards.filter((c) => c !== cardId);
+        delete l.cardQtys[cardId];
+      }
+    });
+  }
+
+  setListCardQty(cid: string, listId: string, cardId: string, qty: number) {
+    return this.callIn(cid, 'setListCardQty', () => {
+      const l = this.lists.find((x) => x.id === listId);
+      if (!l) throw new Error('List not found');
+      if (!l.cards.includes(cardId)) l.cards.push(cardId);
+      l.cardQtys[cardId] = qty;
+    });
+  }
+
+  // No real catalogue lookup here (that's the server's job); every line comes back unresolved.
+  // Tests that need resolved lines reassign this method on the `memory` instance directly.
+  resolveDeckText(text: string) {
+    return this.call('resolveDeckText', (): DeckResolveResult => {
+      const parsed = parseDeckText(text);
+      return { resolved: [], unresolved: parsed.lines, totalCards: parsed.totalCards };
+    });
+  }
+
+  getDeckSettings() {
+    return this.call('getDeckSettings', (): DeckSettings => this.deckSettings);
+  }
+
+  putDeckSettings(patch: { regulationMarks?: { standard: string[]; expanded: string[] }; bannedCardIds?: string[] }) {
+    return this.call('putDeckSettings', (): DeckSettings => {
+      this.deckSettings = { regulationMarks: patch.regulationMarks ?? this.deckSettings.regulationMarks, bannedCardIds: patch.bannedCardIds ?? this.deckSettings.bannedCardIds };
+      return this.deckSettings;
     });
   }
 

@@ -101,7 +101,7 @@ describe('PublicSharePage', () => {
   });
 
   it('shows a list in its own order', async () => {
-    const list = { id: 'l1', name: 'Fire deck', description: 'Burn', createdAt: '', updatedAt: '', cards: [ZARD.id, PIKA.id] };
+    const list = { id: 'l1', name: 'Fire deck', description: 'Burn', createdAt: '', updatedAt: '', cards: [ZARD.id, PIKA.id], kind: 'list' as const, cardQtys: { [ZARD.id]: 1, [PIKA.id]: 1 } };
     mockApi({ 'GET /api/public/tok': data({ lists: [list] }, { scope: 'list', target: 'l1' }) });
     renderShare();
     expect(await screen.findByRole('heading', { name: 'Fire deck' })).toBeInTheDocument();

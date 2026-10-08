@@ -55,6 +55,10 @@ export function publicBackend(token: string): Backend {
     deleteList: refuse,
     addToList: refuse,
     removeFromList: refuse,
+    setListCardQty: refuse,
+    resolveDeckText: refuse,
+    getDeckSettings: async () => ({ regulationMarks: { standard: [], expanded: [] }, bannedCardIds: [] }),
+    putDeckSettings: refuse,
     status: async () => ({ version: '', lastPriceSync: null, fxAt: null, catalogDegraded: false }),
     refreshPrices: refuse,
     // Card price history needs a signed-in session the share token doesn't have; render the card

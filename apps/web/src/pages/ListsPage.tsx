@@ -1,17 +1,24 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, ChevronLeft, ListChecks, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronLeft, Layers, ListChecks, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { CardSnapshot } from '../api/types';
-import type { CustomList } from '../api/backend';
+import type { CustomList, DeckFormat } from '../api/backend';
 import { useCollectionStore, useReadOnly } from '../store/collectionStore';
 import { toast } from '../store/toastStore';
 import { useMoney } from '../hooks/useMoney';
 import CardTile from '../components/CardTile';
 import CardImage from '../components/CardImage';
+import DeckView from '../components/DeckView';
 import { ShareButton } from '../components/ShareDialog';
-import { ConfirmDialog, FormError, Modal } from '../components/forms';
+import { ConfirmDialog, FormError, Modal, StatusPill } from '../components/forms';
 import { useSubmit } from '../components/formUtils';
-import { EmptyState, PageHeader } from '../components/ui';
+import { EmptyState, PageHeader, Segmented } from '../components/ui';
+
+const FORMAT_OPTIONS: { value: DeckFormat; label: string }[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'expanded', label: 'Expanded' },
+  { value: 'unlimited', label: 'Unlimited' },
+];
 
 function listValue(list: CustomList, cards: Map<string, CardSnapshot>) {
   return list.cards.reduce((sum, id) => {
@@ -20,29 +27,45 @@ function listValue(list: CustomList, cards: Map<string, CardSnapshot>) {
   }, 0);
 }
 
-function ListForm({ list, onClose }: { list?: CustomList; onClose: (created?: CustomList) => void }) {
+/** "X/60 cards" for a deck, falling back to the card count if no quantities are recorded yet. */
+function deckCardCount(list: CustomList) {
+  const fromQtys = Object.values(list.cardQtys).reduce((a, b) => a + b, 0);
+  return fromQtys || list.cards.length;
+}
+
+function ListForm({ list, kind = 'list', onClose }: { list?: CustomList; kind?: 'list' | 'deck'; onClose: (created?: CustomList) => void }) {
   const createList = useCollectionStore((s) => s.createList);
   const updateList = useCollectionStore((s) => s.updateList);
+  const isDeck = list ? list.kind === 'deck' : kind === 'deck';
   const [name, setName] = useState(list?.name ?? '');
   const [description, setDescription] = useState(list?.description ?? '');
+  const [format, setFormat] = useState<DeckFormat>(list?.format ?? 'standard');
   const { busy, error, onSubmit } = useSubmit(async () => {
-    if (!name.trim()) throw new Error('Give the list a name');
+    if (!name.trim()) throw new Error(`Give the ${isDeck ? 'deck' : 'list'} a name`);
     if (list) {
-      await updateList(list.id, { name: name.trim(), description: description.trim() });
+      await updateList(list.id, { name: name.trim(), description: description.trim(), ...(isDeck ? { format } : {}) });
       onClose();
     } else {
-      const created = await createList(name.trim(), description.trim() || undefined);
+      const created = await createList(name.trim(), description.trim() || undefined, isDeck ? { kind: 'deck', format } : undefined);
       if (created) onClose(created);
     }
   });
   return (
-    <Modal title={list ? 'Edit list' : 'New list'} onClose={() => onClose()}>
+    <Modal title={list ? `Edit ${isDeck ? 'deck' : 'list'}` : isDeck ? 'New deck' : 'New list'} onClose={() => onClose()}>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label htmlFor="list-name" className="mb-1.5 block text-sm font-medium">
             Name
           </label>
-          <input id="list-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Trade binder" className="input" />
+          <input
+            id="list-name"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={80}
+            placeholder={isDeck ? 'Charizard ex' : 'Trade binder'}
+            className="input"
+          />
         </div>
         <div>
           <label htmlFor="list-desc" className="mb-1.5 block text-sm font-medium">
@@ -50,13 +73,19 @@ function ListForm({ list, onClose }: { list?: CustomList; onClose: (created?: Cu
           </label>
           <textarea id="list-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} rows={3} className="input !h-auto py-2" />
         </div>
+        {isDeck && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Format</label>
+            <Segmented value={format} onChange={setFormat} options={FORMAT_OPTIONS} />
+          </div>
+        )}
         <FormError error={error} />
         <div className="flex justify-end gap-2">
           <button type="button" onClick={() => onClose()} className="btn btn-ghost">
             Cancel
           </button>
           <button type="submit" disabled={busy} className="btn btn-primary">
-            {list ? 'Save' : 'Create list'}
+            {list ? 'Save' : `Create ${isDeck ? 'deck' : 'list'}`}
           </button>
         </div>
       </form>
@@ -71,7 +100,7 @@ export function ListsPage() {
   const readOnly = useReadOnly();
   const money = useMoney();
   const navigate = useNavigate();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<'list' | 'deck' | false>(false);
 
   return (
     <div className="space-y-6">
@@ -80,9 +109,14 @@ export function ListsPage() {
         title="Lists"
         actions={
           !readOnly && (
-            <button type="button" onClick={() => setCreating(true)} className="btn btn-primary">
-              <Plus size={16} /> New list
-            </button>
+            <>
+              <button type="button" onClick={() => setCreating('deck')} className="btn btn-ghost">
+                <Layers size={16} /> New deck
+              </button>
+              <button type="button" onClick={() => setCreating('list')} className="btn btn-primary">
+                <Plus size={16} /> New list
+              </button>
+            </>
           )
         }
       >
@@ -110,9 +144,14 @@ export function ListsPage() {
                   {!l.cards.length && <div className="aspect-[63/88] w-14 rounded-[4.5%/3.2%] border border-dashed border-line" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-lg font-semibold group-hover:text-accent">{l.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-display text-lg font-semibold group-hover:text-accent">{l.name}</p>
+                    {l.kind === 'deck' && (
+                      <StatusPill tone="muted">Deck · {FORMAT_OPTIONS.find((o) => o.value === (l.format ?? 'standard'))?.label}</StatusPill>
+                    )}
+                  </div>
                   <p className="font-mono text-xs text-muted tabular">
-                    {l.cards.length} card{l.cards.length === 1 ? '' : 's'} · {money(listValue(l, cards))}
+                    {l.kind === 'deck' ? `${deckCardCount(l)}/60 cards` : `${l.cards.length} card${l.cards.length === 1 ? '' : 's'}`} · {money(listValue(l, cards))}
                   </p>
                   {l.description && <p className="mt-1 line-clamp-2 text-xs text-faint">{l.description}</p>}
                 </div>
@@ -124,6 +163,7 @@ export function ListsPage() {
 
       {creating && (
         <ListForm
+          kind={creating === 'deck' ? 'deck' : 'list'}
           onClose={(created) => {
             setCreating(false);
             if (created) navigate(`/lists/${created.id}`);
@@ -149,6 +189,7 @@ export function ListPage() {
   const [deleting, setDeleting] = useState(false);
 
   const items = useMemo(() => (list?.cards ?? []).map((id) => cards.get(id)).filter((c): c is CardSnapshot => !!c), [list, cards]);
+  const isDeck = list?.kind === 'deck';
 
   if (!list) {
     if (!isLoaded) return null;
@@ -172,7 +213,8 @@ export function ListPage() {
         <ChevronLeft size={15} /> Lists
       </Link>
       <PageHeader
-        eyebrow={`${list.cards.length} card${list.cards.length === 1 ? '' : 's'} · ${money(listValue(list, cards))}`}
+        // Decks show their own "X/60 cards" count in DeckView; plain lists keep this line.
+        eyebrow={isDeck ? undefined : `${list.cards.length} card${list.cards.length === 1 ? '' : 's'} · ${money(listValue(list, cards))}`}
         title={list.name}
         actions={
           !readOnly && (
@@ -191,7 +233,9 @@ export function ListPage() {
         {list.description}
       </PageHeader>
 
-      {items.length ? (
+      {isDeck ? (
+        <DeckView list={list} />
+      ) : items.length ? (
         <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {items.map((c, i) => (
             <div key={c.id}>

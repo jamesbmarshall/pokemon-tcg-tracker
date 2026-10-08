@@ -143,6 +143,7 @@ interface RawCard {
   description?: string;
   effect?: string;
   regulationMark?: string;
+  legal?: { standard?: boolean; expanded?: boolean };
   dexId?: number[];
   abilities?: { type?: string; name: string; effect?: string }[];
   attacks?: { cost?: string[]; name: string; effect?: string; damage?: string | number }[];
@@ -397,6 +398,7 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     flavorText: isPokemon ? raw.description : undefined,
     nationalPokedexNumbers: raw.dexId,
     regulationMark: raw.regulationMark,
+    legal: raw.legal,
     images: { small: imageUrl(raw.image, 'low'), large: imageUrl(raw.image, 'high') },
     variants,
     detailed,
@@ -646,8 +648,10 @@ export function toSnapshot(card: PokemonCard, pricechartingPrice?: number): Card
     series: card.set.series,
     releaseDate: card.set.releaseDate,
     printedTotal: card.set.printedTotal,
+    setCode: card.set.ptcgoCode ?? SET_CODES[card.set.id],
     rarity: card.rarity,
     supertype: card.supertype,
+    subtypes: card.subtypes,
     types: card.types,
     artist: card.artist,
     image: card.images.small,
@@ -656,6 +660,8 @@ export function toSnapshot(card: PokemonCard, pricechartingPrice?: number): Card
     prices: card.detailed ? usdPrices(card, pricechartingPrice) : {},
     tcgplayerUrl: card.tcgplayer?.url || undefined,
     cardmarketUrl: card.cardmarket?.url,
+    regulationMark: card.regulationMark,
+    legal: card.legal,
     tcgplayerUpdatedAt: card.tcgplayer?.updatedAt || undefined,
     cardmarketUpdatedAt: card.cardmarket?.updatedAt || undefined,
     syncedAt: new Date().toISOString(),
