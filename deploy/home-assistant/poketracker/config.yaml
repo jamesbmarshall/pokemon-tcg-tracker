@@ -1,0 +1,54 @@
+# Home Assistant add-on configuration for PokéTracker.
+#
+# This references the published image directly (no Dockerfile/build.yaml), so Supervisor never
+# builds anything locally — it just runs ghcr.io/jamesbmarshall/pokemon-tcg-tracker as-is.
+#
+# Caveat (see DOCS.md for the full explanation): because there's no build step, there's no
+# entrypoint script of ours Supervisor can hand user "options" to as environment variables either
+# — that mechanism (bashio::config reading /data/options.json) only works for add-ons that ship
+# their own Dockerfile and run.sh. So this add-on does NOT expose an Options panel. To change
+# PUBLIC_URL, TZ, TRUST_PROXY etc. from their defaults below, fork this file and edit the
+# `environment:` block before adding the repository. SETUP_TOKEN is deliberately left unset:
+# PokéTracker itself prints a random one to its own log on first start, readable from this add-on's
+# Log tab, which avoids needing any option plumbing for the one value that's actually a secret.
+name: "PokéTracker"
+slug: poketracker
+description: >-
+  Self-hosted Pokémon TCG collection tracker. Track sets, variants, graded slabs and wishlists,
+  with prices refreshed automatically in the background. Invite other household members and
+  share collections with read-only links.
+url: "https://github.com/jamesbmarshall/pokemon-tcg-tracker"
+image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker
+# `version` is required and, with `image:`, is the Docker tag Supervisor pulls — not a separate
+# add-on version number. "latest" is a valid, if loosely-pinned, tag; pin an exact release tag
+# (e.g. "2.1.0") here instead if you want Supervisor's update checks to mean something.
+version: "latest"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+# Ingress rewrites every request's base path (e.g. to /api/hassio_ingress/<token>/...). PokéTracker
+# is a single-page app whose built assets are served from absolute paths (/assets/...) and whose
+# server assumes it owns its whole origin for cookies, CSRF checks and share links. Turning
+# ingress on breaks asset loading and sign-in. Use a published port and the plain web UI instead.
+ingress: false
+panel_icon: mdi:cards
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: "PokéTracker web UI and API"
+webui: "http://[HOST]:[PORT:3000]/"
+# Static defaults only — see the caveat above. Edit these directly if you fork the add-on.
+environment:
+  PUBLIC_URL: ""
+  TZ: "UTC"
+  TRUST_PROXY: "false"
+  LOG_LEVEL: "info"
+  # Optional, see the README: enables a read-only public demo that resets nightly. Leave at "0"
+  # for a normal, personal instance.
+  DEMO_MODE: "0"
+# The add-on's own /data directory is always mapped and persisted by Supervisor, independent of
+# `map:`, which is exactly the volume PokéTracker expects its database, backups and image cache
+# to live in — nothing extra to configure here.
+schema: false

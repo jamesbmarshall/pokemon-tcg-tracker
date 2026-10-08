@@ -1,0 +1,67 @@
+# PokéTracker for CasaOS, in the AppStore-flavoured format (plain Docker Compose plus the
+# `x-casaos` metadata block CasaOS's App Store reads for icon, category, title and port).
+#
+# To run this without going through the AppStore: CasaOS → App Store → Install a customized app →
+# paste this file. Or use ../stack.yml, which is the same container without the x-casaos block.
+#
+# Schema reference: the official CasaOS-AppStore repository's app entries
+# (https://github.com/IceWhaleTech/CasaOS-AppStore/tree/main/Apps), which is also where a
+# maintainer would PR this to get it listed. Field names below (id, main, category, port_map,
+# scheme, index, title, tagline, icon, developer, author, architectures) were checked against
+# that repository's existing apps; only English (en_US) text is provided here rather than every
+# locale CasaOS supports, since translations aren't ours to invent.
+
+name: poketracker
+
+services:
+  poketracker:
+    image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker:${POKETRACKER_TAG:-latest}
+    container_name: poketracker
+    restart: unless-stopped
+    environment:
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - /DATA/AppData/$AppID/data:/data
+    ports:
+      - "3000:3000"
+    x-casaos:
+      volumes:
+        - container: /data
+          description:
+            en_US: Database, backups, cached card images and installed updates. Back this up.
+      ports:
+        - container: "3000"
+          description:
+            en_US: Web UI and API port
+
+x-casaos:
+  id: dev.jamesbmarshall.poketracker
+  architectures:
+    - amd64
+    - arm64
+  main: poketracker
+  category: Productivity
+  developer: jamesbmarshall
+  author: jamesbmarshall
+  tagline:
+    en_US: Self-hosted Pokémon TCG collection tracker
+  description:
+    en_US: >-
+      Track sets, variants, graded slabs and wishlists, with prices refreshed automatically in
+      the background. Invite other household members and share collections with read-only
+      links. First run asks for a setup token — leave SETUP_TOKEN blank and read the random one
+      from this app's logs, or set it yourself above.
+  icon: https://raw.githubusercontent.com/jamesbmarshall/pokemon-tcg-tracker/main/apps/web/public/favicon.svg
+  scheme: http
+  port_map: "3000"
+  index: /
+  title:
+    en_US: PokéTracker
+  version: "latest"
+  website: "https://github.com/jamesbmarshall/pokemon-tcg-tracker"
+  repo: "https://github.com/jamesbmarshall/pokemon-tcg-tracker"
+  support: "https://github.com/jamesbmarshall/pokemon-tcg-tracker/issues"
