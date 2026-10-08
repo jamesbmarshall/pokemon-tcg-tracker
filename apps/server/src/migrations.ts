@@ -235,4 +235,15 @@ export const MIGRATIONS: string[] = [
     last_result TEXT
   );
   `,
+  /*
+   * 2: decks. A list can now be a deck (kind='deck') with a chosen format, and each list_cards
+   * row carries a quantity (a deck needs more than one of most cards; a plain list still gets the
+   * harmless default of 1). CHECK constraints on columns added via ALTER TABLE ADD COLUMN are
+   * enforced by SQLite (verified against this project's node:sqlite on SQLite 3.31+; see
+   * decks.test.ts), so these are real database constraints, not just app-layer validation.
+   */ `
+  ALTER TABLE lists ADD COLUMN kind TEXT NOT NULL DEFAULT 'list' CHECK (kind IN ('list','deck'));
+  ALTER TABLE lists ADD COLUMN format TEXT CHECK (format IS NULL OR format IN ('standard','expanded','unlimited'));
+  ALTER TABLE list_cards ADD COLUMN qty INTEGER NOT NULL DEFAULT 1 CHECK (qty BETWEEN 1 AND 60);
+  `,
 ];

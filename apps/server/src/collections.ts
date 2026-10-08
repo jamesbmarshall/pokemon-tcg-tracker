@@ -16,8 +16,11 @@ import { cardVariants, getCardsByIds, getSetCards, getSets, setIdFromCardId, toS
 import { buildCodeIndex, setIdsForCode, SUBSET_PREFIXES } from '@poketracker/shared/setCodes';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
-import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
+import { DEFAULT_BANNED_CARDS, DEFAULT_REGULATION_MARKS, type DeckFormat, type RegulationMarkSettings } from '@poketracker/shared/decks/legality';
+import { parseDeckText, type DeckTextLine } from '@poketracker/shared/decks/ptcgl';
+import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireRole, requireUser, str, type Ctx } from './context.ts';
 import { hydrateMissing, readCards, readEntries, readGraded, readHistory, recordValue, saveSnapshots } from './cards.ts';
+import { json } from './db.ts';
 import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
 
@@ -221,15 +224,24 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
 }
 
 export function readLists(ctx: Ctx, collectionId: string) {
-  const lists = ctx.db.all<{ id: string; name: string; description: string | null; created_at: string; updated_at: string }>('SELECT * FROM lists WHERE collection_id = ? ORDER BY created_at', collectionId);
-  return lists.map((l) => ({
-    id: l.id,
-    name: l.name,
-    description: l.description ?? undefined,
-    createdAt: l.created_at,
-    updatedAt: l.updated_at,
-    cards: ctx.db.all<{ card_id: string }>('SELECT card_id FROM list_cards WHERE list_id = ? ORDER BY position, added_at', l.id).map((r) => r.card_id),
-  }));
+  const lists = ctx.db.all<{ id: string; name: string; description: string | null; kind: 'list' | 'deck'; format: DeckFormat | null; created_at: string; updated_at: string }>(
+    'SELECT * FROM lists WHERE collection_id = ? ORDER BY created_at',
+    collectionId,
+  );
+  return lists.map((l) => {
+    const rows = ctx.db.all<{ card_id: string; qty: number }>('SELECT card_id, qty FROM list_cards WHERE list_id = ? ORDER BY position, added_at', l.id);
+    return {
+      id: l.id,
+      name: l.name,
+      description: l.description ?? undefined,
+      kind: l.kind,
+      format: l.format ?? undefined,
+      createdAt: l.created_at,
+      updatedAt: l.updated_at,
+      cards: rows.map((r) => r.card_id),
+      cardQtys: Object.fromEntries(rows.map((r) => [r.card_id, r.qty])),
+    };
+  });
 }
 
 // Files are named by random photo id only, never by anything user-supplied, so there is no path traversal.
@@ -648,16 +660,37 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return listId;
   };
 
+  /** Validates an optional deck format field, returning undefined when absent. Throws on anything else. */
+  function deckFormat(v: unknown): DeckFormat | undefined {
+    if (v === undefined) return undefined;
+    if (v === 'standard' || v === 'expanded' || v === 'unlimited') return v;
+    throw bad('Invalid deck format');
+  }
+
   app.post('/api/collections/:id/lists', async (req) => {
     const { id } = need(ctx, req, 'write');
     const body = (req.body ?? {}) as Record<string, unknown>;
     const name = str(body.name, 80);
     if (!name) throw bad('Give the list a name');
     if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM lists WHERE collection_id = ?', id)!.n >= 200) throw bad('Too many lists');
+    const kind = body.kind === undefined ? 'list' : body.kind;
+    if (kind !== 'list' && kind !== 'deck') throw bad('Invalid list kind');
+    const format = deckFormat(body.format);
+    if (format && kind !== 'deck') throw bad('Only decks have a format');
     const listId = newId();
     const t = now();
-    ctx.db.run('INSERT INTO lists (id, collection_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', listId, id, name, str(body.description, 500) || null, t, t);
-    return { id: listId, name, description: str(body.description, 500) || undefined, createdAt: t, updatedAt: t, cards: [] };
+    ctx.db.run(
+      'INSERT INTO lists (id, collection_id, name, description, kind, format, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      listId,
+      id,
+      name,
+      str(body.description, 500) || null,
+      kind,
+      format ?? null,
+      t,
+      t,
+    );
+    return { id: listId, name, description: str(body.description, 500) || undefined, kind, format, createdAt: t, updatedAt: t, cards: [], cardQtys: {} };
   });
 
   app.patch('/api/collections/:id/lists/:listId', async (req) => {
@@ -669,6 +702,14 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       ctx.db.run('UPDATE lists SET name = ?, updated_at = ? WHERE id = ?', name, now(), listId);
     }
     if (body.description !== undefined) ctx.db.run('UPDATE lists SET description = ?, updated_at = ? WHERE id = ?', str(body.description, 500) || null, now(), listId);
+    // Kind is immutable after creation (a deck's quantities and a plain list's semantics don't
+    // interchange cleanly), so it is silently ignored here rather than accepted or rejected loudly.
+    if (body.format !== undefined) {
+      const format = deckFormat(body.format);
+      const row = ctx.db.get<{ kind: 'list' | 'deck' }>('SELECT kind FROM lists WHERE id = ?', listId)!;
+      if (format && row.kind !== 'deck') throw bad('Only decks have a format');
+      ctx.db.run('UPDATE lists SET format = ?, updated_at = ? WHERE id = ?', format ?? null, now(), listId);
+    }
     if (Array.isArray(body.order)) {
       // Position is the array index; ids not already in the list are ignored by the WHERE clause.
       ctx.db.tx(() => (body.order as unknown[]).forEach((c, i) => typeof c === 'string' && ctx.db.run('UPDATE list_cards SET position = ? WHERE list_id = ? AND card_id = ?', i, listId, c)));
@@ -685,9 +726,17 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   app.put('/api/collections/:id/lists/:listId/cards/:cardId', async (req) => {
     const listId = ownList(req, 'write');
     const card = cardId((req.params as { cardId: string }).cardId);
-    if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM list_cards WHERE list_id = ?', listId)!.n >= 2000) throw bad('That list is full');
-    const pos = ctx.db.get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM list_cards WHERE list_id = ?', listId)!.p;
-    ctx.db.run('INSERT OR IGNORE INTO list_cards (list_id, card_id, position, added_at) VALUES (?, ?, ?, ?)', listId, card, pos, now());
+    const body = (req.body ?? {}) as { qty?: unknown };
+    const qty = body.qty === undefined ? 1 : Math.floor(Number(body.qty));
+    if (!Number.isFinite(qty) || qty < 1 || qty > 60) throw bad('Quantity must be between 1 and 60');
+    const existing = ctx.db.get('SELECT 1 FROM list_cards WHERE list_id = ? AND card_id = ?', listId, card);
+    if (existing) {
+      ctx.db.run('UPDATE list_cards SET qty = ? WHERE list_id = ? AND card_id = ?', qty, listId, card);
+    } else {
+      if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM list_cards WHERE list_id = ?', listId)!.n >= 2000) throw bad('That list is full');
+      const pos = ctx.db.get<{ p: number }>('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM list_cards WHERE list_id = ?', listId)!.p;
+      ctx.db.run('INSERT INTO list_cards (list_id, card_id, position, qty, added_at) VALUES (?, ?, ?, ?, ?)', listId, card, pos, qty, now());
+    }
     ctx.db.run('UPDATE lists SET updated_at = ? WHERE id = ?', now(), listId);
     void hydrateMissing(ctx, [card]);
     return { ok: true };
@@ -792,5 +841,105 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     if (total < 1) throw notFound('Unknown set');
     ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, synced_at) VALUES (?, ?, ?)', setId, total, now());
     return { ok: true, masterTotal: total };
+  });
+
+  // ------------------------------------------------------------ deck import and legality settings
+  // Not collection-scoped: resolving deck text and reading/editing the legality rules are
+  // instance-wide catalogue concerns, the same way /api/cards/lookup and /api/set-stats are.
+
+  const MAX_DECK_TEXT = 20_000;
+  const deckResolveLimiter = new Limiter(60, 60_000);
+
+  /**
+   * Parses PTCGL/Limitless deck text and resolves each line to a real card via its printed set
+   * code + collector number, the same way GET /api/cards/lookup resolves an OCR read. Lines
+   * with no set code/number, or whose code+number match nothing, come back unresolved rather
+   * than guessed at by name, so the import dialog can show them for manual fixing.
+   */
+  app.post('/api/decks/resolve', async (req, reply) => {
+    const u = requireUser(req);
+    deckResolveLimiter.check(u.id, reply);
+    const body = (req.body ?? {}) as { text?: unknown };
+    if (typeof body.text !== 'string' || !body.text.length || body.text.length > MAX_DECK_TEXT) throw bad(`Send deck text (up to ${MAX_DECK_TEXT.toLocaleString()} characters)`);
+    const parsed = parseDeckText(body.text);
+
+    const sets = await getSets('en').catch(() => []);
+    const index = buildCodeIndex(sets);
+
+    // First pass: resolve each line to a candidate TCGdex card id (set codes + collector number
+    // only), without fetching full snapshots yet, so the priced fetch below is one batched call
+    // across every line rather than one call per line.
+    const lineCardIds = new Map<DeckTextLine, string>();
+    for (const line of parsed.lines) {
+      if (!line.setCode || !line.number) continue;
+      for (const setId of setIdsForCode(line.setCode, index)) {
+        const cards = await scanSetCards(setId);
+        const match = cards.find((c) => numbersMatch(line.number!, c.number));
+        if (match) {
+          lineCardIds.set(line, match.id);
+          break;
+        }
+      }
+    }
+
+    let snaps = new Map<string, CardSnapshot>();
+    if (lineCardIds.size) {
+      const cards = await getCardsByIds(Array.from(new Set(lineCardIds.values())));
+      const snapped = cards.map(toSnapshot);
+      saveSnapshots(ctx.db, snapped);
+      snaps = new Map(snapped.map((s) => [s.id, s]));
+    }
+
+    const resolved: (DeckTextLine & { card: CardSnapshot })[] = [];
+    const unresolved: DeckTextLine[] = [];
+    for (const line of parsed.lines) {
+      const card = snaps.get(lineCardIds.get(line) ?? '');
+      if (card) resolved.push({ ...line, card });
+      else unresolved.push(line);
+    }
+    return { resolved, unresolved, totalCards: parsed.totalCards };
+  });
+
+  function readDeckSettings(): { regulationMarks: RegulationMarkSettings; bannedCardIds: string[] } {
+    const marks = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'deck_regulation_marks'");
+    const banned = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'deck_banned_cards'");
+    return {
+      regulationMarks: marks ? json(marks.value, DEFAULT_REGULATION_MARKS) : DEFAULT_REGULATION_MARKS,
+      bannedCardIds: banned ? json(banned.value, DEFAULT_BANNED_CARDS) : DEFAULT_BANNED_CARDS,
+    };
+  }
+
+  /** Any signed-in user reads the legality rules; they're applied client-side when checking a deck. */
+  app.get('/api/decks/settings', async (req) => {
+    requireUser(req);
+    return readDeckSettings();
+  });
+
+  const REGULATION_MARK = /^[A-Za-z0-9]{1,3}$/;
+  app.put('/api/admin/deck-settings', async (req) => {
+    requireRole(req, 'owner', 'admin');
+    const body = (req.body ?? {}) as { regulationMarks?: { standard?: unknown; expanded?: unknown }; bannedCardIds?: unknown };
+    const current = readDeckSettings();
+
+    const cleanMarks = (v: unknown): string[] => {
+      if (!Array.isArray(v) || v.length > 20) throw bad('Invalid regulation marks');
+      return v.map((m) => {
+        if (typeof m !== 'string' || !REGULATION_MARK.test(m)) throw bad('Invalid regulation mark');
+        return m;
+      });
+    };
+    const regulationMarks =
+      body.regulationMarks === undefined ? current.regulationMarks : { standard: cleanMarks(body.regulationMarks.standard), expanded: cleanMarks(body.regulationMarks.expanded) };
+
+    let bannedCardIds = current.bannedCardIds;
+    if (body.bannedCardIds !== undefined) {
+      if (!Array.isArray(body.bannedCardIds) || body.bannedCardIds.length > 500) throw bad('Invalid banned card list');
+      bannedCardIds = body.bannedCardIds.map((v) => cardId(v));
+    }
+
+    ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('deck_regulation_marks', ?)", JSON.stringify(regulationMarks));
+    ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('deck_banned_cards', ?)", JSON.stringify(bannedCardIds));
+    audit(ctx, req, 'admin.deck_settings', undefined, body);
+    return { regulationMarks, bannedCardIds };
   });
 }
