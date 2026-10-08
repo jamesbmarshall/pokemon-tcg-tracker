@@ -57,9 +57,9 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
         // The web app manifest and the generated service worker (both same-origin only).
         manifestSrc: ["'self'"],
         workerSrc: ["'self'", 'blob:'],
-        // Workbox's generated service worker is plain JS, so scriptSrc needs no change here.
-        // If a future feature (e.g. OCR) runs wasm in the worker, 'wasm-unsafe-eval' would need
-        // adding to a scriptSrc directive then, not here.
+        // The camera-scan page runs tesseract.js's OCR core (self-hosted wasm, no CDN) in a
+        // worker; wasm-unsafe-eval is Wasm's own instantiation, not JS eval.
+        scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
         // Many installs are plain HTTP on a LAN; upgrading would break every subresource there.
         upgradeInsecureRequests: null,
       },

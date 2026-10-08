@@ -55,4 +55,11 @@ describe('web app serving', () => {
     expect(csp).toContain("manifest-src 'self'");
     expect(csp).toContain("worker-src 'self' blob:");
   });
+
+  it('allows the self-hosted OCR wasm core under the CSP, but never plain JS eval', async () => {
+    const res = await s.app.inject({ method: 'GET', url: '/' });
+    const csp = res.headers['content-security-policy'] as string;
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(csp).not.toContain("'unsafe-eval'");
+  });
 });
