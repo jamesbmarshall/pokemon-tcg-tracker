@@ -7,8 +7,15 @@
  * backend without the store knowing the difference.
  */
 import { api } from './http';
-import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, MoverCard, SetStat, ValuePoint, WishlistEntry } from './types';
+import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, MoverCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from './types';
 import type { CardNote } from './types';
+
+/** A PriceCharting search result. Only id/name/consoleName are used client-side; `raw` is ignored. */
+export interface PcProduct {
+  id: string;
+  name: string;
+  consoleName?: string;
+}
 
 /** The caller's role on a collection. The server enforces it; the UI only uses it to hide edit controls. */
 export type CollectionRole = 'owner' | 'editor' | 'viewer';
@@ -43,6 +50,7 @@ export interface CollectionData {
   role: CollectionRole;
   entries: CollectionEntry[];
   graded: GradedCopy[];
+  sealed: SealedItem[];
   wishlist: WishlistEntry[];
   notes: CardNote[];
   history: ValuePoint[];
@@ -63,6 +71,7 @@ export interface PhotoRef {
 export interface ImportResult {
   entries: number;
   graded: number;
+  sealed: number;
   wishlist: number;
   notes: number;
   history: number;
@@ -101,6 +110,24 @@ export interface Backend {
   photos(collectionId: string, gradedId: string): Promise<PhotoRef[]>;
   addPhotos(collectionId: string, gradedId: string, files: Blob[], side: GradedPhoto['side']): Promise<PhotoRef[]>;
   deletePhoto(collectionId: string, photoId: string): Promise<void>;
+  /** Links a slab to a PriceCharting product; returns the updated copy with pcProductId/pcPrice/pcUpdatedAt set. */
+  linkGraded(collectionId: string, gradedId: string, pcProductId: string): Promise<GradedCopy>;
+  putSealed(collectionId: string, item: SealedItem): Promise<SealedItem>;
+  deleteSealed(collectionId: string, id: string): Promise<void>;
+  /** Marks a sealed item opened (excluded from value, kept for history). Returns the updated item. */
+  openSealed(collectionId: string, id: string): Promise<SealedItem>;
+  /** Links a sealed item to a PriceCharting product and fetches its price. */
+  linkSealed(collectionId: string, id: string, pcProductId: string): Promise<SealedItem>;
+  sealedPhotos(collectionId: string, sealedId: string): Promise<PhotoRef[]>;
+  addSealedPhotos(collectionId: string, sealedId: string, files: Blob[]): Promise<PhotoRef[]>;
+  deleteSealedPhoto(collectionId: string, photoId: string): Promise<void>;
+  /** Whether PriceCharting is configured, so the UI knows whether to show its search/link controls. */
+  pcConfigured(): Promise<boolean>;
+  pcSearch(query: string): Promise<PcProduct[]>;
+  pcAdminStatus(): Promise<boolean>;
+  pcSetKey(key: string): Promise<void>;
+  pcClearKey(): Promise<void>;
+  pcTest(): Promise<void>;
   recordValue(collectionId: string): Promise<ValuePoint | null>;
   importData(collectionId: string, data: unknown): Promise<ImportResult>;
   clear(collectionId: string): Promise<void>;
@@ -153,6 +180,29 @@ export const httpBackend: Backend = {
     return rows.map((p) => ({ ...p, addedAt: at, url: `${c(id)}/photos/${enc(p.id)}` }));
   },
   deletePhoto: async (id, pid) => void (await api(`${c(id)}/photos/${enc(pid)}`, { method: 'DELETE' })),
+  linkGraded: (id, gid, pcProductId) => api(`${c(id)}/graded/${enc(gid)}/link`, { method: 'POST', body: { pcProductId } }),
+  putSealed: (id, item) => api(`${c(id)}/sealed/${enc(item.id)}`, { method: 'PUT', body: item }),
+  deleteSealed: async (id, sid) => void (await api(`${c(id)}/sealed/${enc(sid)}`, { method: 'DELETE' })),
+  openSealed: (id, sid) => api(`${c(id)}/sealed/${enc(sid)}/open`, { method: 'POST' }),
+  linkSealed: (id, sid, pcProductId) => api(`${c(id)}/sealed/${enc(sid)}/link`, { method: 'POST', body: { pcProductId } }),
+  sealedPhotos: async (id, sid) => {
+    const rows = await api<{ id: string; addedAt: string }[]>(`${c(id)}/sealed/${enc(sid)}/photos`);
+    return rows.map((p) => ({ ...p, side: 'other' as const, url: `${c(id)}/photos/sealed/${enc(p.id)}` }));
+  },
+  addSealedPhotos: async (id, sid, files) => {
+    const form = new FormData();
+    files.forEach((f, i) => form.append('file', f, `photo-${i}.jpg`));
+    const rows = await api<{ id: string; mime: string }[]>(`${c(id)}/sealed/${enc(sid)}/photos`, { method: 'POST', body: form });
+    const at = new Date().toISOString();
+    return rows.map((p) => ({ id: p.id, side: 'other' as const, addedAt: at, url: `${c(id)}/photos/sealed/${enc(p.id)}` }));
+  },
+  deleteSealedPhoto: async (id, pid) => void (await api(`${c(id)}/photos/sealed/${enc(pid)}`, { method: 'DELETE' })),
+  pcConfigured: async () => (await api<{ pricecharting: { configured: boolean } }>('/api/integrations')).pricecharting.configured,
+  pcSearch: async (query) => (await api<{ results: PcProduct[] }>(`/api/pricecharting/search?q=${enc(query)}`)).results,
+  pcAdminStatus: async () => (await api<{ pricecharting: { configured: boolean } }>('/api/admin/integrations')).pricecharting.configured,
+  pcSetKey: async (key) => void (await api('/api/admin/integrations/pricecharting', { method: 'PUT', body: { key } })),
+  pcClearKey: async () => void (await api('/api/admin/integrations/pricecharting', { method: 'DELETE' })),
+  pcTest: async () => void (await api('/api/admin/integrations/pricecharting/test', { method: 'POST' })),
   recordValue: async (id) => (await api<{ point: ValuePoint | null }>(`${c(id)}/value`, { method: 'POST' })).point,
   importData: (id, data) => api(`${c(id)}/import`, { method: 'POST', body: data }),
   clear: async (id) => void (await api(`${c(id)}/clear`, { method: 'POST' })),

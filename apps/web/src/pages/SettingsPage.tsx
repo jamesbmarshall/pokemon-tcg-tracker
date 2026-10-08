@@ -44,6 +44,7 @@ export default function SettingsPage() {
   const { currency, setCurrency, pocketSize, setPocketSize, theme, setTheme } = useSettings();
   const entries = useCollectionStore((s) => s.entries);
   const graded = useCollectionStore((s) => s.graded);
+  const sealed = useCollectionStore((s) => s.sealed);
   const cards = useCollectionStore((s) => s.cards);
   const wishlist = useCollectionStore((s) => s.wishlist);
   const notes = useCollectionStore((s) => s.notes);
@@ -62,7 +63,7 @@ export default function SettingsPage() {
   const money = useMoney();
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmText, setConfirmText] = useState('');
-  const value = useMemo(() => computeValue(entries.values(), cards, graded.values()), [entries, cards, graded]);
+  const value = useMemo(() => computeValue(entries.values(), cards, graded.values(), sealed.values()), [entries, cards, graded, sealed]);
 
   const exportJson = () => {
     const payload = {
@@ -73,6 +74,7 @@ export default function SettingsPage() {
       wishlist: Array.from(wishlist.values()),
       // Slab photos stay on the server (and in its backups); only slab details are exported.
       graded: Array.from(graded.values()),
+      sealed: Array.from(sealed.values()),
       notes: Array.from(notes, ([cardId, text]) => ({ cardId, text })),
       history,
       lists,

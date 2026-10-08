@@ -5,7 +5,7 @@ import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useSets } from '../api/hooks';
 import { getBackend } from '../api/backend';
 import type { MoverCard } from '../api/types';
-import { useCollectionStore } from '../store/collectionStore';
+import { useCollectionStore, sealedValue } from '../store/collectionStore';
 import { useCollectionStats } from '../hooks/useCollectionStats';
 import { useMoney } from '../hooks/useMoney';
 import ValueChart from '../components/ValueChart';
@@ -123,6 +123,7 @@ export default function HomePage() {
   const isLoaded = useCollectionStore((s) => s.isLoaded);
   const history = useCollectionStore((s) => s.history);
   const wishlist = useCollectionStore((s) => s.wishlist);
+  const sealed = useCollectionStore((s) => s.sealed);
   const cards = useCollectionStore((s) => s.cards);
   const collectionId = useCollectionStore((s) => s.collectionId);
   const stats = useCollectionStats();
@@ -165,6 +166,15 @@ export default function HomePage() {
     }
     return t;
   }, [wishlist, cards]);
+  const sealedStats = useMemo(() => {
+    let count = 0;
+    let valueUsd = 0;
+    for (const item of sealed.values()) {
+      if (item.status === 'sealed') count++;
+      valueUsd += sealedValue(item);
+    }
+    return { count, valueUsd };
+  }, [sealed]);
 
   if (!isLoaded) return <Skeleton className="h-80" />;
   if (stats.count === 0) return <Welcome />;
@@ -222,6 +232,11 @@ export default function HomePage() {
             <p className="eyebrow">Wishlist</p>
             <p className="mt-1.5 font-display text-[1.75rem] font-medium leading-none tabular group-hover:text-accent">{wishlist.size}</p>
             <p className="mt-1.5 text-xs text-muted">{wishlist.size ? `≈ ${money(wishCost, { compact: true })} to buy` : 'Nothing yet'}</p>
+          </Link>
+          <Link to="/sealed" className="group border-t border-line py-4">
+            <p className="eyebrow">Sealed</p>
+            <p className="mt-1.5 font-display text-[1.75rem] font-medium leading-none tabular group-hover:text-accent">{sealedStats.count}</p>
+            <p className="mt-1.5 text-xs text-muted">{sealedStats.count ? `≈ ${money(sealedStats.valueUsd, { compact: true })} value` : 'Nothing yet'}</p>
           </Link>
         </div>
       </section>
