@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
 import { Crown, Database, Download, Link2, Lock, Play, Plus, RefreshCw, Trash2, UserX } from 'lucide-react';
 import { api } from '../api/http';
+import { getBackend, type DeckSettings } from '../api/backend';
 import { isAdmin, useAuth, type Role, type User } from '../store/authStore';
 import { toast } from '../store/toastStore';
 import { PageHeader, Segmented } from '../components/ui';
@@ -428,6 +429,65 @@ function JobsTab({ me }: { me: User }) {
   );
 }
 
+// ---------------------------------------------------------------- decks
+
+function DecksTab() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['decks', 'settings'], queryFn: () => getBackend().getDeckSettings() });
+  const [standard, setStandard] = useState('');
+  const [expanded, setExpanded] = useState('');
+  const [banned, setBanned] = useState('');
+  // Seeds the form once the settings arrive, without re-seeding over the user's in-progress
+  // edits on every refetch (e.g. after saving). Adjusting state during render rather than in an
+  // effect avoids an extra render pass.
+  const [seededFrom, setSeededFrom] = useState<DeckSettings | null>(null);
+  if (data && data !== seededFrom) {
+    setSeededFrom(data);
+    setStandard(data.regulationMarks.standard.join(', '));
+    setExpanded(data.regulationMarks.expanded.join(', '));
+    setBanned(data.bannedCardIds.join('\n'));
+  }
+
+  const save = useSubmit(async () => {
+    const regulationMarks = {
+      standard: standard.split(',').map((s) => s.trim()).filter(Boolean),
+      expanded: expanded.split(',').map((s) => s.trim()).filter(Boolean),
+    };
+    const bannedCardIds = banned.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    await getBackend().putDeckSettings({ regulationMarks, bannedCardIds });
+    toast('Deck settings saved', { tone: 'success' });
+    await qc.invalidateQueries({ queryKey: ['decks', 'settings'] });
+  });
+
+  if (!data) return <p className="text-sm text-muted">Loading…</p>;
+
+  return (
+    <form onSubmit={save.onSubmit} className="panel space-y-4 p-5">
+      <h3 className="font-semibold">Deck legality</h3>
+      {/* Validation of exact formats (regulation-mark syntax, real card ids) happens server-side;
+          this is just a convenience editor — the inputs here are intentionally simple
+          (comma-separated / one-per-line text) rather than a fancy chip UI. */}
+      <p className="text-sm text-muted">Controls which regulation marks and banned cards count as legal when checking decks.</p>
+      <label className="block text-sm font-medium">
+        <span className="mb-1.5 block">Standard regulation marks</span>
+        <input className="input" value={standard} onChange={(e) => setStandard(e.target.value)} placeholder="H, I, J" />
+      </label>
+      <label className="block text-sm font-medium">
+        <span className="mb-1.5 block">Expanded regulation marks</span>
+        <input className="input" value={expanded} onChange={(e) => setExpanded(e.target.value)} placeholder="D, E, F, G, H, I, J" />
+      </label>
+      <label className="block text-sm font-medium">
+        <span className="mb-1.5 block">Banned card ids (Expanded)</span>
+        <textarea className="input min-h-32" value={banned} onChange={(e) => setBanned(e.target.value)} placeholder={'sv03-001\nsv04-002'} />
+      </label>
+      <FormError error={save.error} />
+      <button className="btn btn-primary" disabled={save.busy}>
+        Save
+      </button>
+    </form>
+  );
+}
+
 // ---------------------------------------------------------------- backups (owner)
 
 // Backups hold every user's data and password hashes, so the server limits them to the owner.
@@ -572,7 +632,7 @@ function ActivityTab() {
 
 // ---------------------------------------------------------------- page
 
-type Tab = 'users' | 'invites' | 'jobs' | 'backups' | 'activity';
+type Tab = 'users' | 'invites' | 'jobs' | 'decks' | 'backups' | 'activity';
 
 export default function AdminPage() {
   const me = useAuth((s) => s.user);
@@ -582,6 +642,7 @@ export default function AdminPage() {
     { value: 'users', label: 'Users' },
     { value: 'invites', label: 'Invites' },
     { value: 'jobs', label: 'Jobs' },
+    { value: 'decks', label: 'Decks' },
     ...(me.role === 'owner' ? [{ value: 'backups' as const, label: 'Backups' }] : []),
     { value: 'activity', label: 'Activity' },
   ];
@@ -594,6 +655,7 @@ export default function AdminPage() {
       {tab === 'users' && <UsersTab me={me} />}
       {tab === 'invites' && <InvitesTab me={me} />}
       {tab === 'jobs' && <JobsTab me={me} />}
+      {tab === 'decks' && <DecksTab />}
       {tab === 'backups' && <BackupsTab />}
       {tab === 'activity' && <ActivityTab />}
     </div>

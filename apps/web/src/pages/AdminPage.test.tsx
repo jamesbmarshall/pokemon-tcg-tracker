@@ -6,6 +6,7 @@ import { bytes, fromNow } from '../utils/format';
 import { useAuth, type User } from '../store/authStore';
 import { renderWithProviders } from '../test/render';
 import { mockApi } from '../test/apiMock';
+import { memory } from '../test/memoryBackend';
 
 const owner: User = { id: 'u1', username: 'ash', displayName: 'Ash', role: 'owner', totpEnabled: false };
 const admin: User = { id: 'u2', username: 'misty', displayName: 'Misty', role: 'admin', totpEnabled: false };
@@ -184,6 +185,40 @@ describe('Jobs', () => {
     await user.click(screen.getByRole('radio', { name: 'Jobs' }));
     expect(await screen.findByText('Check for updates')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /run now/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('Decks', () => {
+  // getDeckSettings/putDeckSettings go through the Backend abstraction (a direct call, not a
+  // fetch route), so they're exercised via the in-memory fake backend rather than mockApi.
+  beforeEach(() => {
+    memory.deckSettings = { regulationMarks: { standard: ['H', 'I', 'J'], expanded: ['D', 'E', 'F', 'G', 'H', 'I', 'J'] }, bannedCardIds: ['sv03-001'] };
+  });
+
+  it('is visible to admins and loads current settings', async () => {
+    signIn(admin);
+    const user = userEvent.setup();
+    mockApi({ 'GET /api/admin/users': users });
+    renderWithProviders(<AdminPage />);
+    expect(screen.getByRole('radio', { name: 'Decks' })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Decks' }));
+    expect(await screen.findByLabelText('Standard regulation marks')).toHaveValue('H, I, J');
+    expect(screen.getByLabelText('Expanded regulation marks')).toHaveValue('D, E, F, G, H, I, J');
+    expect(screen.getByLabelText('Banned card ids (Expanded)')).toHaveValue('sv03-001');
+  });
+
+  it('edits and saves the parsed arrays', async () => {
+    const user = userEvent.setup();
+    mockApi({ 'GET /api/admin/users': users });
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Decks' }));
+    const standardInput = await screen.findByLabelText('Standard regulation marks');
+    expect(standardInput).toHaveValue('H, I, J');
+    await user.type(standardInput, ', K');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(memory.deckSettings.regulationMarks.standard).toEqual(['H', 'I', 'J', 'K']));
+    expect(memory.deckSettings.regulationMarks.expanded).toEqual(['D', 'E', 'F', 'G', 'H', 'I', 'J']);
+    expect(memory.deckSettings.bannedCardIds).toEqual(['sv03-001']);
   });
 });
 
