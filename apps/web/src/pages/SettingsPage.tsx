@@ -13,6 +13,7 @@ import { toast } from '../store/toastStore';
 import { relativeTime, todayKey } from '../utils/format';
 import { variantLabel } from '../utils/variants';
 import { formatGrade } from '../utils/grading';
+import { toCsv } from '@poketracker/shared/csv';
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -22,11 +23,6 @@ function download(name: string, content: string, type: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
-const csvCell = (v: unknown) => {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 function Section({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -93,7 +89,7 @@ export default function SettingsPage() {
       const v = gradedValue(g, cards);
       rows.push([g.cardId, c?.name, c?.setName, c?.number, c?.rarity, variantLabel(g.variant), 1, g.label ?? '', v ? (v * rate).toFixed(2) : '', g.addedAt.slice(0, 10), formatGrade(g), g.certNumber ?? '', g.countsTowardSet ? 'Yes' : 'No', g.paid?.amount.toFixed(2) ?? '', g.paid?.currency ?? '', notes.get(g.cardId) ?? '']);
     }
-    download(`poketracker-${todayKey()}.csv`, [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+    download(`poketracker-${todayKey()}.csv`, toCsv([header, ...rows]), 'text/csv');
   };
 
   const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
