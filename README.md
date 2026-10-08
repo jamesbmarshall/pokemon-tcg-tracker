@@ -6,14 +6,15 @@ Once it's deployed, everything happens in the browser. Prices, set lists and exc
 
 ## Features
 
-- **Dashboard**: collection value with a daily history chart, sets in progress, most valuable cards, recent additions and the sets you're closest to finishing.
+- **Dashboard**: collection value with a daily history chart, biggest movers over the last 7 or 30 days, sets in progress, most valuable cards, recent additions and the sets you're closest to finishing.
 - **Sets**: every set in every TCGdex language, grouped by series, with progress bars. Each set page shows three kinds of completion:
   - **Base**: numbered cards up to the printed total.
   - **Full**: base plus the secret rares.
   - **Master**: every printing, including reverse holos and other variants.
 - **Fast entry**: each card shows its printings as chips (N, RH, H, 1st…). Click a chip to add a copy and right-click to remove one. Quick add mode adds a − button for touch screens. Anything you remove can be undone.
 - **Binder view**: 9- or 12-pocket pages shown as a two-page spread. Empty pockets show a ghost of the missing card. Arrow keys turn the pages.
-- **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.
+- **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices with a daily price history chart per source, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.
+- **Manual valuations**: set your own value for a card or graded slab when you'd rather trust your own judgement than the market price. Manually valued copies are marked with a "Manual" badge everywhere their value is shown.
 - **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab.
 - **Wishlist**: your chase list with the running cost to buy it all. "Got it" moves a card into your collection.
 - **Custom lists**: binders, trade piles, deck lists, whatever you need.
@@ -131,6 +132,7 @@ Everything has a sensible default. These are the settings you're most likely to 
 | `PUID` / `PGID` | `1000` | Who owns `/data` and runs the app. |
 | `IMAGE_CACHE_MB` | `2048` | Disk space for cached card images. |
 | `BACKUPS_TO_KEEP` | `7` | Nightly database backups to keep. |
+| `PRICE_HISTORY_DAYS` | `730` | How many days of daily per-card price history to keep before the cleanup job prunes older rows. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
 | `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
