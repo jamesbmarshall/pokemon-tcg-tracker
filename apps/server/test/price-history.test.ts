@@ -39,9 +39,13 @@ describe('price history ingestion', () => {
     db.exec(MIGRATIONS[0]); // simulate a database created before this feature shipped
     db.run('INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)', new Date().toISOString());
     db.run("INSERT INTO settings (key, value) VALUES ('fx', '{}')");
-    expect(db.migrate()).toBe(2); // applies the two new migrations (price history + sealed/graded), not version 1 again
+    expect(db.migrate()).toBe(3); // applies price history + sealed/graded + the pricecharting source widening, not version 1 again
     // entries.value_override exists and is nullable (no error inserting without it)
     expect(() => db.run("INSERT INTO price_history (card_id, variant, source, date, price, currency) VALUES ('a', 'normal', 'tcgplayer', '2024-01-01', 1, 'USD')")).not.toThrow();
+    // Migration 4 widened the CHECK so 'pricecharting' is now an accepted source, with the existing row untouched.
+    expect(() => db.run("INSERT INTO price_history (card_id, variant, source, date, price, currency) VALUES ('a', 'normal', 'pricecharting', '2024-01-02', 2, 'USD')")).not.toThrow();
+    expect(db.get("SELECT COUNT(*) AS n FROM price_history WHERE card_id = 'a'")).toEqual({ n: 2 });
+    expect(() => db.run("INSERT INTO price_history (card_id, variant, source, date, price, currency) VALUES ('a', 'normal', 'nonsense', '2024-01-03', 2, 'USD')")).toThrow();
     expect(db.get("SELECT value FROM settings WHERE key = 'fx'")).toEqual({ value: '{}' });
     // Running migrate again is a no-op (idempotent).
     expect(db.migrate()).toBe(0);

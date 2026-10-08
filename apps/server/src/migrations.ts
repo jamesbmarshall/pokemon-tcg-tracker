@@ -318,4 +318,22 @@ export const MIGRATIONS: string[] = [
   INSERT INTO share_users (share_id, user_id) SELECT share_id, user_id FROM share_users_backup;
   DROP TABLE share_users_backup;
   `,
+  /* 4: PriceCharting as a third price-history source. SQLite can't ALTER a CHECK constraint, so
+     this rebuilds price_history with the wider one, same as the shares rebuild above. No
+     foreign keys point at price_history, so there is no cascade to work around here. */ `
+  CREATE TABLE price_history_new (
+    card_id TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('tcgplayer','cardmarket','pricecharting')),
+    date TEXT NOT NULL,
+    price REAL NOT NULL,
+    currency TEXT NOT NULL,
+    PRIMARY KEY (card_id, variant, source, date)
+  );
+  INSERT INTO price_history_new (card_id, variant, source, date, price, currency)
+    SELECT card_id, variant, source, date, price, currency FROM price_history;
+  DROP TABLE price_history;
+  ALTER TABLE price_history_new RENAME TO price_history;
+  CREATE INDEX price_history_card_date ON price_history(card_id, date);
+  `,
 ];
