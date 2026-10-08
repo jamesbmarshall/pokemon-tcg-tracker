@@ -285,9 +285,10 @@ export const MIGRATIONS: string[] = [
 
   -- SQLite can't ALTER a CHECK constraint, so adding the 'sealed' share scope means rebuilding
   -- the table: create the new shape, copy every row across, drop the old table, rename the new
-  -- one into place, then recreate its index. share_users keeps its existing foreign key by name,
-  -- which SQLite re-resolves once a table called 'shares' exists again (see SQLite's documented
-  -- procedure for schema changes it can't do with ALTER TABLE).
+  -- one into place, then recreate its index. With foreign_keys on (as this connection always
+  -- runs), DROP TABLE performs an implicit DELETE first, which fires share_users' ON DELETE
+  -- CASCADE and wipes it -- so share_users is backed up to a temp table first and restored
+  -- once the renamed table exists again, rather than relying on the dropped rows surviving.
   CREATE TABLE shares_new (
     id TEXT PRIMARY KEY,
     token_hash TEXT NOT NULL UNIQUE,
@@ -309,8 +310,12 @@ export const MIGRATIONS: string[] = [
   );
   INSERT INTO shares_new (id, token_hash, token_enc, owner_id, collection_id, scope, target, audience, title, hide_paid, hide_value, hide_notes, created_at, expires_at, revoked_at, views, last_viewed_at)
     SELECT id, token_hash, token_enc, owner_id, collection_id, scope, target, audience, title, hide_paid, hide_value, hide_notes, created_at, expires_at, revoked_at, views, last_viewed_at FROM shares;
+  CREATE TEMP TABLE share_users_backup AS SELECT * FROM share_users;
   DROP TABLE shares;
   ALTER TABLE shares_new RENAME TO shares;
   CREATE INDEX shares_owner ON shares(owner_id);
+  DELETE FROM share_users;
+  INSERT INTO share_users (share_id, user_id) SELECT share_id, user_id FROM share_users_backup;
+  DROP TABLE share_users_backup;
   `,
 ];

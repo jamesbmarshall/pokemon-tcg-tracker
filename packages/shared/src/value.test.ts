@@ -22,9 +22,11 @@ const card = (id: string, price = 10): CardSnapshot => ({
 const graded = (over: Partial<GradedCopy> = {}): GradedCopy => ({
   id: 'g1',
   cardId: 'sv1-001',
+  setId: 'sv1',
   variant: 'normal',
   company: 'PSA',
   grade: '10',
+  countsTowardSet: false,
   addedAt: new Date().toISOString(),
   ...over,
 });
@@ -77,7 +79,7 @@ describe('sealedValue precedence and opened exclusion', () => {
 describe('computeValue', () => {
   it('includes unopened sealed items and graded slabs in the total but not in card counts', () => {
     const cards = new Map([['sv1-001', card('sv1-001', 10)]]);
-    const entries: CollectionEntry[] = [{ cardId: 'sv1-001', variant: 'normal', quantity: 2, addedAt: new Date().toISOString() }];
+    const entries: CollectionEntry[] = [{ id: 'sv1-001::normal', cardId: 'sv1-001', setId: 'sv1', variant: 'normal', quantity: 2, addedAt: new Date().toISOString() }];
     const { valueUsd, count, unique } = computeValue(entries, cards, [graded({ valueUsd: 500 })], [sealed({ pcPrice: 90, quantity: 2 }), sealed({ id: 's2', status: 'opened', valueUsd: 999 })]);
     // 2 raw copies @ 10 + 1 slab @ 500 + 1 unopened sealed item (90*2=180) + 0 for the opened one.
     expect(valueUsd).toBe(2 * 10 + 500 + 180);
