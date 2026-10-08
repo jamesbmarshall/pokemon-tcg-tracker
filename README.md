@@ -142,6 +142,14 @@ Everything has a sensible default. These are the settings you're most likely to 
 
 Sealed-product pricing and graded-card values can optionally come from [PriceCharting](https://www.pricecharting.com), a paid third-party service. It's entirely opt-in: set a key under **Admin → Integrations** (owner or admin only) to enable it, or leave it unset. With no key configured, nothing in PokéTracker ever contacts PriceCharting — the search box and linking controls simply don't appear. The key is encrypted at rest and never sent back to the browser once saved; **Admin → Integrations** only ever shows whether a key is "Configured", plus a "Test connection" button.
 
+## Resilience
+
+TCGdex is the only catalogue source, so PokéTracker is built to cope when it's slow or unreachable rather than break pages. Every call retries network errors, 5xx and 429 responses with exponential backoff and jitter (honouring a 429's `Retry-After` header), capped at a few seconds and a handful of attempts; a plain 4xx (e.g. a genuine 404) is never retried. If TCGdex keeps failing, a per-host circuit breaker opens after several failures in a row, so the app stops hammering a service that's already down — it tries again with a single "probe" request after a cool-down, and closes again once that succeeds.
+
+Whether the breaker is open or a single call fails, PokéTracker falls back to whatever it already has rather than erroring: a stale cached catalogue response past its normal refresh window, or the last synced card/set-stats snapshot. Pages still show set lists, card details and collection stats — card data just "may be out of date" until TCGdex recovers. A small, non-sensitive flag on the status endpoint drives a banner for every signed-in user when this is happening; **Admin → Jobs** shows the fuller picture (breaker state, last error, how many requests were served stale) for TCGdex and PriceCharting.
+
+When TCGdex has no TCGplayer or Cardmarket price at all for one of a card's variants, and a PriceCharting key is configured, PriceCharting is tried as a fallback price source for just that variant (a single ungraded price, since PriceCharting doesn't break prices down by printing). Price precedence is TCGplayer, then converted Cardmarket, then PriceCharting, then nothing — a manual value override always wins over any of them. The card page shows "PriceCharting" as the source when a fallback price was used.
+
 ## Security
 
 - **Accounts**: passwords are hashed with Argon2id. Sign-in is rate-limited per IP and per account, and errors don't reveal whether a username exists. Two-factor sign-in uses any authenticator app, with single-use recovery codes. TOTP secrets are encrypted at rest with a per-instance key in `/data/secret.key`.
@@ -228,7 +236,7 @@ If you change `deploy/azure/*.bicep`, rebuild the JSON the Deploy buttons use wi
 | What | Source |
 | --- | --- |
 | Cards, sets, images | [TCGdex](https://tcgdex.dev) (free, open source, no key) |
-| Prices | TCGplayer (US) and Cardmarket (EU), both supplied by TCGdex |
+| Prices | TCGplayer (US) and Cardmarket (EU), both supplied by TCGdex; [PriceCharting](https://www.pricecharting.com) (optional) as a fallback when TCGdex has none, and for sealed/graded prices |
 | Currency conversion | [Frankfurter](https://frankfurter.dev) (ECB reference rates) |
 
 The server fetches all of this, caches it and shares it between users, so TCGdex sees one request per card rather than one per person. Card images are cached on disk too, up to `IMAGE_CACHE_MB`. About 1,600 older cards, mostly promos, have no TCGdex scan; those fall back to the old pokemontcg.io image CDN, then to a styled placeholder.

@@ -55,7 +55,7 @@ export function publicBackend(token: string): Backend {
     deleteList: refuse,
     addToList: refuse,
     removeFromList: refuse,
-    status: async () => ({ version: '', lastPriceSync: null, fxAt: null }),
+    status: async () => ({ version: '', lastPriceSync: null, fxAt: null, catalogDegraded: false }),
     refreshPrices: refuse,
     // Card price history needs a signed-in session the share token doesn't have; render the card
     // page's chart as "no history" rather than surfacing an error to a visitor.

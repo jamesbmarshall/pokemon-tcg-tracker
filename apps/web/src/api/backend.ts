@@ -84,9 +84,30 @@ export interface SystemStatus {
   lastPriceSync: string | null;
   /** Epoch ms of the last FX rate fetch, or null if rates have never been loaded. */
   fxAt: number | null;
+  /** Non-sensitive: true when the TCGdex breaker isn't closed, so the UI can show a banner. */
+  catalogDegraded: boolean;
   /** Only reported to owners and admins; members get the base status without update details. */
   updateAvailable?: boolean;
   latest?: string | null;
+}
+
+export type BreakerState = 'closed' | 'open' | 'half-open';
+
+/** Health for one upstream provider, as shown in the admin "Providers" panel. */
+export interface ProviderHealth {
+  name: string;
+  state: BreakerState;
+  consecutiveFailures: number;
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
+  lastError: string | null;
+  staleServedCount: number;
+  openedAt: number | null;
+}
+
+export interface ProviderHealthReport {
+  tcgdex: ProviderHealth;
+  pricecharting: ProviderHealth & { configured: boolean };
 }
 
 /**
