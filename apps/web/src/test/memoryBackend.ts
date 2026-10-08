@@ -1,6 +1,6 @@
 import { getCardsByIds, setIdFromCardId, toSnapshot } from '../api/client';
 import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PhotoRef, SystemStatus } from '../api/backend';
-import type { CardNote, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, SetStat, ValuePoint, WishlistEntry } from '../api/types';
+import type { CardNote, CardPriceHistory, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, MoverCard, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX, valuePoint } from '@poketracker/shared/value';
 import { currentRates } from '../utils/fx';
 
@@ -36,6 +36,10 @@ export class MemoryBackend implements Backend {
   notes = new Map<string, CardNote>();
   lists: CustomList[] = [];
   lastPriceSync: string | null = null;
+  /** Fake per-card price history, keyed by cardId. Tests seed this directly; defaults to no history. */
+  priceHistories = new Map<string, CardPriceHistory>();
+  /** When set, movers() returns this canned response instead of computing one from state. */
+  moversResponse: { gainers: MoverCard[]; losers: MoverCard[] } | null = null;
   /** The catalogue the "server" hydrates from; swap in a mock to control prices. */
   catalog: (ids: string[]) => Promise<PokemonCard[]> = getCardsByIds;
   /** Set to make every call reject, e.g. to test optimistic rollback */
@@ -295,6 +299,39 @@ export class MemoryBackend implements Backend {
       const tracked = new Set([...[...this.collection.values()].map((e) => e.cardId), ...this.wishlist.keys(), ...[...this.graded.values()].map((g) => g.cardId), ...this.lists.flatMap((l) => l.cards)]);
       await this.fetchCards([...tracked]);
       this.lastPriceSync = new Date().toISOString();
+    });
+  }
+
+  priceHistory(cardId: string) {
+    return this.call('priceHistory', (): CardPriceHistory => this.priceHistories.get(cardId) ?? { cardId, series: [] });
+  }
+
+  /**
+   * Mirrors the server's biggestMovers(): a card needs both a current price and a price-history
+   * row at or before the cutoff to count. Tests can instead set moversResponse for a canned result.
+   */
+  movers(cid: string, days: 7 | 30) {
+    return this.callIn(cid, 'movers', () => {
+      if (this.moversResponse) return { days, gainers: this.moversResponse.gainers, losers: this.moversResponse.losers };
+      const byCard = new Map<string, string>();
+      for (const e of this.collection.values()) if (!byCard.has(e.cardId)) byCard.set(e.cardId, e.variant);
+      for (const g of this.graded.values()) if (!this.deletedGraded.has(g.id) && !byCard.has(g.cardId)) byCard.set(g.cardId, g.variant);
+      const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+      const movers: MoverCard[] = [];
+      for (const [cardId, variant] of byCard) {
+        const card = this.cards.get(cardId);
+        const nowPrice = card?.prices[variant];
+        if (!nowPrice) continue;
+        const series = this.priceHistories.get(cardId)?.series.find((s) => s.variant === variant && s.source === 'tcgplayer');
+        const row = [...(series?.points ?? [])].filter((p) => p.date <= cutoff).sort((a, b) => b.date.localeCompare(a.date))[0];
+        if (!row || row.price <= 0) continue;
+        const changeUsd = nowPrice - row.price;
+        if (Math.abs(changeUsd) < 0.01) continue;
+        movers.push({ cardId, name: card!.name, image: card!.image, setName: card!.setName, variant, valueUsd: nowPrice, previousValueUsd: row.price, changeUsd, changePct: (changeUsd / row.price) * 100 });
+      }
+      const gainers = movers.filter((m) => m.changeUsd > 0).sort((a, b) => b.changeUsd - a.changeUsd).slice(0, 5);
+      const losers = movers.filter((m) => m.changeUsd < 0).sort((a, b) => a.changeUsd - b.changeUsd).slice(0, 5);
+      return { days, gainers, losers };
     });
   }
 }
