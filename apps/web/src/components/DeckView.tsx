@@ -340,7 +340,7 @@ export default function DeckView({ list }: { list: CustomList }) {
         </div>
       ) : (
         <EmptyState icon={<LayoutList size={22} />} title="This deck is empty">
-          {readOnly ? 'No cards yet.' : 'Use Import deck to paste a decklist and get started.'}
+          {readOnly ? 'No cards yet.' : "Use Import deck to paste a decklist, or add cards one at a time from any card's page."}
         </EmptyState>
       )}
 
