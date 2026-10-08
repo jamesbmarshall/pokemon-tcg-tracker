@@ -255,6 +255,15 @@ describe('SettingsPage', () => {
     expect((await downloads[1].blob.text()).split('\n')[1]).toMatch(/,"Card fair, Birmingham, ""£3"""$/);
   });
 
+  it('neutralises a formula-injection payload in a card note before writing the CSV export', async () => {
+    seedCollection({ entries: [makeEntry()], cards: [makeSnapshot()], notes: { 'sv03-001': '=HYPERLINK("http://evil.example","click")' } });
+    const downloads = captureDownloads();
+    renderWithProviders(<SettingsPage />);
+    await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const lastCell = (await downloads[0].blob.text()).split('\n')[1];
+    expect(lastCell.endsWith('"\'=HYPERLINK(""http://evil.example"",""click"")"')).toBe(true);
+  });
+
   it('allows a JSON export of just notes', () => {
     seedCollection({ notes: { 'sv03-001': 'Want this one' } });
     renderWithProviders(<SettingsPage />);
