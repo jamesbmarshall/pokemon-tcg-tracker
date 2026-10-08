@@ -24,6 +24,7 @@ Once it's deployed, everything happens in the browser. Prices, set lists and exc
 - **Sharing**: share a whole collection, one set, your wishlist, your slabs or a list. Pick who sees it (anyone with the link, specific people, or everyone on your instance), hide what you paid, values or notes, and set an expiry. Links can be revoked at any time.
 - **Your data stays yours**: export JSON or CSV at any time, and the server takes a database backup every day.
 - **Installable**: add PokéTracker to your home screen or app list as a PWA, with the app shell and card images cached for offline use.
+- **Scan a card**: point your camera at a card's bottom strip and on-device OCR reads the collector number to look it up — no photo ever leaves your device. Needs HTTPS, since browsers only allow camera access on a secure connection (`localhost` is exempt for local testing). A manual set code/number entry always works too.
 
 ## Deploy
 
