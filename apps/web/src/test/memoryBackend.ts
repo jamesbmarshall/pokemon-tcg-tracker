@@ -1,5 +1,5 @@
 import { getCardsByIds, setIdFromCardId, toSnapshot } from '../api/client';
-import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PcProduct, PhotoRef, ProviderHealthReport, SystemStatus } from '../api/backend';
+import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PcProduct, PhotoRef, SystemStatus } from '../api/backend';
 import type { CardNote, CardPriceHistory, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, MoverCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX, valuePoint } from '@poketracker/shared/value';
 import { currentRates } from '../utils/fx';
@@ -48,6 +48,8 @@ export class MemoryBackend implements Backend {
   priceHistories = new Map<string, CardPriceHistory>();
   /** When set, movers() returns this canned response instead of computing one from state. */
   moversResponse: { gainers: MoverCard[]; losers: MoverCard[] } | null = null;
+  /** Drives status().catalogDegraded, for testing the stale-catalogue banner. */
+  catalogDegraded = false;
   /** The catalogue the "server" hydrates from; swap in a mock to control prices. */
   catalog: (ids: string[]) => Promise<PokemonCard[]> = getCardsByIds;
   /** Controls pcConfigured()/pcAdminStatus(); tests flip this to show/hide PriceCharting UI. */
@@ -408,14 +410,7 @@ export class MemoryBackend implements Backend {
   }
 
   status() {
-    return this.call('status', (): SystemStatus => ({ version: 'test', lastPriceSync: this.lastPriceSync, fxAt: null, catalogDegraded: false }));
-  }
-
-  providerHealth() {
-    return this.call('providerHealth', (): ProviderHealthReport => ({
-      tcgdex: { name: 'tcgdex', state: 'closed', consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null },
-      pricecharting: { name: 'pricecharting', state: 'closed', consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null, configured: false },
-    }));
+    return this.call('status', (): SystemStatus => ({ version: 'test', lastPriceSync: this.lastPriceSync, fxAt: null, catalogDegraded: this.catalogDegraded }));
   }
 
   refreshPrices() {

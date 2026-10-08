@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
 import { Crown, Database, Download, Link2, Lock, Play, Plug, Plus, RefreshCw, Trash2, UserX } from 'lucide-react';
 import { api } from '../api/http';
-import { getBackend, type ProviderHealth } from '../api/backend';
+import type { ProviderHealth, ProviderHealthReport } from '../api/backend';
 import { isAdmin, useAuth, type Role, type User } from '../store/authStore';
 import { toast } from '../store/toastStore';
 import { PageHeader, Segmented } from '../components/ui';
@@ -433,7 +433,7 @@ function JobsTab({ me }: { me: User }) {
 
 /** Breaker state and recent failures for each upstream provider (catalogue + price fallback). */
 function ProviderHealthPanel() {
-  const health = useQuery({ queryKey: ['admin', 'providers'], queryFn: () => getBackend().providerHealth(), refetchInterval: 30000 });
+  const health = useQuery({ queryKey: ['admin', 'providers'], queryFn: () => api<ProviderHealthReport>('/api/admin/providers'), refetchInterval: 30000 });
   if (!health.data) return null;
   const rows: { label: string; h: ProviderHealth & { configured?: boolean } }[] = [
     { label: 'TCGdex (catalogue & prices)', h: health.data.tcgdex },
