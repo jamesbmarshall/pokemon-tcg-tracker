@@ -260,7 +260,7 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
   const setupLimiter = new Limiter(10, 10 * 60_000);
   const inviteLimiter = new Limiter(30, 10 * 60_000);
 
-  app.get('/api/setup', async () => ({ needed: userCount(ctx) === 0 }));
+  app.get('/api/setup', async () => ({ needed: userCount(ctx) === 0, demoMode: ctx.config.demoMode }));
 
   /**
    * First-run: creates the owner account. Only works while there are no users and requires the

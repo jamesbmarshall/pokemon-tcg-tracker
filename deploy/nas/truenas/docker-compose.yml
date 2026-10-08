@@ -1,0 +1,32 @@
+# PokéTracker for TrueNAS SCALE 24.10 ("Dragonfish") and newer, where Apps runs plain Docker
+# (not the older k3s-based custom app system) and accepts a Docker Compose file directly.
+#
+#   Apps → Discover Apps → Custom App → ⋮ → Install via YAML → paste this file → Install
+#
+# See README.md in this folder for the exact UI steps, including where to point the host path.
+#
+# Caveat: TrueNAS's YAML editor only checks this for valid syntax, not for which Compose keys it
+# actually honours. Keep this file to the plain, widely-supported subset (image, restart,
+# environment, ports, volumes) — it does not use anything TrueNAS is known to reject (build,
+# profiles, networks, depends_on).
+
+services:
+  poketracker:
+    image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Optional: pick the first-run setup token yourself instead of reading it from the logs.
+      SETUP_TOKEN: ""
+      # Optional: the address people use, e.g. https://cards.example.com, if this sits behind a
+      # reverse proxy. Leave blank to use the address requests arrive on.
+      PUBLIC_URL: ""
+      TZ: "UTC"
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      # Replace with a path under one of your pools, e.g. /mnt/tank/apps/poketracker. Create the
+      # directory (and, if you want it, a dedicated dataset) before installing — the custom app
+      # wizard does not create storage for you mid-install.
+      - /mnt/tank/apps/poketracker:/data

@@ -14,6 +14,7 @@
     "dev": "npm run dev -w @poketracker/server & npm run dev -w @poketracker/web",
     "build": "npm run build -w @poketracker/web && npm run build -w @poketracker/server",
     "bundle": "node scripts/make-bundle.mjs",
+    "validate:deploy": "node scripts/validate-deploy-templates.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b apps/web && tsc -p apps/server --noEmit && tsc -p packages/shared --noEmit",
     "test": "npm test -w @poketracker/shared -w @poketracker/server -w @poketracker/launcher -w @poketracker/web"
@@ -25,6 +26,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "js-yaml": "^4.3.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
     "vitest": "^4.1.11"

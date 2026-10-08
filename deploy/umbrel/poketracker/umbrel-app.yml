@@ -1,0 +1,37 @@
+manifestVersion: 1
+id: poketracker
+category: files
+name: PokéTracker
+version: "2.0.0"
+tagline: Self-hosted Pokémon TCG collection tracker
+description: >-
+  PokéTracker is a fast, good-looking Pokémon TCG collection tracker you host yourself. Tick off
+  cards as you open packs, chase master sets down to the last reverse holo, flip through a
+  virtual binder and watch what it's all worth. Prices, set lists and exchange rates refresh on
+  their own in the background.
+
+
+  Invite the rest of the household, give everyone their own collection plus a shared one, and
+  share collections, sets, wishlists or slabs with anyone via a read-only link. Updates install
+  from Settings → System with one click, and the server takes a nightly database backup.
+
+
+  The first visit asks for a setup token before it creates the owner account, so a stranger who
+  finds the app before you do can't claim it. Open the app's logs from the Umbrel app store page
+  to find the randomly generated token.
+developer: James Marshall
+website: https://github.com/jamesbmarshall/pokemon-tcg-tracker
+dependencies: []
+repo: https://github.com/jamesbmarshall/pokemon-tcg-tracker
+support: https://github.com/jamesbmarshall/pokemon-tcg-tracker/issues
+port: 3000
+gallery:
+  - 1.jpg
+  - 2.jpg
+  - 3.jpg
+path: ""
+releaseNotes: >-
+  See https://github.com/jamesbmarshall/pokemon-tcg-tracker/releases for what's new in this
+  version.
+submitter: James Marshall
+submission: ""

@@ -33,6 +33,8 @@ interface AuthState {
   status: AuthStatus;
   user: User | null;
   error: string | null;
+  /** This server is running DEMO_MODE: mutations are rejected and a public "try it" sign-in exists. */
+  demoMode: boolean;
   init: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   verifyMfa: (code: string) => Promise<void>;
@@ -43,6 +45,8 @@ interface AuthState {
   setUser: (user: User) => void;
   logout: () => Promise<void>;
   signedOut: () => void;
+  /** Signs in as the shared read-only demo account. Only meaningful (and available) when demoMode is on. */
+  tryDemo: () => Promise<void>;
 }
 
 // Only display preferences are synced. Anything device-specific should stay out of this list.
@@ -98,12 +102,14 @@ export const useAuth = create<AuthState>((set, get) => {
     status: 'loading',
     user: null,
     error: null,
+    demoMode: false,
 
     init: async () => {
       set({ status: 'loading', error: null });
       try {
         // Checked before /me: a fresh install has no users, so the only useful screen is first-run setup.
-        const { needed } = await api<{ needed: boolean }>('/api/setup');
+        const { needed, demoMode } = await api<{ needed: boolean; demoMode?: boolean }>('/api/setup');
+        set({ demoMode: !!demoMode });
         if (needed) return set({ status: 'setup', user: null });
         await fetchMe();
       } catch (err) {
@@ -155,6 +161,11 @@ export const useAuth = create<AuthState>((set, get) => {
       stopPrefSync?.();
       useCollectionStore.getState().reset();
       set({ status: 'signed-out', user: null });
+    },
+
+    tryDemo: async () => {
+      await api('/api/demo/login', { method: 'POST' });
+      await fetchMe();
     },
   };
 });

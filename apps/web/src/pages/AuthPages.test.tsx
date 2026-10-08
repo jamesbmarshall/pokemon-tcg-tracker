@@ -10,7 +10,7 @@ const ash: User = { id: 'u1', username: 'ash', displayName: 'Ash', role: 'owner'
 const brock: User = { id: 'u3', username: 'brock', displayName: 'Brock', role: 'member', totpEnabled: false };
 
 beforeEach(() => {
-  useAuth.setState({ status: 'signed-out', user: null, error: null });
+  useAuth.setState({ status: 'signed-out', user: null, error: null, demoMode: false });
 });
 
 async function fillAccount(user: ReturnType<typeof userEvent.setup>, opts: { username?: string; password?: string; confirm?: string } = {}) {
@@ -75,6 +75,21 @@ describe('LoginPage', () => {
     renderWithProviders(<LoginPage />);
     await user.click(screen.getByRole('button', { name: /different account/i }));
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  it('shows no demo button on an ordinary server', () => {
+    renderWithProviders(<LoginPage />);
+    expect(screen.queryByRole('button', { name: /try the demo/i })).not.toBeInTheDocument();
+  });
+
+  it('signs in as the demo user when offered', async () => {
+    const user = userEvent.setup();
+    useAuth.setState({ demoMode: true });
+    const m = mockApi({ 'POST /api/demo/login': { user: brock }, 'GET /api/auth/me': { user: brock } });
+    renderWithProviders(<LoginPage />);
+    await user.click(screen.getByRole('button', { name: /try the demo/i }));
+    await waitFor(() => expect(useAuth.getState().status).toBe('ready'));
+    expect(m.called('POST /api/demo/login')).toHaveLength(1);
   });
 });
 

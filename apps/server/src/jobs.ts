@@ -16,6 +16,7 @@ import { refreshSealedPrices } from './sealed.ts';
 import { refreshGradedPrices } from './providers/pricecharting.ts';
 import { redactSecrets } from './security.ts';
 import { applyUpdate, autoUpdateBlockedFor, autoUpdateEnabled, checkForUpdate, pruneVersions, updateAvailable, updateBlocker } from './updater.ts';
+import { resetDemo } from './demo.ts';
 
 interface JobDef {
   name: string;
@@ -25,6 +26,10 @@ interface JobDef {
   /** Run at boot if the last success is older than this. */
   staleMs: number;
   run: (ctx: Ctx) => Promise<unknown>;
+  /** Only scheduled when config.demoMode is on. */
+  demoOnly?: boolean;
+  /** Never scheduled in demo mode (e.g. checking for and auto-applying updates). */
+  skipInDemo?: boolean;
 }
 
 const H = 3600_000;
@@ -149,6 +154,7 @@ export const JOBS: JobDef[] = [
     label: 'Update check',
     schedule: '10 2 * * *',
     staleMs: 24 * H,
+    skipInDemo: true,
     run: async (ctx) => {
       const s = await checkForUpdate(ctx);
       if (s.error) throw new Error(s.error);
@@ -160,6 +166,17 @@ export const JOBS: JobDef[] = [
         return { available, latest: s.latest?.version, applied: true };
       }
       return { available, latest: s.latest?.version };
+    },
+  },
+  {
+    name: 'demo-reset',
+    label: 'Demo reset',
+    schedule: '0 4 * * *',
+    staleMs: 24 * H,
+    demoOnly: true,
+    run: async (ctx) => {
+      await resetDemo(ctx);
+      return { reset: true };
     },
   },
 ];
@@ -290,9 +307,12 @@ export function jobStatus(ctx: Ctx) {
 /** Starts the cron timers and the boot catch-up. Returns a function that stops both. */
 export function startScheduler(ctx: Ctx) {
   mkdirSync(backupDir(ctx), { recursive: true });
+  // Demo-only jobs (the nightly reset) only make sense on a demo instance; update-check is the
+  // reverse, since a public demo must never offer itself an update to auto-apply.
+  const active = JOBS.filter((j) => (j.demoOnly ? ctx.config.demoMode : true) && !(j.skipInDemo && ctx.config.demoMode));
   // protect: skip a tick if the previous one is still going. catch: a throwing job must not
   // kill its timer. runJob already records failures, so the error is dropped here.
-  const crons = JOBS.map((j) => new Cron(j.schedule, { protect: true, catch: true }, async () => {
+  const crons = active.map((j) => new Cron(j.schedule, { protect: true, catch: true }, async () => {
       await runJob(ctx, j.name).catch(() => undefined);
     }),
   );
@@ -303,7 +323,8 @@ export function startScheduler(ctx: Ctx) {
   const timer = setTimeout(async () => {
     const rows = new Map(ctx.db.all<JobRow>("SELECT * FROM jobs WHERE last_status = 'ok'").map((r) => [r.name, r]));
     for (const j of ['fx', 'sets', 'prices', 'update-check', 'images', 'backup', 'cleanup']) {
-      const def = JOBS.find((d) => d.name === j)!;
+      const def = active.find((d) => d.name === j);
+      if (!def) continue; // excluded for this mode (e.g. update-check in demo mode)
       const last = rows.get(j)?.last_finished_at;
       if (!last || Date.now() - Date.parse(last) > def.staleMs) await runJob(ctx, j).catch(() => undefined);
     }

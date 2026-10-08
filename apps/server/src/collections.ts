@@ -152,7 +152,7 @@ export function cleanGraded(raw: unknown): GradedCopy | undefined {
   };
 }
 
-function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
+export function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
   ctx.db.run(
     `INSERT OR REPLACE INTO entries (collection_id, id, card_id, set_id, variant, quantity, condition, notes, paid, value_override, added_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -172,7 +172,7 @@ function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
 }
 
 // Writing a graded copy always clears deleted_at, which is how "Undo" after a soft delete restores it.
-function putGraded(ctx: Ctx, collectionId: string, g: GradedCopy) {
+export function putGraded(ctx: Ctx, collectionId: string, g: GradedCopy) {
   ctx.db.run('INSERT OR REPLACE INTO graded (collection_id, id, card_id, data, deleted_at) VALUES (?, ?, ?, ?, NULL)', collectionId, g.id, g.cardId, JSON.stringify(g));
 }
 
