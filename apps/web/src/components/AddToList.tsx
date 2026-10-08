@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ListPlus, Plus } from 'lucide-react';
 import type { CardSnapshot, PokemonCard } from '../api/types';
 import { useCollectionStore } from '../store/collectionStore';
@@ -9,7 +9,10 @@ import { toast } from '../store/toastStore';
  * icon-only trigger for card tiles in a grid.
  */
 export default function AddToList({ card, compact = false }: { card: PokemonCard | CardSnapshot; compact?: boolean }) {
-  const lists = useCollectionStore((s) => s.lists);
+  const allLists = useCollectionStore((s) => s.lists);
+  // Decks need per-card quantities and legality, which doesn't fit this toggle UI; deck card
+  // management happens on the deck page itself via its own "add card"/import flow instead.
+  const lists = useMemo(() => allLists.filter((l) => l.kind !== 'deck'), [allLists]);
   const toggleInList = useCollectionStore((s) => s.toggleInList);
   const createList = useCollectionStore((s) => s.createList);
   const [open, setOpen] = useState(false);

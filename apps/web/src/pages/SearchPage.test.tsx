@@ -252,7 +252,7 @@ describe('SearchPage', () => {
     });
 
     it('adds a result to an existing list or a new one', async () => {
-      const fire = { id: 'l1', name: 'Fire deck', createdAt: '2025-01-01', updatedAt: '2025-01-01', cards: [] as string[] };
+      const fire = { id: 'l1', name: 'Fire deck', createdAt: '2025-01-01', updatedAt: '2025-01-01', cards: [] as string[], kind: 'list' as const, cardQtys: {} as Record<string, number> };
       useCollectionStore.setState({ lists: [fire] });
       memory.lists = [{ ...fire, cards: [] }];
       await showResults();
