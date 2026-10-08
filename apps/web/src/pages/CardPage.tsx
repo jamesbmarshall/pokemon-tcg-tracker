@@ -18,7 +18,6 @@ import CardNotes from '../components/CardNotes';
 import CardImage from '../components/CardImage';
 import { SetSymbol } from '../components/SetArt';
 import { Energy, ErrorState, Skeleton } from '../components/ui';
-import { typeColor } from '../utils/energy';
 import { CONDITIONS, isFoil, variantLabel } from '../utils/variants';
 import { formatDate } from '../utils/format';
 import type { Condition, PokemonCard } from '../api/types';
@@ -38,8 +37,8 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const paidEach = n ? paidUsd(entry?.paid, rates) : undefined;
 
   return (
-    <div className={`flex flex-wrap items-center gap-3 rounded-xl px-3 py-3 transition-colors ${n ? 'bg-volt/[0.06]' : ''}`}>
-      <span className={`h-8 w-1 rounded-full ${n ? (isFoil(variant) ? 'holo-bar' : 'bg-volt') : 'bg-surface-3'}`} />
+    <div className="flex flex-wrap items-center gap-3 py-3">
+      <span className={`h-8 w-[3px] rounded-full ${n ? (isFoil(variant) ? 'holo-bar' : 'bg-accent') : 'bg-surface-3'}`} />
       <div className="min-w-48 flex-1">
         <p className="text-sm font-semibold">{variantLabel(variant)}</p>
         <p className="font-mono text-[11px] text-muted tabular">
@@ -82,7 +81,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
         </select>
       )}
       {n > 0 ? (
-        <div className="flex items-center rounded-xl border border-line bg-surface-2">
+        <div className="flex items-center rounded-lg border border-line-strong">
           <button
             onClick={async () => {
               await adjust(snap, variant, -1);
@@ -118,13 +117,13 @@ function OtherPrintings({ card }: { card: PokemonCard }) {
   if (!others.length) return null;
   return (
     <section>
-      <h2 className="mb-4 font-display text-xl font-semibold">
+      <h2 className="mb-4 font-display text-2xl font-medium">
         Other {card.name} printings <span className="font-mono text-sm text-faint">{all.length}</span>
       </h2>
       <div className="scroll-x -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
         {others.map((c) => (
           <Link key={c.id} to={`/card/${c.id}`} className="group w-[112px] shrink-0 snap-start">
-            <div className={`aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] ring-1 transition-transform group-hover:-translate-y-1 ${byCard.has(c.id) || slabbed.has(c.id) ? 'ring-volt/60' : 'ring-line'}`}>
+            <div className={`aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] shadow-card ring-1 transition group-hover:-translate-y-1 group-hover:shadow-card-lift ${byCard.has(c.id) || slabbed.has(c.id) ? 'ring-accent/60' : 'ring-line'}`}>
               <CardImage id={c.id} src={c.image} name={c.name} number={c.number} setName={c.setName} />
             </div>
             <p className="mt-1.5 truncate text-[11px] text-muted">{c.setName}</p>
@@ -219,7 +218,6 @@ export default function CardPage() {
     slabs.reduce((s, g) => s + (g.valueUsd ?? priceOf(snap, g.variant) ?? 0), 0);
   const cardEntries = Array.from(allEntries.values()).filter((e) => e.cardId === card.id);
   const cost = rates ? costBasis(cardEntries, new Map([[card.id, snap]]), slabs, rates) : undefined;
-  const accent = typeColor(card.types?.[0]);
   const foilish = /holo|rare|ex|illustration|secret|ultra|gx|vmax|vstar/i.test(card.rarity ?? '') || variants.some(isFoil);
 
   return (
@@ -229,9 +227,9 @@ export default function CardPage() {
           to={`/sets/${card.set.id}`}
           state={{ fromCard: card.id }}
           title="Back to set (Esc)"
-          className="group inline-flex min-w-0 items-center gap-2.5 rounded-full border border-line bg-surface/60 py-1.5 pl-2 pr-4 text-sm transition hover:border-volt/50 hover:bg-surface focus-visible:outline-offset-2"
+          className="group inline-flex min-w-0 items-center gap-2.5 rounded-md py-1.5 pr-3 text-sm transition hover:text-fg focus-visible:outline-offset-2"
         >
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink/60 text-muted transition group-hover:-translate-x-0.5 group-hover:text-volt">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-muted transition group-hover:-translate-x-0.5 group-hover:text-accent">
             <ChevronLeft size={16} />
           </span>
           <SetSymbol src={card.set.images.symbol} className="h-5 w-5 shrink-0 object-contain" />
@@ -257,7 +255,6 @@ export default function CardPage() {
       </div>
 
       <div className="relative grid gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
-        <div className="pointer-events-none absolute -left-20 -top-20 h-[420px] w-[420px] rounded-full opacity-25 blur-[100px]" style={{ background: accent }} />
         <div className="relative mx-auto w-full max-w-[400px] md:sticky md:top-10 md:self-start">
           <div key={card.id} className={slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : undefined}>
             <HoloCard id={card.id} src={card.images.large} name={card.name} number={card.number} setName={card.set.name} types={card.types} foil={foilish} />
@@ -267,41 +264,48 @@ export default function CardPage() {
         </div>
 
         <div className="relative min-w-0 space-y-8">
-          <div>
-            <p className="eyebrow">
-              {card.supertype}
-              {card.subtypes?.length ? ` · ${card.subtypes.join(' · ')}` : ''}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">{card.name}</h1>
+          <header>
+            {/* Slab-style label: the facts a grader would print above the card */}
+            <div className="relative grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1.5 overflow-hidden rounded-md border border-line-strong bg-surface py-3 pl-5 pr-4 font-label text-[10.5px] font-medium text-muted">
+              <span className="absolute inset-y-0 left-0 w-1 bg-accent" aria-hidden />
+              <Link to={`/sets/${card.set.id}`} state={{ fromCard: card.id }} className="truncate text-fg hover:text-accent">
+                #{card.number}/{card.set.printedTotal} · {card.set.name}
+              </Link>
+              <span className="text-right tabular">{card.set.releaseDate.slice(0, 4)}</span>
+              <p className="truncate">
+                {card.supertype}
+                {card.subtypes?.length ? ` · ${card.subtypes.join(' · ')}` : ''}
+              </p>
+              <span className="flex items-center justify-end gap-2">
+                {card.rarity && <span>{card.rarity}</span>}
+                {card.regulationMark && <span className="grid h-4 min-w-4 place-items-center rounded-sm border border-line-strong px-0.5 font-mono text-[9.5px] text-fg">{card.regulationMark}</span>}
+              </span>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <h1 className="font-display text-[2.6rem] font-medium leading-tight tracking-tight sm:text-[3.2rem]">{card.name}</h1>
               {card.hp && (
-                <span className="flex items-center gap-2 font-display text-2xl font-bold">
-                  <span className="text-xs font-semibold text-muted">HP</span>
+                <span className="flex items-baseline gap-1.5 font-display text-2xl font-medium tabular">
+                  <span className="font-label text-[10px] font-semibold text-muted">HP</span>
                   {card.hp}
                 </span>
               )}
-              {card.types?.map((t) => <Energy key={t} type={t} size={26} />)}
+              {card.types?.map((t) => <Energy key={t} type={t} size={24} />)}
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted">
-              <Link to={`/sets/${card.set.id}`} state={{ fromCard: card.id }} className="font-mono underline decoration-line underline-offset-4 hover:text-fg hover:decoration-volt">
-                #{card.number}/{card.set.printedTotal} · {card.set.name}
-              </Link>
-              {card.rarity && <span className="rounded-full border border-line px-2.5 py-0.5 text-xs">{card.rarity}</span>}
-              {card.regulationMark && <span className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[10px]">{card.regulationMark}</span>}
-              {card.artist && (
-                <Link to={`/search?artist=${encodeURIComponent(card.artist)}`} className="text-xs hover:text-volt">
+            {card.artist && (
+              <p className="mt-1 text-sm text-muted">
+                <Link to={`/search?artist=${encodeURIComponent(card.artist)}`} className="italic hover:text-accent">
                   Illus. {card.artist}
                 </Link>
-              )}
-            </div>
-          </div>
+              </p>
+            )}
+          </header>
 
           {/* Collection */}
-          <section className="panel overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <section className="border-t border-line-strong">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-4">
               <div>
                 <p className="eyebrow">{collectionLabel}</p>
-                <p className="mt-1 font-display text-xl font-semibold">
+                <p className="mt-1 font-display text-2xl font-medium">
                   {total ? (
                     <>
                       {total} {total === 1 ? 'copy' : 'copies'} <span className="text-muted">· {money(ownedValue)}</span>
@@ -331,7 +335,7 @@ export default function CardPage() {
                     const on = await toggleWishlist(card);
                     toast(on ? 'Added to wishlist' : 'Removed from wishlist', { tone: on ? 'success' : 'default' });
                   }}
-                  className={`btn !h-9 !text-xs ${wished ? 'border border-[#ff6fae]/40 bg-[#ff6fae]/15 text-[#ff8fc0]' : 'btn-ghost'}`}
+                  className={`btn !h-9 !text-xs ${wished ? 'border border-wish/40 bg-wish/10 text-wish' : 'btn-ghost'}`}
                   aria-pressed={wished}
                 >
                   <Heart size={14} fill={wished ? 'currentColor' : 'none'} /> {wished ? 'Wishlisted' : 'Wishlist'}
@@ -352,7 +356,7 @@ export default function CardPage() {
               </div>
               )}
             </div>
-            <div className="p-2">
+            <div className="divide-y divide-line">
               {variants.map((v) => (
                 <VariantRow key={v} card={card} variant={v} />
               ))}
@@ -367,32 +371,32 @@ export default function CardPage() {
           {(card.tcgplayer || card.cardmarket) && (
             <section>
               <div className="mb-3 flex items-end justify-between gap-3">
-                <h2 className="font-display text-lg font-semibold">Market</h2>
+                <h2 className="font-display text-2xl font-medium">Market</h2>
                 <div className="flex gap-3">
                   {card.tcgplayer?.url && (
-                    <a href={card.tcgplayer.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-volt">
+                    <a href={card.tcgplayer.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">
                       TCGplayer <ExternalLink size={12} />
                     </a>
                   )}
                   {card.cardmarket && (
-                    <a href={card.cardmarket.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-volt">
+                    <a href={card.cardmarket.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">
                       Cardmarket <ExternalLink size={12} />
                     </a>
                   )}
                 </div>
               </div>
-              <div className="overflow-x-auto rounded-2xl border border-line">
+              <div className="overflow-x-auto border-y border-line-strong">
                 <table className="w-full text-sm">
-                  <thead className="bg-surface-2 text-left">
+                  <thead className="border-b border-line text-left">
                     <tr className="eyebrow">
-                      <th className="px-4 py-2.5 font-normal">Variant</th>
+                      <th className="py-2.5 pr-4 font-normal">Variant</th>
                       <th className="px-4 py-2.5 text-right font-normal">
                         TCGplayer <span className="normal-case tracking-normal text-faint">(US)</span>
                       </th>
                       <th className="px-4 py-2.5 text-right font-normal">
                         Cardmarket <span className="normal-case tracking-normal text-faint">(EU)</span>
                       </th>
-                      <th className="px-4 py-2.5 text-right font-normal">From</th>
+                      <th className="py-2.5 pl-4 text-right font-normal">From</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line font-mono tabular">
@@ -402,10 +406,10 @@ export default function CardPage() {
                       const lows = [t?.low, fromEur(c?.low)].filter((x): x is number => !!x);
                       return (
                         <tr key={v}>
-                          <td className="px-4 py-2.5 font-sans">{variantLabel(v)}</td>
+                          <td className="py-2.5 pr-4 font-sans">{variantLabel(v)}</td>
                           <td className="px-4 py-2.5 text-right font-semibold">{money(t?.market ?? t?.mid)}</td>
                           <td className="px-4 py-2.5 text-right font-semibold">{money(fromEur(c?.market ?? c?.mid))}</td>
-                          <td className="px-4 py-2.5 text-right text-muted">{money(lows.length ? Math.min(...lows) : undefined)}</td>
+                          <td className="py-2.5 pl-4 text-right text-muted">{money(lows.length ? Math.min(...lows) : undefined)}</td>
                         </tr>
                       );
                     })}
@@ -421,10 +425,11 @@ export default function CardPage() {
 
           {/* Gameplay */}
           {(card.abilities?.length || card.attacks?.length || card.rules?.length) && (
-            <section className="space-y-3">
-              <h2 className="font-display text-lg font-semibold">Card text</h2>
+            <section>
+              <h2 className="mb-2 font-display text-2xl font-medium">Card text</h2>
+              <div className="divide-y divide-line border-y border-line">
               {card.abilities?.map((a) => (
-                <div key={a.name} className="panel p-4">
+                <div key={a.name} className="py-4">
                   <p className="text-sm">
                     <span className="mr-2 rounded bg-[#e0483b] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">{a.type}</span>
                     <span className="font-semibold">{a.name}</span>
@@ -433,7 +438,7 @@ export default function CardPage() {
                 </div>
               ))}
               {card.attacks?.map((a) => (
-                <div key={a.name} className="panel p-4">
+                <div key={a.name} className="py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex gap-1">
                       {a.cost.map((c, i) => (
@@ -441,26 +446,27 @@ export default function CardPage() {
                       ))}
                     </div>
                     <p className="flex-1 font-semibold">{a.name}</p>
-                    {a.damage && <p className="font-display text-xl font-bold">{a.damage}</p>}
+                    {a.damage && <p className="font-display text-2xl font-medium tabular">{a.damage}</p>}
                   </div>
                   {a.text && <p className="mt-2 text-sm leading-relaxed text-muted">{a.text}</p>}
                 </div>
               ))}
               {card.rules?.map((r, i) => (
-                <p key={i} className="rounded-xl border border-line px-4 py-3 text-xs leading-relaxed text-muted">
+                <p key={i} className="py-3 text-xs leading-relaxed text-muted">
                   {r}
                 </p>
               ))}
+              </div>
             </section>
           )}
 
           {(card.weaknesses || card.resistances || card.retreatCost) && (
-            <section className="grid grid-cols-3 gap-3">
+            <section className="grid grid-cols-3 divide-x divide-line border-y border-line">
               {[
                 { label: 'Weakness', items: card.weaknesses },
                 { label: 'Resistance', items: card.resistances },
               ].map(({ label, items }) => (
-                <div key={label} className="panel p-3">
+                <div key={label} className="px-4 py-3 first:pl-0">
                   <p className="eyebrow">{label}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     {items?.length
@@ -473,7 +479,7 @@ export default function CardPage() {
                   </div>
                 </div>
               ))}
-              <div className="panel p-3">
+              <div className="px-4 py-3">
                 <p className="eyebrow">Retreat</p>
                 <div className="mt-2 flex gap-1">
                   {card.retreatCost?.length ? card.retreatCost.map((c, i) => <Energy key={i} type={c} size={18} />) : <span className="text-sm text-faint">—</span>}
@@ -482,7 +488,7 @@ export default function CardPage() {
             </section>
           )}
 
-          {card.flavorText && <blockquote className="border-l-2 border-volt/40 pl-4 text-sm italic text-muted">{card.flavorText}</blockquote>}
+          {card.flavorText && <blockquote className="border-l-2 border-line-strong pl-4 font-display text-base italic text-muted">{card.flavorText}</blockquote>}
         </div>
       </div>
 

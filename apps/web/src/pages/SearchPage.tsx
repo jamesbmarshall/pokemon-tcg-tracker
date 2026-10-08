@@ -93,7 +93,7 @@ export default function SearchPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={langs.includes('en') ? 'Card name, e.g. Umbreon VMAX' : 'Card name, e.g. ピカチュウ'}
-              className="input !h-12 !rounded-2xl !pl-11 !text-base"
+              className="input !h-12 !rounded-lg !pl-11 !text-base"
             />
             {isFetching && !isFetchingNextPage ? (
               <LoaderCircle size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-muted" />
@@ -105,10 +105,10 @@ export default function SearchPage() {
               )
             )}
           </div>
-          <button onClick={() => setShowFilters((s) => !s)} className={`btn !h-12 !rounded-2xl ${showFilters ? 'btn-primary' : 'btn-ghost'}`} aria-expanded={showFilters}>
+          <button onClick={() => setShowFilters((s) => !s)} className={`btn !h-12 !rounded-lg ${showFilters ? 'btn-primary' : 'btn-ghost'}`} aria-expanded={showFilters}>
             <SlidersHorizontal size={16} />
             <span className="hidden sm:inline">Filters</span>
-            {activeCount > 0 && <span className="rounded-full bg-ink/20 px-1.5 font-mono text-[10px]">{activeCount}</span>}
+            {activeCount > 0 && <span className="rounded-full bg-canvas/20 px-1.5 font-mono text-[10px]">{activeCount}</span>}
           </button>
         </div>
 
@@ -200,7 +200,7 @@ export default function SearchPage() {
       </div>
 
       {!hasQuery ? (
-        <div className="panel p-8 text-center">
+        <div className="border-y border-line py-10 text-center">
           <p className="text-sm text-muted">Type at least two letters, or pick a filter. Popular searches:</p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {SUGGESTIONS.map((s) => (
@@ -215,11 +215,11 @@ export default function SearchPage() {
       ) : isLoading ? (
         <CardSkeletonGrid />
       ) : cards.length === 0 ? (
-        <p className="panel p-10 text-center text-sm text-muted">No cards found. Try a shorter name or fewer filters.</p>
+        <p className="border-y border-line py-12 text-center text-sm text-muted">No cards found. Try a shorter name or fewer filters.</p>
       ) : (
         <>
           <p className="font-mono text-xs text-muted">{total.toLocaleString('en-GB')} cards</p>
-          <CardGrid cards={cards} showSet />
+          <CardGrid cards={cards} showSet listActions />
           <div ref={sentinel} className="flex h-16 items-center justify-center">
             {isFetchingNextPage && <LoaderCircle size={20} className="animate-spin text-muted" />}
           </div>

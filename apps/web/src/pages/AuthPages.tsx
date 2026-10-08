@@ -21,7 +21,7 @@ export function AuthShell({ title, intro, children }: { title: string; intro?: R
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center justify-center gap-2.5">
           <Logo size={34} />
-          <span className="font-display text-[22px] font-extrabold tracking-tight font-stretch-expanded">
+          <span className="font-display text-[22px] font-semibold tracking-tight">
             Poké<span className="holo-text">Tracker</span>
           </span>
         </div>

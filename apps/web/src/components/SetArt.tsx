@@ -5,7 +5,7 @@ import { imageSrc } from '../api/client';
 export function SetLogo({ src, name, className = '', fallbackClassName = '' }: { src: string; name: string; className?: string; fallbackClassName?: string }) {
   const [broken, setBroken] = useState<string | null>(null);
   if (!src || broken === src) {
-    return <span className={`font-display font-bold leading-tight tracking-tight text-fg/85 ${fallbackClassName}`}>{name}</span>;
+    return <span className={`font-display font-semibold leading-tight tracking-tight text-fg/85 ${fallbackClassName}`}>{name}</span>;
   }
   return <img src={imageSrc(src)} alt={name} loading="lazy" onError={() => setBroken(src)} className={className} />;
 }

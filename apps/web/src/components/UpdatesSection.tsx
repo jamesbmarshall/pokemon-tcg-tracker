@@ -154,7 +154,7 @@ export default function UpdatesSection() {
 
       {info.blocker && (
         <p className="rounded-xl border border-line bg-surface-2 p-3 text-xs text-muted">
-          <TriangleAlert size={13} className="mr-1 inline text-volt" />
+          <TriangleAlert size={13} className="mr-1 inline text-accent" />
           {info.blocker}
         </p>
       )}

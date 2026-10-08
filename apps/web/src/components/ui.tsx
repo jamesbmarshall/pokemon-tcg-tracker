@@ -14,11 +14,11 @@ export function Logo({ size = 30 }: { size?: number }) {
           <stop offset="1" stopColor="#7ad7ff" />
         </linearGradient>
       </defs>
-      <rect x="7" y="3" width="19" height="25" rx="3.5" fill="#1c1c27" stroke={foil} strokeWidth="1.6" transform="rotate(10 16 16)" />
-      <rect x="5" y="4" width="19" height="25" rx="3.5" fill="#15151d" stroke="#ffffff22" />
+      <rect x="7" y="3" width="19" height="25" rx="3.5" fill="var(--color-surface-2)" stroke={foil} strokeWidth="1.6" transform="rotate(10 16 16)" />
+      <rect x="5" y="4" width="19" height="25" rx="3.5" fill="var(--color-surface)" stroke="var(--color-line-strong)" />
       <circle cx="14.5" cy="16.5" r="5.2" fill="none" stroke={foil} strokeWidth="1.8" />
       <path d="M9.3 16.5h10.4" stroke={foil} strokeWidth="1.8" />
-      <circle cx="14.5" cy="16.5" r="1.7" fill="#15151d" stroke={foil} strokeWidth="1.6" />
+      <circle cx="14.5" cy="16.5" r="1.7" fill="var(--color-surface)" stroke={foil} strokeWidth="1.6" />
     </svg>
   );
 }
@@ -58,7 +58,7 @@ export function ProgressRing({ value, total, size = 56, stroke = 5, label }: { v
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={complete ? 'url(#ring-holo)' : 'var(--color-volt)'}
+          stroke={complete ? 'url(#ring-holo)' : 'var(--color-accent)'}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={c}
@@ -75,9 +75,9 @@ export function ProgressBar({ value, total, className = '' }: { value: number; t
   const p = pct(value, total);
   const complete = total > 0 && value >= total;
   return (
-    <div className={`h-1.5 w-full overflow-hidden rounded-full bg-surface-3 ${className}`}>
+    <div className={`h-1 w-full overflow-hidden rounded-full bg-surface-3 ${className}`}>
       <div
-        className={`h-full rounded-full transition-[width] duration-700 ${complete ? 'holo-bar' : 'bg-volt'}`}
+        className={`h-full rounded-full transition-[width] duration-700 ${complete ? 'holo-bar' : 'bg-accent'}`}
         style={{ width: `${p}%` }}
       />
     </div>
@@ -85,7 +85,7 @@ export function ProgressBar({ value, total, className = '' }: { value: number; t
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse rounded-xl bg-surface-2 ${className}`} />;
+  return <div className={`animate-pulse rounded-md bg-surface-2 ${className}`} />;
 }
 
 export function CardSkeletonGrid({ count = 18 }: { count?: number }) {
@@ -103,7 +103,7 @@ export function CardSkeletonGrid({ count = 18 }: { count?: number }) {
 
 export function ErrorState({ title, error, onRetry, children }: { title: string; error?: unknown; onRetry?: () => void; children?: ReactNode }) {
   return (
-    <div className="panel p-8 text-center" role="alert">
+    <div className="border-y border-line px-6 py-10 text-center" role="alert">
       <p className="font-semibold text-loss">{title}</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted">
         {error instanceof Error ? error.message : 'Something went wrong.'} The card API is sometimes flaky, so it's usually worth another go.
@@ -122,9 +122,9 @@ export function ErrorState({ title, error, onRetry, children }: { title: string;
 
 export function EmptyState({ icon, title, children, action }: { icon: ReactNode; title: string; children?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="panel flex flex-col items-center px-6 py-16 text-center">
-      <div className="mb-5 grid h-16 w-16 place-items-center rounded-2xl border border-line bg-surface-2 text-volt">{icon}</div>
-      <h2 className="font-display text-xl font-semibold">{title}</h2>
+    <div className="flex flex-col items-center border-y border-line px-6 py-16 text-center">
+      <div className="mb-4 text-faint">{icon}</div>
+      <h2 className="font-display text-2xl font-medium">{title}</h2>
       {children && <div className="mt-2 max-w-md text-sm text-muted">{children}</div>}
       {action && <div className="mt-6">{action}</div>}
     </div>
@@ -133,10 +133,10 @@ export function EmptyState({ icon, title, children, action }: { icon: ReactNode;
 
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <header className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
-        <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
+        <h1 className="font-display text-[2rem] font-medium leading-[1.1] tracking-tight sm:text-[2.6rem]">{title}</h1>
         {children && <div className="mt-2 text-sm text-muted">{children}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -156,7 +156,7 @@ export function Segmented<T extends string | number>({
   size?: 'sm' | 'md';
 }) {
   return (
-    <div role="radiogroup" className="inline-flex rounded-xl border border-line bg-surface-2 p-1">
+    <div role="radiogroup" className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -166,8 +166,8 @@ export function Segmented<T extends string | number>({
           title={o.title}
           aria-label={o.title}
           onClick={() => onChange(o.value)}
-          className={`inline-flex items-center gap-1.5 rounded-lg font-medium transition-colors ${size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-sm'} ${
-            value === o.value ? 'bg-surface-3 text-fg shadow-sm' : 'text-muted hover:text-fg'
+          className={`inline-flex items-center gap-1.5 rounded-md font-medium transition-colors ${size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-sm'} ${
+            value === o.value ? 'bg-fg text-canvas' : 'text-muted hover:text-fg'
           }`}
         >
           {o.label}

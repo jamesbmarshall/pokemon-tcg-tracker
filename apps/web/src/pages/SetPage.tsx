@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { ShareButton } from '../components/ShareDialog';
 import { ArrowUpDown, ChevronLeft, Grid3x3, LayoutGrid, Search, X, Zap } from 'lucide-react';
 import { useSet, useSetCards } from '../api/hooks';
-import { cardVariants, imageSrc, toSnapshot } from '../api/client';
+import { cardVariants, toSnapshot } from '../api/client';
 import { gradedValue, priceOf, useCollectionStore, useReadOnly } from '../store/collectionStore';
 import { SetLogo, SetSymbol } from '../components/SetArt';
 import { useSettings } from '../store/settingsStore';
@@ -12,7 +12,7 @@ import { useViewPref } from '../hooks/useViewPrefs';
 import { LanguageBadge } from '../components/Language';
 import CardGrid, { type GridTile } from '../components/CardGrid';
 import BinderView from '../components/BinderView';
-import { CardSkeletonGrid, ProgressRing, Segmented, Skeleton, ErrorState } from '../components/ui';
+import { CardSkeletonGrid, Segmented, Skeleton, ErrorState } from '../components/ui';
 import { isBaseCard, setProgress } from '../utils/progress';
 import { formatDate } from '../utils/format';
 import type { PokemonCard } from '../api/types';
@@ -139,66 +139,63 @@ export default function SetPage() {
       {setLoading || !set ? (
         <Skeleton className="h-52" />
       ) : (
-        <section className="panel relative overflow-hidden">
-          <div className="pointer-events-none absolute inset-0 opacity-[0.13] blur-2xl" style={{ background: `url("${imageSrc(set.images.logo)}") center/60% no-repeat` }} />
-          <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-              <SetLogo
-                src={set.images.logo}
-                name={set.name}
-                className="h-20 w-auto max-w-[220px] object-contain drop-shadow-[0_10px_24px_rgb(0_0_0/0.7)]"
-                fallbackClassName="hidden"
-              />
-              <div>
-                <p className="eyebrow flex items-center gap-2">
-                  <SetSymbol src={set.images.symbol} className="h-3.5 w-3.5 object-contain" />
-                  {set.series}
-                  {set.ptcgoCode && <span className="text-faint">· {set.ptcgoCode}</span>}
-                </p>
-                <h1 className="mt-1 flex items-center gap-3 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-                  {set.name}
-                  <LanguageBadge id={set.id} className="!text-xs" />
-                </h1>
-                <p className="mt-1 text-sm text-muted">
-                  Released {formatDate(set.releaseDate)} · {set.printedTotal} cards
-                  {set.total > set.printedTotal && ` + ${set.total - set.printedTotal} secret`}
-                </p>
+        <section className="grid gap-8 border-b border-line pb-8 pt-2 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-end lg:gap-14">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+            <SetLogo
+              src={set.images.logo}
+              name={set.name}
+              className="h-20 w-auto max-w-[220px] object-contain drop-shadow-logo"
+              fallbackClassName="hidden"
+            />
+            <div>
+              <p className="eyebrow flex items-center gap-2">
+                <SetSymbol src={set.images.symbol} className="h-3.5 w-3.5 object-contain" />
+                {set.series}
+                {set.ptcgoCode && <span className="font-mono normal-case tracking-normal text-faint">· {set.ptcgoCode}</span>}
+              </p>
+              <h1 className="mt-2 flex items-center gap-3 font-display text-[2.1rem] font-medium leading-tight tracking-tight sm:text-[2.6rem]">
+                {set.name}
+                <LanguageBadge id={set.id} className="!text-xs" />
+              </h1>
+              <p className="mt-1.5 text-sm text-muted">
+                Released {formatDate(set.releaseDate)} · {set.printedTotal} cards
+                {set.total > set.printedTotal && ` + ${set.total - set.printedTotal} secret`}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                 {ownedValue > 0 && (
-                  <p className="mt-2 text-xs text-muted">
+                  <p className="text-xs text-muted">
                     Your copies are worth <span className="font-mono text-fg">{money(ownedValue)}</span>
                   </p>
                 )}
-                <div className="mt-3">
-                  <ShareButton scope="set" target={set.id} what={`your ${set.name} cards`} compact />
-                </div>
+                <ShareButton scope="set" target={set.id} what={`your ${set.name} cards`} compact />
               </div>
             </div>
-            <div className="flex gap-2 sm:gap-3">
-              {modes.map((m) => {
-                const active = setMode === m.key;
-                return (
-                  <button
-                    key={m.key}
-                    onClick={() => setSetMode(m.key)}
-                    aria-pressed={active}
-                    title={`${m.label}: ${m.hint.toLowerCase()}`}
-                    className={`flex flex-1 flex-col items-center rounded-2xl border px-3 py-3 transition-colors sm:px-4 disabled:cursor-default ${
-                      active ? 'border-volt/50 bg-volt/[0.06]' : 'border-line bg-ink/40 enabled:hover:border-line-strong'
-                    }`}
-                  >
-                    <ProgressRing value={m.owned} total={m.total} size={60} />
-                    <span className="mt-2 text-xs font-semibold">{m.label}</span>
-                    <span className="font-mono text-[10.5px] text-muted tabular">{isLoading ? '…' : `${m.owned}/${m.total}`}</span>
-                  </button>
-                );
-              })}
-            </div>
+          </div>
+          <div role="group" aria-label="Completion" className="grid grid-cols-3 border-t border-line">
+            {modes.map((m) => {
+              const active = setMode === m.key;
+              const p = m.total ? Math.floor((m.owned / m.total) * 100) : 0;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => setSetMode(m.key)}
+                  aria-pressed={active}
+                  title={`${m.label}: ${m.hint.toLowerCase()}`}
+                  className={`group relative flex flex-col items-start px-3 pb-1 pt-3 text-left transition-colors first:pl-0 disabled:cursor-default ${active ? 'text-fg' : 'text-muted enabled:hover:text-fg'}`}
+                >
+                  <span className={`absolute inset-x-0 -top-px h-[2px] ${active ? 'bg-accent' : 'bg-transparent'}`} />
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em]">{m.label}</span>
+                  <span className="mt-1 font-display text-[1.9rem] font-medium leading-none tabular">{isLoading ? '–' : `${p}%`}</span>
+                  <span className="mt-1.5 font-mono text-[10.5px] text-muted tabular">{isLoading ? '…' : `${m.owned}/${m.total}`}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
       )}
 
       {/* Toolbar */}
-      <div className="sticky top-14 z-20 -mx-4 space-y-3 border-b border-line bg-ink/85 px-4 py-3 backdrop-blur-xl lg:top-0">
+      <div className="sticky top-14 z-20 -mx-4 space-y-3 border-b border-line bg-canvas/95 px-4 py-3 lg:top-0">
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<Show>
             size="sm"
@@ -240,8 +237,8 @@ export default function SetPage() {
               onClick={() => setQuickAdd(!quickAdd)}
               aria-pressed={quickAdd}
               title="Quick add: variant buttons always visible, with − to remove. Ideal while opening packs."
-              className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors ${
-                quickAdd ? 'border-volt bg-volt text-ink' : 'border-line bg-surface-2 text-muted hover:text-fg'
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                quickAdd ? 'border-accent bg-accent text-on-accent' : 'border-line-strong text-muted hover:text-fg'
               }`}
             >
               <Zap size={14} fill={quickAdd ? 'currentColor' : 'none'} /> Quick add
@@ -259,7 +256,7 @@ export default function SetPage() {
         </div>
         {quickAdd && (
           <p className="text-[11px] text-muted">
-            <span className="text-volt">Quick add is on.</span>{' '}
+            <span className="text-accent">Quick add is on.</span>{' '}
             {master ? (
               <>
                 Every printing has its own tile. Tap <b>Add</b> under one to add a copy; use − to take one off.
@@ -276,7 +273,7 @@ export default function SetPage() {
       {isLoading ? (
         <CardSkeletonGrid />
       ) : tiles.length === 0 ? (
-        <p className="panel p-10 text-center text-sm text-muted">
+        <p className="border-y border-line py-12 text-center text-sm text-muted">
           {show === 'missing' ? 'Nothing missing here. Lovely.' : show === 'owned' ? 'You don’t own any cards from this set yet.' : 'No cards match these filters.'}
         </p>
       ) : setView === 'binder' ? (

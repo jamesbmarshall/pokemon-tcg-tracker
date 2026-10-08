@@ -1,20 +1,40 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #09090d;
-  --color-ink-2: #0f0f15;
-  --color-surface: #15151d;
-  --color-surface-2: #1c1c27;
-  --color-surface-3: #262633;
-  --color-line: rgb(255 255 255 / 0.07);
-  --color-line-strong: rgb(255 255 255 / 0.13);
-  --color-fg: #eeedf4;
-  --color-muted: #8d8c9e;
-  --color-faint: #5d5c6e;
-  --color-volt: #ffd23f;
-  --color-volt-deep: #e0a800;
-  --color-gain: #4ade80;
-  --color-loss: #f87171;
+  /*
+   * Semantic colour roles. Light (paper) values live here; [data-theme='dark'] overrides them
+   * below. Component code uses roles only, never raw hex, so both themes stay in step.
+   *   canvas      page ground and sticky bars
+   *   surface-*   raised areas, from quietest to strongest
+   *   accent      catalogue-stamp cobalt: selection, primary actions, current page
+   *   on-accent   text and icons on an accent fill
+   *   onyx/paper  fixed dark/light, for badges laid over card art and printed slab labels
+   */
+  --color-canvas: #f4f1ea;
+  --color-surface: #fbfaf6;
+  --color-surface-2: #efebe2;
+  --color-surface-3: #e4dfd3;
+  --color-line: rgb(40 34 22 / 0.11);
+  --color-line-strong: rgb(40 34 22 / 0.2);
+  --color-fg: #1c1a16;
+  --color-muted: #5c574d;
+  --color-faint: #716b5f;
+  --color-accent: #2c47c9;
+  --color-accent-strong: #22399f;
+  --color-on-accent: #ffffff;
+  --color-gain: #1d7a45;
+  --color-loss: #b3261e;
+  --color-wish: #b8306f;
+  --color-onyx: #161512;
+  --color-paper: #f6f3ec;
+  --color-blush: #ff8fc0;
+
+  /* Cards are physical objects and cast a shadow; panels and chrome don't. */
+  --shadow-card: 0 8px 22px -12px rgb(48 36 12 / 0.45);
+  --shadow-card-lift: 0 16px 32px -14px rgb(48 36 12 / 0.5);
+  --shadow-pop: 0 18px 48px -16px rgb(48 36 12 / 0.35), 0 0 0 1px rgb(48 36 12 / 0.04);
+  --shadow-object: 0 36px 60px -28px rgb(48 36 12 / 0.55), 0 0 0 1px rgb(48 36 12 / 0.08);
+  --drop-shadow-logo: 0 6px 12px rgb(48 36 12 / 0.25);
 
   /* Energy types */
   --color-grass: #5fbd58;
@@ -30,18 +50,22 @@
   --color-colorless: #c8c5bd;
 
   /*
-   * Type system — a spec sheet for cards. One superfamily, split by width, plus a data face.
-   *   Display — Mona Sans run wide (112.5–125%): the confident, expanded voice of TCG packaging and slab labels.
-   *   Text    — Mona Sans at normal width, weight 450 so it holds up on the dark ground.
-   *   Data    — Martian Mono condensed to 75%: set numbers, prices, eyebrows. Same 0.6em advance as most monos.
-   * Widths are set in the base layer so font-stretch-* utilities can still override per element.
+   * Type system — a catalogue with a grading label.
+   *   Display — Source Serif 4: page titles, set names and the figures you'd frame (value, completion).
+   *   Text    — Mona Sans at normal width, weight 450 so it holds up on either ground.
+   *   Label   — Mona Sans run wide: slab-label caps, the voice of a grading company's insert.
+   *   Data    — Martian Mono condensed to 75%: set numbers, prices, grades.
    */
   --font-sans: 'Mona Sans Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Mona Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Source Serif 4 Variable', 'Iowan Old Style', Georgia, serif;
+  --font-label: 'Mona Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Martian Mono Variable', ui-monospace, SFMono-Regular, monospace;
 
-  /* Wide letterforms already carry weight; heavy negative tracking makes them collide. */
-  --tracking-tight: -0.015em;
+  --tracking-tight: -0.012em;
+
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.875rem;
 
   --animate-shimmer: shimmer 3.5s linear infinite;
   --animate-rise: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -58,7 +82,7 @@
     to { opacity: 1; transform: none; }
   }
   @keyframes flash {
-    0%, 60% { box-shadow: 0 0 0 3px var(--color-volt), 0 0 32px -4px var(--color-volt); }
+    0%, 60% { box-shadow: 0 0 0 3px var(--color-accent), 0 0 32px -4px var(--color-accent); }
     100% { box-shadow: 0 0 0 3px transparent, 0 0 32px -4px transparent; }
   }
   @keyframes slide-from-right {
@@ -75,35 +99,57 @@
   }
 }
 
+/* Dark: warm charcoal rather than blue-black, so card art keeps its colour. */
+html[data-theme='dark'] {
+  --color-canvas: #12110f;
+  --color-surface: #1a1916;
+  --color-surface-2: #23211d;
+  --color-surface-3: #2e2b26;
+  --color-line: rgb(255 246 228 / 0.08);
+  --color-line-strong: rgb(255 246 228 / 0.16);
+  --color-fg: #ece7dc;
+  --color-muted: #a6a094;
+  --color-faint: #8a8478;
+  --color-accent: #95a8ff;
+  --color-accent-strong: #b3c1ff;
+  --color-on-accent: #10142a;
+  --color-gain: #5ccf8a;
+  --color-loss: #f2806f;
+  --color-wish: #ff8fc0;
+  --shadow-card: 0 10px 28px -12px rgb(0 0 0 / 0.85);
+  --shadow-card-lift: 0 18px 40px -14px rgb(0 0 0 / 0.9);
+  --shadow-pop: 0 24px 64px -20px rgb(0 0 0 / 0.85);
+  --shadow-object: 0 40px 80px -30px rgb(0 0 0 / 0.95), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --drop-shadow-logo: 0 6px 14px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
     /* Propagates to the viewport, so slide-ins can't cause sideways scroll; unlike hidden on body, sticky still works. */
     overflow-x: clip;
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    @apply bg-ink text-fg antialiased font-sans;
+    @apply bg-canvas text-fg antialiased font-sans;
     font-weight: 450;
     min-height: 100dvh;
-    background-image:
-      radial-gradient(1200px 600px at 85% -10%, rgb(255 210 63 / 0.06), transparent 60%),
-      radial-gradient(900px 500px at -10% 10%, rgb(120 90 255 / 0.07), transparent 60%);
-    background-attachment: fixed;
   }
   ::selection {
-    background: rgb(255 210 63 / 0.35);
+    background: color-mix(in oklab, var(--color-accent) 28%, transparent);
   }
   :focus-visible {
-    outline: 2px solid var(--color-volt);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: 4px;
   }
   button { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
 
   .font-sans { font-stretch: 100%; }
-  .font-display { font-stretch: 112.5%; }
+  .font-display { font-optical-sizing: auto; font-variant-numeric: lining-nums; }
+  .font-label { font-stretch: 118%; letter-spacing: 0.04em; text-transform: uppercase; }
   .font-mono, code, kbd, samp { font-stretch: 75%; }
   h1, h2, h3 { text-wrap: balance; }
 }
@@ -126,31 +172,35 @@
     animation: var(--animate-shimmer);
   }
 
+  /* A quiet raised area. Most grouping should use .rule and whitespace instead. */
   .panel {
-    @apply bg-surface/80 border border-line rounded-2xl;
-    backdrop-filter: blur(6px);
+    @apply bg-surface border border-line rounded-xl;
+  }
+  /* Hairline section divider with an optional small-caps heading, like a catalogue entry. */
+  .rule {
+    @apply border-t border-line;
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs font-medium text-muted transition-colors;
+    @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-muted transition-colors;
   }
   .chip:hover { @apply text-fg border-line-strong; }
-  .chip[data-active='true'] { @apply bg-fg text-ink border-fg; }
+  .chip[data-active='true'] { @apply bg-fg text-canvas border-fg; }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 h-10 text-sm font-semibold transition-all active:scale-[0.97] disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 h-10 text-sm font-semibold transition-colors disabled:opacity-50;
   }
-  .btn-primary { @apply bg-volt text-ink hover:bg-[#ffdc66]; }
-  .btn-ghost { @apply bg-surface-2 text-fg border border-line hover:border-line-strong hover:bg-surface-3; }
-  .btn-danger { @apply bg-loss/15 text-loss border border-loss/30 hover:bg-loss/25; }
+  .btn-primary { @apply bg-accent text-on-accent hover:bg-accent-strong; }
+  .btn-ghost { @apply bg-surface text-fg border border-line-strong hover:bg-surface-2; }
+  .btn-danger { @apply bg-transparent text-loss border border-loss/40 hover:bg-loss/10; }
 
   .input {
-    @apply w-full bg-surface-2 border border-line rounded-xl px-3.5 h-10 text-sm text-fg placeholder:text-faint transition-colors;
+    @apply w-full bg-surface border border-line-strong rounded-lg px-3.5 h-10 text-sm text-fg placeholder:text-faint transition-colors;
   }
-  .input:focus { @apply outline-none border-volt/60 ring-4 ring-volt/10; }
+  .input:focus { @apply outline-none border-accent ring-2 ring-accent/20; }
 
   .eyebrow {
-    @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted;
+    @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted;
     font-stretch: 75%;
   }
 
@@ -196,7 +246,7 @@
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-surface-3); border-radius: 999px; border: 3px solid var(--color-ink); }
+::-webkit-scrollbar-thumb { background: var(--color-surface-3); border-radius: 999px; border: 3px solid var(--color-canvas); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
