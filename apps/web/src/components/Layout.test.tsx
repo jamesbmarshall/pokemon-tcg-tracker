@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import Layout from './Layout';
@@ -7,6 +7,7 @@ import { renderWithProviders } from '../test/render';
 import { queryResult, resetStores, seedCollection } from '../test/ui-helpers';
 import { makeEntry, makeSet, makeSnapshot } from '../test/fixtures';
 import { useCollectionStore } from '../store/collectionStore';
+import { memory } from '../test/memoryBackend';
 
 const mocks = vi.hoisted(() => ({ useSets: vi.fn() }));
 vi.mock('../api/hooks', () => ({ useSets: mocks.useSets }));
@@ -150,6 +151,18 @@ describe('Layout', () => {
   it('shows Sync when prices were never refreshed', () => {
     renderLayout();
     expect(screen.getByTitle('Refresh prices')).toHaveTextContent('Sync');
+  });
+
+  it('shows a stale-catalogue banner when TCGdex is unreachable', async () => {
+    memory.catalogDegraded = true;
+    renderLayout();
+    expect(await screen.findByText(/TCGdex is unreachable/)).toBeInTheDocument();
+  });
+
+  it('shows no banner when the catalogue is healthy', async () => {
+    renderLayout();
+    await waitFor(() => expect(useCollectionStore.getState()).toBeTruthy());
+    expect(screen.queryByText(/TCGdex is unreachable/)).not.toBeInTheDocument();
   });
 
   it('scrolls to the top on navigation', async () => {

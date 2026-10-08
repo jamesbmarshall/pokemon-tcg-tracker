@@ -176,4 +176,34 @@ describe('sharing: audit fixes', () => {
     expect((await anon.get(`/api/public/${tokenOf(pub.url)}`)).statusCode).toBe(404);
     expect((await owner.get('/api/shared-with-me')).json()).toHaveLength(0);
   });
+
+  it('a sealed share exposes only sealed items, redacted like other scopes', async () => {
+    const { owner, id } = await seeded();
+    await owner.put(`/api/collections/${id}/sealed/s1`, { name: 'ETB', productType: 'etb', quantity: 1, valueUsd: 80, paid: { amount: 60, currency: 'GBP' }, notes: 'from Gramps' });
+    const share = (await owner.post('/api/shares', { collectionId: id, scope: 'sealed', audience: 'public' })).json();
+    const body = (await new Client(s.app).get(`/api/public/${tokenOf(share.url)}`)).json();
+    expect(body.sealed).toHaveLength(1);
+    expect(body.sealed[0]).toMatchObject({ id: 's1', valueUsd: 80 });
+    expect(body.sealed[0].paid).toBeUndefined();
+    expect(body.sealed[0].notes).toBeUndefined();
+    expect(body.entries).toEqual([]);
+    expect(body.graded).toEqual([]);
+  });
+
+  it('a hideValue sealed share zeroes out the value and a PriceCharting price', async () => {
+    const { owner, id } = await seeded();
+    await owner.put(`/api/collections/${id}/sealed/s1`, { name: 'ETB', productType: 'etb', quantity: 1, valueUsd: 80 });
+    const share = (await owner.post('/api/shares', { collectionId: id, scope: 'sealed', audience: 'public', hideValue: true })).json();
+    const body = (await new Client(s.app).get(`/api/public/${tokenOf(share.url)}`)).json();
+    expect(body.sealed[0].valueUsd).toBeUndefined();
+  });
+
+  it('a collection share includes sealed items from the full state', async () => {
+    const { owner, id } = await seeded();
+    await owner.put(`/api/collections/${id}/sealed/s1`, { name: 'ETB', productType: 'etb', quantity: 1 });
+    const share = (await owner.post('/api/shares', { collectionId: id, scope: 'collection', audience: 'public' })).json();
+    const body = (await new Client(s.app).get(`/api/public/${tokenOf(share.url)}`)).json();
+    expect(body.sealed).toHaveLength(1);
+  });
 });
+

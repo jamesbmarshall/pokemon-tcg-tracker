@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, ScanLine, Search } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, Package, ScanLine, Search } from 'lucide-react';
 import { useSets } from '../api/hooks';
 import { searchCards } from '../api/client';
 import { useDebounced } from '../hooks/useDebounced';
@@ -49,6 +49,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
       out.push({ kind: 'card', id: c.id, title: c.name, sub: `${c.set.name} · #${c.number}`, image: c.images.small, owned: byCard.has(c.id) || slabs.has(c.id) });
     }
     if (needle.length >= 2) out.push({ kind: 'action', id: 'search', title: `Search all cards for “${q.trim()}”`, sub: 'Open advanced search' });
+    if (needle.length >= 1 && 'sealed products'.includes(needle)) out.push({ kind: 'action', id: 'sealed', title: 'Sealed products', sub: 'Go to Sealed' });
     return out;
   }, [q, sets, cards.data, byCard, slabs]);
 
@@ -57,6 +58,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     if (it.kind === 'card') navigate(`/card/${it.id}`);
     else if (it.kind === 'set') navigate(`/sets/${it.id}`);
     else if (it.kind === 'action' && it.id === 'scan') navigate('/scan');
+    else if (it.kind === 'action' && it.id === 'sealed') navigate('/sealed');
     else navigate(`/search?q=${encodeURIComponent(q.trim())}`);
   };
 
@@ -127,7 +129,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
               )}
               {it.kind === 'action' && (
                 <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-accent">
-                  {it.id === 'scan' ? <ScanLine size={16} /> : <ArrowRight size={16} />}
+                  {it.id === 'scan' ? <ScanLine size={16} /> : it.id === 'sealed' ? <Package size={16} /> : <ArrowRight size={16} />}
                 </span>
               )}
               <span className="min-w-0 flex-1">

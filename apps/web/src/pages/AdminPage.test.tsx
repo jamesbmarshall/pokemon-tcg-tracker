@@ -5,7 +5,7 @@ import AdminPage, { type AdminUser, type Job } from './AdminPage';
 import { bytes, fromNow } from '../utils/format';
 import { useAuth, type User } from '../store/authStore';
 import { renderWithProviders } from '../test/render';
-import { mockApi } from '../test/apiMock';
+import { mockApi, reply } from '../test/apiMock';
 import { memory } from '../test/memoryBackend';
 
 const owner: User = { id: 'u1', username: 'ash', displayName: 'Ash', role: 'owner', totpEnabled: false };
@@ -186,6 +186,27 @@ describe('Jobs', () => {
     expect(await screen.findByText('Check for updates')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /run now/i })).not.toBeInTheDocument();
   });
+
+  it('shows provider health, including stale-served counts and an unreachable state', async () => {
+    const user = userEvent.setup();
+    mockApi({
+      'GET /api/admin/users': users,
+      'GET /api/admin/jobs': [job({})],
+      'GET /api/admin/storage': { dbBytes: 0, images: { count: 0, bytes: 0, capBytes: 0 }, backups: 0 },
+      'GET /api/admin/providers': {
+        tcgdex: { name: 'tcgdex', state: 'open', consecutiveFailures: 5, lastSuccessAt: '2025-01-01T00:00:00Z', lastFailureAt: '2025-01-02T00:00:00Z', lastError: 'fetch failed', staleServedCount: 3, openedAt: '2025-01-02T00:00:00Z' },
+        pricecharting: { name: 'pricecharting', state: 'closed', consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null, configured: false },
+      },
+    });
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Jobs' }));
+    expect(await screen.findByText('TCGdex (catalogue & prices)')).toBeInTheDocument();
+    expect(screen.getByText('Unreachable')).toBeInTheDocument();
+    expect(screen.getByText('fetch failed')).toBeInTheDocument();
+    expect(screen.getByText('3 stale responses served')).toBeInTheDocument();
+    expect(screen.getByText('PriceCharting (price fallback)')).toBeInTheDocument();
+    expect(screen.getByText('Not set up')).toBeInTheDocument();
+  });
 });
 
 describe('Decks', () => {
@@ -267,4 +288,70 @@ it('formats sizes and countdowns', () => {
   expect(fromNow(new Date(Date.now() + 30 * 60000).toISOString())).toBe('in 30m');
   expect(fromNow(new Date(Date.now() + 5 * 3600000).toISOString())).toBe('in 5h');
   expect(fromNow(new Date(Date.now() + 4 * 864e5).toISOString())).toBe('in 4d');
+});
+
+describe('Integrations', () => {
+  it('sets a PriceCharting key and shows it as configured', async () => {
+    const user = userEvent.setup();
+    const m = mockApi({
+      'GET /api/admin/users': users,
+      'GET /api/admin/integrations': { pricecharting: { configured: false } },
+      'PUT /api/admin/integrations/pricecharting': { configured: true },
+    });
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Integrations' }));
+    expect(await screen.findByText('Not set')).toBeInTheDocument();
+    m.set('GET /api/admin/integrations', { pricecharting: { configured: true } });
+    await user.type(screen.getByLabelText(/api key/i), 'a-pricecharting-key-1234');
+    await user.click(screen.getByRole('button', { name: /save key/i }));
+    await waitFor(() => expect(m.called('PUT /api/admin/integrations/pricecharting')).toHaveLength(1));
+    expect(m.called('PUT /api/admin/integrations/pricecharting')[0].body).toEqual({ key: 'a-pricecharting-key-1234' });
+    expect(await screen.findByText('Configured')).toBeInTheDocument();
+    expect(screen.getByLabelText(/api key/i)).toHaveValue('');
+  });
+
+  it('tests the connection and surfaces a failure', async () => {
+    const user = userEvent.setup();
+    mockApi({
+      'GET /api/admin/users': users,
+      'GET /api/admin/integrations': { pricecharting: { configured: true } },
+      'POST /api/admin/integrations/pricecharting/test': reply(502, { error: "Couldn't reach PriceCharting: network error" }),
+    });
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Integrations' }));
+    expect(await screen.findByText('Configured')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /test connection/i }));
+    expect(await screen.findByText(/Couldn't reach PriceCharting/)).toBeInTheDocument();
+  });
+
+  it('clears the key after confirming', async () => {
+    const user = userEvent.setup();
+    const m = mockApi({
+      'GET /api/admin/users': users,
+      'GET /api/admin/integrations': { pricecharting: { configured: true } },
+      'DELETE /api/admin/integrations/pricecharting': { configured: false },
+    });
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Integrations' }));
+    expect(await screen.findByText('Configured')).toBeInTheDocument();
+    m.set('GET /api/admin/integrations', { pricecharting: { configured: false } });
+    await user.click(screen.getByRole('button', { name: /clear key/i }));
+    const confirmDialog = await screen.findByRole('dialog', { name: 'Clear the PriceCharting key?' });
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Clear key' }));
+    await waitFor(() => expect(m.called('DELETE /api/admin/integrations/pricecharting')).toHaveLength(1));
+    expect(await screen.findByText('Not set')).toBeInTheDocument();
+  });
+
+  it('hides "test connection" and "clear key" until a key is set', async () => {
+    mockApi({
+      'GET /api/admin/users': users,
+      'GET /api/admin/integrations': { pricecharting: { configured: false } },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Integrations' }));
+    await screen.findByText('Not set');
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /clear key/i })).not.toBeInTheDocument();
+  });
 });
