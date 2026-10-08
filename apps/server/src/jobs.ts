@@ -48,7 +48,7 @@ export const JOBS: JobDef[] = [
         const path = `/${l.code}/sets`;
         try {
           // force: a scheduled refresh should hit TCGdex even if the cache is still fresh.
-          await cachedUpstream(ctx, `GET ${path}`, `${base}${path}`, {}, ttlFor(path), true);
+          await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, {}, ttlFor(path), true);
           ok++;
         } catch {
           /* one language down shouldn't fail the rest */
