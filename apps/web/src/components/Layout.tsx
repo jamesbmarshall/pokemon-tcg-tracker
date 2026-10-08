@@ -4,12 +4,14 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { AlertTriangle, BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
 import { relativeTime } from '../utils/format';
 import { isAdmin, useAuth } from '../store/authStore';
+import { getBackend } from '../api/backend';
 import { Logo } from './ui';
 import CommandPalette from './CommandPalette';
 import ThemeToggle from './ThemeToggle';
@@ -114,6 +116,7 @@ export default function Layout() {
   const wishCount = useCollectionStore((s) => s.wishlist.size);
   // Only hides the link; the admin page and its endpoints check the role again.
   const admin = useAuth((s) => isAdmin(s.user));
+  const { data: status } = useQuery({ queryKey: ['system', 'status'], queryFn: () => getBackend().status(), staleTime: 60_000 });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -226,6 +229,12 @@ export default function Layout() {
 
       <main className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
         <CollectionSwitcher className="mb-5 lg:hidden" />
+        {status?.catalogDegraded && (
+          <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-loss/30 bg-loss/5 px-3 py-2 text-sm text-loss">
+            <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />
+            Card data may be out of date — TCGdex is unreachable. We're showing the last data we have.
+          </div>
+        )}
         <Outlet />
         <footer className="mt-20 border-t border-line pt-6 text-xs text-faint">
           Card data, images & prices from{' '}

@@ -1,5 +1,5 @@
 import { getCardsByIds, setIdFromCardId, toSnapshot } from '../api/client';
-import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PcProduct, PhotoRef, SystemStatus } from '../api/backend';
+import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PcProduct, PhotoRef, ProviderHealthReport, SystemStatus } from '../api/backend';
 import type { CardNote, CardPriceHistory, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, MoverCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX, valuePoint } from '@poketracker/shared/value';
 import { currentRates } from '../utils/fx';
@@ -408,7 +408,14 @@ export class MemoryBackend implements Backend {
   }
 
   status() {
-    return this.call('status', (): SystemStatus => ({ version: 'test', lastPriceSync: this.lastPriceSync, fxAt: null }));
+    return this.call('status', (): SystemStatus => ({ version: 'test', lastPriceSync: this.lastPriceSync, fxAt: null, catalogDegraded: false }));
+  }
+
+  providerHealth() {
+    return this.call('providerHealth', (): ProviderHealthReport => ({
+      tcgdex: { name: 'tcgdex', state: 'closed', consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null },
+      pricecharting: { name: 'pricecharting', state: 'closed', consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null, configured: false },
+    }));
   }
 
   refreshPrices() {

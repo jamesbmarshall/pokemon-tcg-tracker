@@ -84,9 +84,30 @@ export interface SystemStatus {
   lastPriceSync: string | null;
   /** Epoch ms of the last FX rate fetch, or null if rates have never been loaded. */
   fxAt: number | null;
+  /** Non-sensitive: true when the TCGdex breaker isn't closed, so the UI can show a banner. */
+  catalogDegraded: boolean;
   /** Only reported to owners and admins; members get the base status without update details. */
   updateAvailable?: boolean;
   latest?: string | null;
+}
+
+export type BreakerState = 'closed' | 'open' | 'half-open';
+
+/** Health for one upstream provider, as shown in the admin "Providers" panel. */
+export interface ProviderHealth {
+  name: string;
+  state: BreakerState;
+  consecutiveFailures: number;
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
+  lastError: string | null;
+  staleServedCount: number;
+  openedAt: number | null;
+}
+
+export interface ProviderHealthReport {
+  tcgdex: ProviderHealth;
+  pricecharting: ProviderHealth & { configured: boolean };
 }
 
 /**
@@ -141,6 +162,8 @@ export interface Backend {
   addToList(collectionId: string, listId: string, cardId: string): Promise<void>;
   removeFromList(collectionId: string, listId: string, cardId: string): Promise<void>;
   status(): Promise<SystemStatus>;
+  /** Per-provider breaker/health for the admin panel (owner/admin only). */
+  providerHealth(): Promise<ProviderHealthReport>;
   /** Runs the server's price refresh and waits for it (owner/admin only). */
   refreshPrices(): Promise<void>;
   /** Per-variant, per-source daily price history for a card's chart. `days` defaults to 90 server-side. */
@@ -214,6 +237,7 @@ export const httpBackend: Backend = {
   addToList: async (id, listId, cardId) => void (await api(`${c(id)}/lists/${enc(listId)}/cards/${enc(cardId)}`, { method: 'PUT' })),
   removeFromList: async (id, listId, cardId) => void (await api(`${c(id)}/lists/${enc(listId)}/cards/${enc(cardId)}`, { method: 'DELETE' })),
   status: () => api('/api/system/status'),
+  providerHealth: () => api('/api/admin/providers'),
   refreshPrices: async () => void (await api('/api/admin/jobs/prices/run?wait=1', { method: 'POST' })),
   priceHistory: (cardId, days) => api(`/api/cards/${enc(cardId)}/prices/history${days ? `?days=${days}` : ''}`),
   movers: (id, days) => api(`${c(id)}/movers?days=${days}`),
