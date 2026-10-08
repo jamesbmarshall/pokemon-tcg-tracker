@@ -7,7 +7,7 @@
  * backend without the store knowing the difference.
  */
 import { api } from './http';
-import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, SetStat, ValuePoint, WishlistEntry } from './types';
+import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, MoverCard, SetStat, ValuePoint, WishlistEntry } from './types';
 import type { CardNote } from './types';
 
 /** The caller's role on a collection. The server enforces it; the UI only uses it to hide edit controls. */
@@ -116,6 +116,10 @@ export interface Backend {
   status(): Promise<SystemStatus>;
   /** Runs the server's price refresh and waits for it (owner/admin only). */
   refreshPrices(): Promise<void>;
+  /** Per-variant, per-source daily price history for a card's chart. `days` defaults to 90 server-side. */
+  priceHistory(cardId: string, days?: number): Promise<CardPriceHistory>;
+  /** The biggest value movers in a collection over the window, split into gainers and losers. */
+  movers(collectionId: string, days: 7 | 30): Promise<{ days: number; gainers: MoverCard[]; losers: MoverCard[] }>;
 }
 
 // Every id goes into the path through encodeURIComponent so an id containing reserved
@@ -161,6 +165,8 @@ export const httpBackend: Backend = {
   removeFromList: async (id, listId, cardId) => void (await api(`${c(id)}/lists/${enc(listId)}/cards/${enc(cardId)}`, { method: 'DELETE' })),
   status: () => api('/api/system/status'),
   refreshPrices: async () => void (await api('/api/admin/jobs/prices/run?wait=1', { method: 'POST' })),
+  priceHistory: (cardId, days) => api(`/api/cards/${enc(cardId)}/prices/history${days ? `?days=${days}` : ''}`),
+  movers: (id, days) => api(`${c(id)}/movers?days=${days}`),
 };
 
 // Module-level rather than React context because the zustand store is created outside React.

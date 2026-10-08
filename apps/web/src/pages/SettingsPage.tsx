@@ -5,7 +5,7 @@ import { Download, FileJson, FileSpreadsheet, RefreshCw, ShieldCheck, Trash2, Up
 import { getBackend } from '../api/backend';
 import { isAdmin, useAuth } from '../store/authStore';
 import UpdatesSection from '../components/UpdatesSection';
-import { computeValue, gradedValue, priceOf, useCollectionStore } from '../store/collectionStore';
+import { computeValue, entryValue, gradedValue, useCollectionStore } from '../store/collectionStore';
 import { useSettings, type Currency, type ThemePref } from '../store/settingsStore';
 import { useMoney, useRates } from '../hooks/useMoney';
 import { PageHeader, Segmented } from '../components/ui';
@@ -81,7 +81,7 @@ export default function SettingsPage() {
     const rate = rates?.[currency] ?? 1;
     const rows = Array.from(entries.values()).map((e) => {
       const c = cards.get(e.cardId);
-      const p = priceOf(c, e.variant);
+      const p = entryValue(e, cards);
       return [e.cardId, c?.name, c?.setName, c?.number, c?.rarity, variantLabel(e.variant), e.quantity, e.condition ?? '', p ? (p * rate).toFixed(2) : '', e.addedAt.slice(0, 10), '', '', '', e.paid?.amount.toFixed(2) ?? '', e.paid?.currency ?? '', notes.get(e.cardId) ?? ''];
     });
     for (const g of graded.values()) {

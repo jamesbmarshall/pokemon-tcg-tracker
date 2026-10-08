@@ -50,6 +50,11 @@ export function gradedValue(g: GradedCopy, cards: Map<string, CardSnapshot>) {
   return g.valueUsd ?? priceOf(cards.get(g.cardId), g.variant) ?? 0;
 }
 
+/** A raw entry is worth the owner's per-copy valuation, else the market price of its printing. */
+export function entryValue(e: CollectionEntry, cards: Map<string, CardSnapshot>): number | undefined {
+  return e.valueUsd ?? priceOf(cards.get(e.cardId), e.variant);
+}
+
 /** Total market value and copy counts. Raw copies with no known price add to the count but not the value. */
 export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<string, CardSnapshot>, graded: Iterable<GradedCopy> = []) {
   let valueUsd = 0;
@@ -58,7 +63,7 @@ export function computeValue(entries: Iterable<CollectionEntry>, cards: Map<stri
   for (const e of entries) {
     count += e.quantity;
     unique.add(e.cardId);
-    const price = priceOf(cards.get(e.cardId), e.variant);
+    const price = entryValue(e, cards);
     if (price) valueUsd += price * e.quantity;
   }
   for (const g of graded) {
@@ -85,7 +90,7 @@ export function costBasis(entries: Iterable<CollectionEntry>, cards: Map<string,
     const each = paidUsd(e.paid, rates);
     if (each == null) continue;
     out.costUsd += each * e.quantity;
-    out.valueUsd += (priceOf(cards.get(e.cardId), e.variant) ?? 0) * e.quantity;
+    out.valueUsd += (entryValue(e, cards) ?? 0) * e.quantity;
     out.costed += e.quantity;
   }
   for (const g of graded) {

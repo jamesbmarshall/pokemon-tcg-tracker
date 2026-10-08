@@ -21,7 +21,7 @@ import { toast } from './toastStore';
 import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, PokemonCard, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { NOTE_MAX } from '@poketracker/shared/value';
 
-export { computeValue, costBasis, gradedValue, NOTE_MAX, priceOf, type CostBasis } from '@poketracker/shared/value';
+export { computeValue, costBasis, entryValue, gradedValue, NOTE_MAX, priceOf, type CostBasis } from '@poketracker/shared/value';
 
 type CardLike = PokemonCard | CardSnapshot;
 type VariantQty = Record<string, number>;
@@ -82,7 +82,7 @@ interface CollectionState {
   /** Changes a variant's raw quantity by `delta`, creating or deleting the entry as needed. */
   adjust: (card: CardLike, variant: string, delta: number) => Promise<void>;
   setQuantity: (cardId: string, variant: string, quantity: number) => Promise<void>;
-  updateEntry: (cardId: string, variant: string, patch: Partial<Pick<CollectionEntry, 'condition' | 'notes' | 'paid'>>) => Promise<void>;
+  updateEntry: (cardId: string, variant: string, patch: Partial<Pick<CollectionEntry, 'condition' | 'notes' | 'paid' | 'valueUsd'>>) => Promise<void>;
   /** Removes every variant of a card, returning the removed entries for undo (empty if nothing was removed). */
   removeCard: (cardId: string) => Promise<CollectionEntry[]>;
   restoreEntries: (entries: CollectionEntry[]) => Promise<void>;
@@ -418,6 +418,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       if ('paid' in patch && !isPaid(patch.paid)) {
         if (patch.paid === undefined) delete entry.paid;
         else entry.paid = existing.paid;
+      }
+      // Same idea for the manual value override: undefined clears it, an out-of-range number is ignored.
+      if ('valueUsd' in patch) {
+        if (patch.valueUsd === undefined) delete entry.valueUsd;
+        else if (!Number.isFinite(patch.valueUsd) || patch.valueUsd < 0 || patch.valueUsd > 10_000_000) entry.valueUsd = existing.valueUsd;
       }
       const entries = new Map(get().entries);
       entries.set(key, entry);
