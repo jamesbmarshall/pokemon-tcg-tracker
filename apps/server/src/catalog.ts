@@ -9,8 +9,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpError, Limiter, bad, now, type Ctx } from './context.ts';
-import { sha256 } from './security.ts';
+import { redactSecrets, sha256 } from './security.ts';
 import { currentRates } from './cards.ts';
+import { RetryableError, recordStaleServe, retryAfterMs, withResilience } from './providers/resilience.ts';
 
 const MAX_BODY = 8 * 1024 * 1024;
 const MAX_IMAGE = 6 * 1024 * 1024;
@@ -45,16 +46,32 @@ const inflight = new Map<string, Promise<Cached>>();
 
 /**
  * Fetches from TCGdex through the SQLite cache. Concurrent identical requests share one
- * upstream call. On upstream failure a stale copy is returned if we have one.
+ * upstream call. Network errors, 5xx and 429 are retried with backoff (respecting Retry-After);
+ * other 4xx are not retried. `provider` keys a circuit breaker and health record shared with
+ * every other call for that upstream: once it is open, or once retries are exhausted, a stale
+ * cached copy is served instead of erroring, when one exists.
  */
-export async function cachedUpstream(ctx: Ctx, key: string, url: string, init: RequestInit, ttl: number, force = false): Promise<Cached> {
+export async function cachedUpstream(ctx: Ctx, provider: string, key: string, url: string, init: RequestInit, ttl: number, force = false): Promise<Cached> {
   const row = ctx.db.get<{ status: number; content_type: string; body: Uint8Array; fetched_at: number }>('SELECT * FROM http_cache WHERE key = ?', key);
   if (row && !force && Date.now() - row.fetched_at < ttl) return { status: row.status, type: row.content_type, body: Buffer.from(row.body), fresh: true };
+  const stale = () => {
+    recordStaleServe(provider);
+    return { status: row!.status, type: row!.content_type, body: Buffer.from(row!.body), fresh: false };
+  };
   let p = inflight.get(key);
   if (!p) {
     p = (async () => {
       try {
-        const res = await fetch(url, { ...init, headers: { 'user-agent': `PokeTracker/${ctx.config.version}`, ...init.headers }, signal: AbortSignal.timeout(25_000) });
+        const res = await withResilience(provider, async () => {
+          let r: Response;
+          try {
+            r = await fetch(url, { ...init, headers: { 'user-agent': `PokeTracker/${ctx.config.version}`, ...init.headers }, signal: AbortSignal.timeout(25_000) });
+          } catch (err) {
+            throw new RetryableError((err as Error).message);
+          }
+          if (r.status === 429 || r.status >= 500) throw new RetryableError(`Upstream returned ${r.status}`, retryAfterMs(r));
+          return r;
+        });
         const body = Buffer.from(await res.arrayBuffer());
         if (body.length > MAX_BODY) throw new Error('Upstream response too large');
         const type = res.headers.get('content-type') ?? 'application/json';
@@ -62,13 +79,13 @@ export async function cachedUpstream(ctx: Ctx, key: string, url: string, init: R
         if (res.ok || res.status === 404) {
           ctx.db.run('INSERT OR REPLACE INTO http_cache (key, status, content_type, body, fetched_at) VALUES (?, ?, ?, ?, ?)', key, res.status, type, body, Date.now());
         } else if (row) {
-          // A 5xx or 429 shouldn't replace good data; serve what we had.
-          return { status: row.status, type: row.content_type, body: Buffer.from(row.body), fresh: false };
+          // A non-retryable 4xx shouldn't replace good data; serve what we had.
+          return stale();
         }
         return { status: res.status, type, body, fresh: true };
       } catch (err) {
-        if (row) return { status: row.status, type: row.content_type, body: Buffer.from(row.body), fresh: false };
-        ctx.log.warn({ err: (err as Error).message, url }, 'catalogue upstream failed');
+        if (row) return stale();
+        ctx.log.warn({ err: redactSecrets((err as Error).message ?? String(err)), url: redactSecrets(url) }, 'catalogue upstream failed');
         throw new HttpError(502, 'The card catalogue is unavailable right now', 'upstream');
       } finally {
         inflight.delete(key);
@@ -205,7 +222,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
     const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
     const path = rest + qs;
     upstream.check(req.user?.id ?? req.ip, reply);
-    const r = await cachedUpstream(ctx, `GET ${path}`, `${base}${path}`, {}, ttlFor(path));
+    const r = await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, {}, ttlFor(path));
     reply.header('cache-control', 'private, max-age=300').header('x-cache', r.fresh ? 'fresh' : 'stale');
     return reply.status(r.status).type(r.type).send(r.body);
   });
@@ -217,7 +234,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
     // Cache key is a hash of the exact payload, so different variables never share an entry.
     const payload = JSON.stringify({ query: b.query, variables: b.variables ?? {} });
     upstream.check(req.user?.id ?? req.ip, reply);
-    const r = await cachedUpstream(ctx, `GQL ${sha256(payload)}`, `${base}/graphql`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }, 3600_000);
+    const r = await cachedUpstream(ctx, 'tcgdex', `GQL ${sha256(payload)}`, `${base}/graphql`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }, 3600_000);
     reply.header('cache-control', 'private, max-age=300');
     return reply.status(r.status).type(r.type).send(r.body);
   });

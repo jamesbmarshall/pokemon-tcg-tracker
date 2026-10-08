@@ -13,9 +13,11 @@ import { join } from 'node:path';
 import { HttpError, type Ctx } from './context.ts';
 import { attachSession, authRoutes } from './auth.ts';
 import { collectionRoutes } from './collections.ts';
+import { sealedRoutes } from './sealed.ts';
 import { catalogRoutes } from './catalog.ts';
 import { shareRoutes, attachShare } from './shares.ts';
 import { systemRoutes } from './system.ts';
+import { pricechartingRoutes } from './providers/pricecharting.ts';
 
 /** Methods that must not change state, so they skip the CSRF checks below. */
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -105,9 +107,11 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
 
   authRoutes(app, ctx);
   collectionRoutes(app, ctx);
+  sealedRoutes(app, ctx);
   catalogRoutes(app, ctx);
   shareRoutes(app, ctx);
   systemRoutes(app, ctx);
+  pricechartingRoutes(app, ctx);
 
   // Without this, unknown API paths would fall through to the SPA and return HTML with a 200.
   app.all('/api/*', async () => {

@@ -8,8 +8,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
-import { Crown, Database, Download, Link2, Lock, Play, Plus, RefreshCw, Trash2, UserX } from 'lucide-react';
+import { Crown, Database, Download, Link2, Lock, Play, Plug, Plus, RefreshCw, Trash2, UserX } from 'lucide-react';
 import { api } from '../api/http';
+import type { ProviderHealth, ProviderHealthReport } from '../api/backend';
 import { isAdmin, useAuth, type Role, type User } from '../store/authStore';
 import { toast } from '../store/toastStore';
 import { PageHeader, Segmented } from '../components/ui';
@@ -424,6 +425,41 @@ function JobsTab({ me }: { me: User }) {
           </div>
         </div>
       )}
+
+      <ProviderHealthPanel />
+    </div>
+  );
+}
+
+/** Breaker state and recent failures for each upstream provider (catalogue + price fallback). */
+function ProviderHealthPanel() {
+  const health = useQuery({ queryKey: ['admin', 'providers'], queryFn: () => api<ProviderHealthReport>('/api/admin/providers'), refetchInterval: 30000 });
+  if (!health.data) return null;
+  const rows: { label: string; h: ProviderHealth & { configured?: boolean } }[] = [
+    { label: 'TCGdex (catalogue & prices)', h: health.data.tcgdex },
+    { label: 'PriceCharting (price fallback)', h: health.data.pricecharting },
+  ];
+  const tone = (state: ProviderHealth['state']): 'good' | 'warn' | 'bad' | 'muted' => (state === 'closed' ? 'good' : state === 'half-open' ? 'warn' : 'bad');
+  const label = (state: ProviderHealth['state']) => (state === 'closed' ? 'Healthy' : state === 'half-open' ? 'Checking' : 'Unreachable');
+  return (
+    <div>
+      <p className="eyebrow mb-2">Provider health</p>
+      <ul className="divide-y divide-line rounded-2xl border border-line">
+        {rows.map(({ label: name, h }) => (
+          <li key={h.name} className="px-4 py-3">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              {name}
+              {h.configured === false ? <StatusPill tone="muted">Not set up</StatusPill> : <StatusPill tone={tone(h.state)}>{label(h.state)}</StatusPill>}
+              {h.staleServedCount > 0 && <StatusPill tone="warn">{h.staleServedCount} stale response{h.staleServedCount === 1 ? '' : 's'} served</StatusPill>}
+            </p>
+            <p className="mt-0.5 text-xs text-faint">
+              {h.lastSuccessAt ? `Last success ${relativeTime(new Date(h.lastSuccessAt).toISOString())}` : 'No successful calls yet'}
+              {h.lastFailureAt && ` · last failure ${relativeTime(new Date(h.lastFailureAt).toISOString())}`}
+            </p>
+            {h.lastError && <p className="mt-1 break-words font-mono text-[11px] text-loss">{h.lastError}</p>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -488,6 +524,102 @@ function BackupsTab() {
           onConfirm={async () => {
             await api(`/api/admin/backups/${encodeURIComponent(doomed.name)}`, { method: 'DELETE' });
             await qc.invalidateQueries({ queryKey: ['admin', 'backups'] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- integrations
+
+/**
+ * Optional third-party integrations. PriceCharting is the only one today: an API key enables
+ * sealed-product search and graded-card pricing. With no key set, nothing in the app contacts
+ * PriceCharting at all. The key itself is never sent back from the server once saved.
+ */
+function IntegrationsTab() {
+  const qc = useQueryClient();
+  const { data, isPending } = useQuery({
+    queryKey: ['admin', 'integrations'],
+    queryFn: () => api<{ pricecharting: { configured: boolean } }>('/api/admin/integrations'),
+  });
+  const [key, setKey] = useState('');
+  const [clearing, setClearing] = useState(false);
+  const save = useSubmit(async () => {
+    await api('/api/admin/integrations/pricecharting', { method: 'PUT', body: { key } });
+    setKey('');
+    toast('PriceCharting key saved', { tone: 'success' });
+    await qc.invalidateQueries({ queryKey: ['admin', 'integrations'] });
+  });
+  const test = useSubmit(async () => {
+    await api('/api/admin/integrations/pricecharting/test', { method: 'POST' });
+    toast('Connected to PriceCharting', { tone: 'success' });
+  });
+
+  const configured = data?.pricecharting.configured ?? false;
+
+  return (
+    <div className="max-w-xl space-y-6">
+      <div className="panel space-y-4 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 font-display text-lg font-semibold">
+              <Plug size={16} className="text-accent" /> PriceCharting
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              Lets everyone search PriceCharting for sealed products and link graded cards to a live price. No requests are made to PriceCharting until a key is set here.
+            </p>
+          </div>
+          {!isPending && <StatusPill tone={configured ? 'good' : 'muted'}>{configured ? 'Configured' : 'Not set'}</StatusPill>}
+        </div>
+
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (key.trim()) void save.onSubmit();
+          }}
+        >
+          <label className="min-w-[14rem] flex-1 space-y-1.5">
+            <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-faint">API key</span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={configured ? 'Enter a new key to replace it' : 'PriceCharting API key'}
+              className="input font-mono"
+            />
+          </label>
+          <button type="submit" disabled={save.busy || !key.trim()} className="btn btn-primary">
+            {save.busy ? 'Saving…' : 'Save key'}
+          </button>
+        </form>
+        <FormError error={save.error} />
+
+        <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+          <button type="button" disabled={!configured || test.busy} onClick={() => void test.onSubmit()} className="btn btn-ghost">
+            <RefreshCw size={14} className={test.busy ? 'animate-spin' : ''} /> Test connection
+          </button>
+          {configured && (
+            <button type="button" onClick={() => setClearing(true)} className="btn btn-ghost hover:!text-loss">
+              <Trash2 size={14} /> Clear key
+            </button>
+          )}
+        </div>
+        <FormError error={test.error} />
+      </div>
+
+      {clearing && (
+        <ConfirmDialog
+          title="Clear the PriceCharting key?"
+          body="Sealed-product search and graded pricing from PriceCharting will stop working until a new key is set."
+          action="Clear key"
+          onClose={() => setClearing(false)}
+          onConfirm={async () => {
+            await api('/api/admin/integrations/pricecharting', { method: 'DELETE' });
+            await qc.invalidateQueries({ queryKey: ['admin', 'integrations'] });
           }}
         />
       )}
@@ -572,7 +704,7 @@ function ActivityTab() {
 
 // ---------------------------------------------------------------- page
 
-type Tab = 'users' | 'invites' | 'jobs' | 'backups' | 'activity';
+type Tab = 'users' | 'invites' | 'jobs' | 'backups' | 'integrations' | 'activity';
 
 export default function AdminPage() {
   const me = useAuth((s) => s.user);
@@ -583,6 +715,7 @@ export default function AdminPage() {
     { value: 'invites', label: 'Invites' },
     { value: 'jobs', label: 'Jobs' },
     ...(me.role === 'owner' ? [{ value: 'backups' as const, label: 'Backups' }] : []),
+    { value: 'integrations', label: 'Integrations' },
     { value: 'activity', label: 'Activity' },
   ];
   return (
@@ -595,6 +728,7 @@ export default function AdminPage() {
       {tab === 'invites' && <InvitesTab me={me} />}
       {tab === 'jobs' && <JobsTab me={me} />}
       {tab === 'backups' && <BackupsTab />}
+      {tab === 'integrations' && <IntegrationsTab />}
       {tab === 'activity' && <ActivityTab />}
     </div>
   );

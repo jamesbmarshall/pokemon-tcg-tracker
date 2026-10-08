@@ -1,4 +1,4 @@
-import type { CardSet, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard } from '../api/types';
+import type { CardSet, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard, SealedItem } from '../api/types';
 
 export const rawSets = [
   {
@@ -133,6 +133,18 @@ export function makeGraded(over: Partial<GradedCopy> = {}): GradedCopy {
     label: 'Gem Mint',
     certNumber: '81234567',
     countsTowardSet: true,
+    addedAt: '2025-03-01T00:00:00.000Z',
+    ...over,
+  };
+}
+
+export function makeSealed(over: Partial<SealedItem> = {}): SealedItem {
+  return {
+    id: 'sealed-1',
+    name: 'Obsidian Flames booster box',
+    productType: 'booster_box',
+    quantity: 1,
+    status: 'sealed',
     addedAt: '2025-03-01T00:00:00.000Z',
     ...over,
   };

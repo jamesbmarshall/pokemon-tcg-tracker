@@ -7,6 +7,7 @@ import { useGradedPhotos } from '../db/gradedPhotos';
 import { useFx, useMoney } from '../hooks/useMoney';
 import { Gain } from './Paid';
 import { paidUsd } from '../utils/fx';
+import { relativeTime } from '../utils/format';
 import { companyName, verifyLink } from '../utils/grading';
 import { variantLabel } from '../utils/variants';
 import { toast } from '../store/toastStore';
@@ -167,7 +168,9 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
       <div className="flex shrink-0 flex-col items-end justify-between gap-2">
         <div className="text-right">
           <p className="font-mono text-sm font-semibold tabular">{money(gradedValue(g, cards))}</p>
-          <p className="text-[10px] text-faint">{g.valueUsd != null ? 'your value' : 'raw price'}</p>
+          <p className="text-[10px] text-faint">
+            {g.valueUsd != null ? 'your value' : g.pcPrice != null ? `PriceCharting · ${name} ${g.grade}${g.pcUpdatedAt ? ` · updated ${relativeTime(g.pcUpdatedAt)}` : ''}` : 'raw price'}
+          </p>
           {paidCost != null && <Gain valueUsd={gradedValue(g, cards)} costUsd={paidCost} className="text-[10px]" />}
         </div>
         {!readOnly && (
