@@ -30,6 +30,10 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
   const [alignLeft, setAlignLeft] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  // Serialises stepper clicks per deck: each queued step re-reads the live quantity only once the
+  // previous one has fully landed (optimistic update plus backend round-trip), so a burst of rapid
+  // clicks lands every increment instead of several of them computing the same "next" from a stale render.
+  const deckQtyQueue = useRef(new Map<string, Promise<void>>());
   const inCount = lists.filter((l) => l.cards.includes(card.id)).length;
 
   useEffect(() => {
@@ -81,12 +85,21 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
     return result.issues.find((i) => i.code === 'copy-limit' && i.cardIds.includes(cardSnapshot.id))?.message;
   };
 
-  const adjustDeckQty = async (deck: CustomList, delta: number) => {
-    const qty = deck.cardQtys[cardSnapshot.id] ?? 0;
-    const next = Math.max(0, Math.min(60, qty + delta));
-    if (next === qty) return;
-    await setDeckCardQty(deck.id, card, next);
-    setAnnouncement(next === 0 ? `Removed ${cardSnapshot.name} from ${deck.name}` : `${cardSnapshot.name} is now ${next} in ${deck.name}`);
+  const adjustDeckQty = (deck: CustomList, delta: number) => {
+    const key = `${deck.id}:${cardSnapshot.id}`;
+    const previous = deckQtyQueue.current.get(key) ?? Promise.resolve();
+    const step = previous.then(async () => {
+      // Read the live store, not the `deck` prop captured at render: a burst of clicks can fire
+      // before React re-renders with the previous step's result, and this queue step only runs
+      // once that previous step has fully landed.
+      const liveDeck = useCollectionStore.getState().lists.find((l) => l.id === deck.id) ?? deck;
+      const qty = liveDeck.cardQtys[cardSnapshot.id] ?? 0;
+      const next = Math.max(0, Math.min(60, qty + delta));
+      if (next === qty) return;
+      await setDeckCardQty(deck.id, card, next);
+      setAnnouncement(next === 0 ? `Removed ${cardSnapshot.name} from ${deck.name}` : `${cardSnapshot.name} is now ${next} in ${deck.name}`);
+    });
+    deckQtyQueue.current.set(key, step);
   };
 
   return (
@@ -158,7 +171,7 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
                         <div className="flex shrink-0 items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => void adjustDeckQty(d, -1)}
+                            onClick={() => adjustDeckQty(d, -1)}
                             disabled={qty <= 0}
                             aria-label={`Decrease ${cardSnapshot.name} in ${d.name}`}
                             className="btn btn-ghost !h-7 !w-7 !p-0"
@@ -170,7 +183,7 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
                           </span>
                           <button
                             type="button"
-                            onClick={() => void adjustDeckQty(d, 1)}
+                            onClick={() => adjustDeckQty(d, 1)}
                             disabled={qty >= 60}
                             aria-label={`Increase ${cardSnapshot.name} in ${d.name}`}
                             className="btn btn-ghost !h-7 !w-7 !p-0"

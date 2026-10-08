@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AddToList from './AddToList';
 import { renderWithProviders } from '../test/render';
@@ -95,6 +95,88 @@ describe('AddToList — decks', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase Fire Energy in Fire deck' }));
     await waitFor(() => expect(memory.lists[0].cardQtys[energy.id]).toBe(5));
     expect(screen.queryByText(/4-copy limit/)).not.toBeInTheDocument();
+  });
+
+  it('queues rapid increment clicks so every click lands, even while the backend is slow', async () => {
+    seedDecks([deck({ cards: [CANDIDATE.id], cardQtys: { [CANDIDATE.id]: 0 } })]);
+    renderWithProviders(<AddToList card={CANDIDATE} />);
+    await userEvent.click(screen.getByRole('button', { name: /Lists/ }));
+    const increase = screen.getByRole('button', { name: 'Increase Charmeleon in Fire deck' });
+
+    // Gate the backend call so several clicks fire before any one of them resolves.
+    const original = memory.setListCardQty.bind(memory);
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(memory, 'setListCardQty').mockImplementation(async (...args) => {
+      await gate;
+      return original(...args);
+    });
+
+    // All five native clicks are dispatched inside one `act` batch, so React doesn't re-render
+    // (and the component doesn't see an updated `deck` prop) between any of them — this is what
+    // exposed the original bug, where every click's "next" was computed from the same stale qty.
+    act(() => {
+      increase.click();
+      increase.click();
+      increase.click();
+      increase.click();
+      increase.click();
+    });
+    release();
+
+    await waitFor(() => expect(memory.lists[0].cardQtys[CANDIDATE.id]).toBe(5));
+  });
+
+  it('queues rapid decrement clicks down to zero and removes the card', async () => {
+    seedDecks([deck({ cards: [CANDIDATE.id], cardQtys: { [CANDIDATE.id]: 3 } })]);
+    renderWithProviders(<AddToList card={CANDIDATE} />);
+    await userEvent.click(screen.getByRole('button', { name: /Lists/ }));
+    const decrease = screen.getByRole('button', { name: 'Decrease Charmeleon in Fire deck' });
+
+    const original = memory.removeFromList.bind(memory);
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(memory, 'removeFromList').mockImplementation(async (...args) => {
+      await gate;
+      return original(...args);
+    });
+
+    act(() => {
+      decrease.click();
+      decrease.click();
+      decrease.click();
+      decrease.click();
+    });
+    release();
+
+    await waitFor(() => expect(memory.lists[0].cards).not.toContain(CANDIDATE.id));
+    expect(memory.lists[0].cardQtys[CANDIDATE.id]).toBeUndefined();
+  });
+
+  it('caps queued rapid increment clicks at 60', async () => {
+    seedDecks([deck({ cards: [CANDIDATE.id], cardQtys: { [CANDIDATE.id]: 58 } })]);
+    renderWithProviders(<AddToList card={CANDIDATE} />);
+    await userEvent.click(screen.getByRole('button', { name: /Lists/ }));
+    const increase = screen.getByRole('button', { name: 'Increase Charmeleon in Fire deck' });
+
+    const original = memory.setListCardQty.bind(memory);
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(memory, 'setListCardQty').mockImplementation(async (...args) => {
+      await gate;
+      return original(...args);
+    });
+
+    act(() => {
+      increase.click();
+      increase.click();
+      increase.click();
+      increase.click();
+      increase.click();
+    });
+    release();
+
+    await waitFor(() => expect(memory.lists[0].cardQtys[CANDIDATE.id]).toBe(60));
   });
 
   it('keeps plain-list toggle behaviour unchanged when decks are also present', async () => {
