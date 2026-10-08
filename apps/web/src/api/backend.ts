@@ -75,6 +75,8 @@ export interface SystemStatus {
   lastPriceSync: string | null;
   /** Epoch ms of the last FX rate fetch, or null if rates have never been loaded. */
   fxAt: number | null;
+  /** This server is running DEMO_MODE, so mutations are rejected and reset nightly. */
+  demoMode?: boolean;
   /** Only reported to owners and admins; members get the base status without update details. */
   updateAvailable?: boolean;
   latest?: string | null;

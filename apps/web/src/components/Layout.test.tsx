@@ -7,6 +7,7 @@ import { renderWithProviders } from '../test/render';
 import { queryResult, resetStores, seedCollection } from '../test/ui-helpers';
 import { makeEntry, makeSet, makeSnapshot } from '../test/fixtures';
 import { useCollectionStore } from '../store/collectionStore';
+import { getBackend } from '../api/backend';
 
 const mocks = vi.hoisted(() => ({ useSets: vi.fn() }));
 vi.mock('../api/hooks', () => ({ useSets: mocks.useSets }));
@@ -193,5 +194,20 @@ describe('Layout', () => {
     expect(screen.getAllByText('View only').length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: /^Lists/ })[0]).toHaveAttribute('href', '/lists');
     expect(screen.getAllByRole('link', { name: /Sharing/ })[0]).toHaveAttribute('href', '/sharing');
+  });
+
+  it('shows a dismissible demo banner when the server reports demoMode, and hides it on sign-off', async () => {
+    vi.spyOn(getBackend(), 'status').mockResolvedValue({ version: 'test', lastPriceSync: null, fxAt: null, demoMode: true });
+    renderLayout();
+    const banner = await screen.findByText(/viewing a demo/i);
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(banner).not.toBeInTheDocument();
+  });
+
+  it('shows no demo banner for an ordinary server', async () => {
+    vi.spyOn(getBackend(), 'status').mockResolvedValue({ version: 'test', lastPriceSync: null, fxAt: null });
+    renderLayout();
+    await screen.findByText('Home content');
+    expect(screen.queryByText(/viewing a demo/i)).not.toBeInTheDocument();
   });
 });
