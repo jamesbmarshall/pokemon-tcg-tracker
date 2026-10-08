@@ -4,7 +4,7 @@ import PublicSharePage from './PublicSharePage';
 import { renderWithProviders } from '../test/render';
 import { mockApi, reply } from '../test/apiMock';
 import { resetStores } from '../test/ui-helpers';
-import { makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
+import { makeEntry, makeGraded, makeSealed, makeSnapshot } from '../test/fixtures';
 import { getBackend, httpBackend } from '../api/backend';
 import { publicBackend } from '../api/publicBackend';
 import { useCollectionStore } from '../store/collectionStore';
@@ -20,6 +20,7 @@ const data = (over: Partial<PublicShare> = {}, share: Partial<PublicShare['share
   role: 'viewer',
   entries: [makeEntry({ cardId: PIKA.id, variant: 'normal', quantity: 2 })],
   graded: [makeGraded({ id: 'g1', cardId: ZARD.id, setId: 'sv03' })],
+  sealed: [],
   wishlist: [{ cardId: MEW.id, addedAt: '2025-01-01' }],
   notes: [],
   history: [],
@@ -67,6 +68,36 @@ describe('PublicSharePage', () => {
     expect(await screen.findByRole('heading', { name: "Ash's wishlist" })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Mew/ })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /Pikachu/ })).not.toBeInTheDocument();
+  });
+
+  it('shows sealed products with quantity and value for a sealed share', async () => {
+    const sealed = [
+      makeSealed({ id: 's1', name: 'Obsidian Flames booster box', productType: 'booster_box', quantity: 2, pcPrice: 90, pcProductId: 'pc-1' }),
+      makeSealed({ id: 's2', name: '151 ETB', productType: 'etb', status: 'opened', valueUsd: 0 }),
+    ];
+    mockApi({ 'GET /api/public/tok': data({ entries: [], graded: [], sealed, cards: [] }, { scope: 'sealed' }) });
+    renderShare();
+    expect(await screen.findByRole('heading', { name: "Ash's sealed products" })).toBeInTheDocument();
+    expect(screen.getByText('Obsidian Flames booster box')).toBeInTheDocument();
+    expect(screen.getByText('Qty 2')).toBeInTheDocument();
+    expect(screen.getAllByText('£90.00').length).toBeGreaterThan(0); // 2 × $90 × 0.5
+    expect(screen.getByText('151 ETB')).toBeInTheDocument();
+    expect(screen.getByText('Opened')).toBeInTheDocument();
+  });
+
+  it('hides sealed values when the share hides value', async () => {
+    // Redaction happens server-side: with hideValue, the API sends no pcPrice/valueUsd at all.
+    const sealed = [makeSealed({ id: 's1', pcPrice: undefined, pcProductId: undefined })];
+    mockApi({ 'GET /api/public/tok': data({ entries: [], graded: [], sealed, cards: [] }, { scope: 'sealed', hideValue: true }) });
+    renderShare();
+    await screen.findByText('Obsidian Flames booster box');
+    expect(screen.queryByText(/£/)).not.toBeInTheDocument();
+  });
+
+  it('says there is nothing sealed yet', async () => {
+    mockApi({ 'GET /api/public/tok': data({ entries: [], graded: [], sealed: [], cards: [] }, { scope: 'sealed' }) });
+    renderShare();
+    expect(await screen.findByText('No sealed products yet.')).toBeInTheDocument();
   });
 
   it('shows a list in its own order', async () => {
