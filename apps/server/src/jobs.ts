@@ -14,6 +14,7 @@ import { cachedUpstream, ensureImage, pruneHttpCache, pruneImages, refreshFx, tt
 import { deletePhotoFiles } from './collections.ts';
 import { refreshSealedPrices } from './sealed.ts';
 import { refreshGradedPrices } from './providers/pricecharting.ts';
+import { redactSecrets } from './security.ts';
 import { applyUpdate, autoUpdateBlockedFor, autoUpdateEnabled, checkForUpdate, pruneVersions, updateAvailable, updateBlocker } from './updater.ts';
 
 interface JobDef {
@@ -245,8 +246,15 @@ export function runJob(ctx: Ctx, name: string): Promise<unknown> {
       ctx.log.info({ job: name, result }, 'job finished');
       return result;
     } catch (err) {
-      // Capped so a huge upstream error body can't bloat the jobs table.
-      ctx.db.run("UPDATE jobs SET last_finished_at = ?, last_status = 'error', last_error = ? WHERE name = ?", new Date().toISOString(), String((err as Error).message ?? err).slice(0, 500), name);
+      // Capped so a huge upstream error body can't bloat the jobs table, and redacted so a
+      // leaked provider API key (e.g. from a fetch error echoing its request URL) never lands
+      // in a place admins can read back.
+      ctx.db.run(
+        "UPDATE jobs SET last_finished_at = ?, last_status = 'error', last_error = ? WHERE name = ?",
+        new Date().toISOString(),
+        redactSecrets(String((err as Error).message ?? err)).slice(0, 500),
+        name,
+      );
       ctx.log.warn({ job: name, err }, 'job failed');
       throw err;
     } finally {

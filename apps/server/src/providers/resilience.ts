@@ -9,6 +9,7 @@
  * restarting process is itself evidence the previous state no longer applies, and nothing here
  * decides what to serve on its own — callers still own their stale-cache fallback.
  */
+import { redactSecrets } from '../security.ts';
 
 /** Thrown by an `attempt` callback for failures that should be retried: network errors, 5xx, 429. */
 export class RetryableError extends Error {
@@ -146,7 +147,9 @@ function onSuccess(r: Rec) {
 function onFailure(r: Rec, err: unknown) {
   r.consecutiveFailures++;
   r.lastFailureAt = Date.now();
-  r.lastError = err instanceof Error ? err.message : String(err);
+  // Redacted: this is surfaced verbatim to admins via GET /api/admin/providers, and a
+  // provider's error (or a raw fetch failure) can echo its request URL, key included.
+  r.lastError = redactSecrets(err instanceof Error ? err.message : String(err));
   const wasProbing = r.probing;
   r.probing = false;
   if (wasProbing || r.consecutiveFailures >= FAILURE_THRESHOLD) {

@@ -32,6 +32,7 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, Limiter, audit, bad, requireRole, requireUser, type Ctx } from '../context.ts';
 import { cachedUpstream } from '../catalog.ts';
+import { redactSecrets } from '../security.ts';
 
 const SETTINGS_KEY = 'pricecharting_key';
 const BASE = 'https://www.pricecharting.com';
@@ -181,7 +182,7 @@ export async function refreshGradedPrices(ctx: Ctx): Promise<number> {
         refreshed++;
       }
     } catch (err) {
-      ctx.log.warn({ err, id: r.id }, 'graded price refresh failed');
+      ctx.log.warn({ err: redactSecrets((err as Error).message ?? String(err)), id: r.id }, 'graded price refresh failed');
     }
   }
   return refreshed;
@@ -228,7 +229,9 @@ export function pricechartingRoutes(app: FastifyInstance, ctx: Ctx) {
       await pcGet(ctx, '/api/products', { q: 'charizard' }, 0);
     } catch (err) {
       audit(ctx, req, 'integration.pricecharting_tested', undefined, { ok: false });
-      throw new HttpError(502, `Couldn't reach PriceCharting: ${(err as Error).message}`, 'upstream');
+      // Redacted: a fetch failure can echo the request URL (and therefore the key) in its
+      // message, and this text goes straight back to the admin's browser.
+      throw new HttpError(502, `Couldn't reach PriceCharting: ${redactSecrets((err as Error).message)}`, 'upstream');
     }
     audit(ctx, req, 'integration.pricecharting_tested', undefined, { ok: true });
     return { ok: true };

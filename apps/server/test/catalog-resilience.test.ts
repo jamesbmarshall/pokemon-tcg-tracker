@@ -128,4 +128,30 @@ describe('catalogue resilience (HTTP-level)', () => {
     expect((await member.get('/api/admin/providers')).statusCode).toBe(403);
     expect((await owner.get('/api/admin/providers')).statusCode).toBe(200);
   });
+
+  it('never leaks the PriceCharting API key into the /api/admin/providers health panel', async () => {
+    const key = 'health-panel-secret-key-abcdef';
+    const owner = await setupOwner(s.app);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ products: [] }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    await owner.put('/api/admin/integrations/pricecharting', { key });
+    // A fetch failure whose message echoes the failing URL, same as the dedicated redaction
+    // test in pricecharting.test.ts, but this time exercised through the breaker's own
+    // RetryableError wrapping and its persisted `lastError` health field. Real timers: a POST
+    // through app.inject needs more event-loop ticks than fake timers reliably advance through.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error(`fetch failed: GET https://www.pricecharting.com/api/products?q=charizard&t=${key}`);
+      }),
+    );
+    const res = await owner.post('/api/admin/integrations/pricecharting/test');
+    expect(res.statusCode).toBe(502);
+    expect(JSON.stringify(res.json())).not.toContain(key);
+
+    const health = await owner.get('/api/admin/providers');
+    expect(health.statusCode).toBe(200);
+    const body = health.json();
+    expect(body.pricecharting.lastError).toBeTruthy();
+    expect(JSON.stringify(body)).not.toContain(key);
+  });
 });

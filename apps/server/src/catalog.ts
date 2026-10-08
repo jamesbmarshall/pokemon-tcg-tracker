@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpError, Limiter, bad, now, type Ctx } from './context.ts';
-import { sha256 } from './security.ts';
+import { redactSecrets, sha256 } from './security.ts';
 import { currentRates } from './cards.ts';
 import { RetryableError, recordStaleServe, retryAfterMs, withResilience } from './providers/resilience.ts';
 
@@ -85,7 +85,7 @@ export async function cachedUpstream(ctx: Ctx, provider: string, key: string, ur
         return { status: res.status, type, body, fresh: true };
       } catch (err) {
         if (row) return stale();
-        ctx.log.warn({ err: (err as Error).message, url }, 'catalogue upstream failed');
+        ctx.log.warn({ err: redactSecrets((err as Error).message ?? String(err)), url: redactSecrets(url) }, 'catalogue upstream failed');
         throw new HttpError(502, 'The card catalogue is unavailable right now', 'upstream');
       } finally {
         inflight.delete(key);
