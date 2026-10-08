@@ -8,12 +8,25 @@
  */
 import { configureCatalog } from '@poketracker/shared/catalog';
 import { currentRates } from '../utils/fx';
-import { API_HEADERS } from './http';
+import { api, API_HEADERS } from './http';
+import type { CardSnapshot } from './types';
 
 // Runs at import time so any price conversion done by the catalogue uses live rates.
 configureCatalog({ eurPerUsd: () => currentRates().EUR });
 
 export * from '@poketracker/shared/catalog';
+
+/**
+ * Resolves a scanned set code + collector number (or number + printed total) to candidate
+ * cards, via the server's GET /api/cards/lookup. The server, not the browser, talks to TCGdex.
+ */
+export async function lookupScan(query: { setCode?: string; number: string; total?: string }): Promise<CardSnapshot[]> {
+  const params = new URLSearchParams({ number: query.number });
+  if (query.setCode) params.set('set', query.setCode);
+  if (query.total) params.set('total', query.total);
+  const { candidates } = await api<{ candidates: CardSnapshot[] }>(`/api/cards/lookup?${params}`);
+  return candidates;
+}
 
 // Mirrors the server's image allow-list: /api/img rejects any other host, so other URLs are
 // passed through unchanged (and the CSP decides whether they load).
