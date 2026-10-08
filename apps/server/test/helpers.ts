@@ -19,13 +19,13 @@ export interface TestServer {
   close: () => Promise<void>;
 }
 
-export async function startServer(env: Record<string, string> = {}): Promise<TestServer> {
+export async function startServer(env: Record<string, string> = {}, opts: { onRoute?: (method: string, url: string) => void } = {}): Promise<TestServer> {
   const dir = mkdtempSync(join(tmpdir(), 'pt-test-'));
   const config = loadConfig({ DATA_DIR: dir, SETUP_TOKEN: SETUP, JOBS: '0', LOG_LEVEL: 'silent', TCGDEX_BASE: 'http://tcgdex.test/v2', ...env });
   const db = new Db(join(dir, 'poketracker.db'));
   db.migrate();
   const ctx: Ctx = { config, db, sealer: new Sealer(Buffer.alloc(32, 7)), log: console as unknown as Ctx['log'], services: {} };
-  const app = await buildApp(ctx, { logger: false });
+  const app = await buildApp(ctx, { logger: false, onRoute: opts.onRoute });
   ensureSetupToken(ctx);
   await app.ready();
   return {

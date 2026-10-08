@@ -16,6 +16,7 @@ import { collectionRoutes } from './collections.ts';
 import { catalogRoutes } from './catalog.ts';
 import { shareRoutes, attachShare } from './shares.ts';
 import { systemRoutes } from './system.ts';
+import { demoGuard, demoRoutes } from './demo.ts';
 
 /** Methods that must not change state, so they skip the CSRF checks below. */
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -27,7 +28,7 @@ const hopsTrust = (hops: number) => (_addr: string, i: number) => i < hops;
  * onRequest hook first, then the API routes, then the /api/* catch-all, and the SPA last so its
  * not-found handler only sees requests nothing else claimed.
  */
-export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (method: string, url: string) => void } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: opts.logger === false ? false : { level: ctx.config.logLevel, redact: ['req.headers.cookie', 'req.headers.authorization'] },
     // A hop count becomes the same function proxy-addr builds internally (trust the nearest n
@@ -39,6 +40,13 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
     logController: new LogController({ disableRequestLogging: true }),
   });
   ctx.log = app.log;
+
+  // Test-only hook: lets the demo-guard test enumerate every registered route without having to
+  // hand-maintain a route list of its own.
+  if (opts.onRoute) {
+    const collect = opts.onRoute;
+    app.addHook('onRoute', (r) => (Array.isArray(r.method) ? r.method : [r.method]).forEach((m) => collect(m, r.url)));
+  }
 
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: 12 * 1024 * 1024, files: 6 } });
@@ -84,6 +92,10 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
     attachShare(ctx, req);
   });
 
+  // No-op outside demo mode. Runs as a preHandler (after routing), so it can key off the
+  // registered route pattern rather than the raw URL.
+  app.addHook('preHandler', demoGuard(ctx));
+
   // Client errors keep their message (validation, limits); anything 5xx is logged and replaced
   // with a generic message so internals such as SQL or file paths never reach the browser.
   app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, req, reply) => {
@@ -102,6 +114,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
   catalogRoutes(app, ctx);
   shareRoutes(app, ctx);
   systemRoutes(app, ctx);
+  demoRoutes(app, ctx);
 
   // Without this, unknown API paths would fall through to the SPA and return HTML with a 200.
   app.all('/api/*', async () => {
