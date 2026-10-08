@@ -138,4 +138,41 @@ describe('PriceCharting provider', () => {
     expect(actions).toContain('integration.pricecharting_tested');
     expect(actions).toContain('integration.pricecharting_cleared');
   });
+
+  it('never leaks the API key when an upstream request fails: not in logs, not in the error sent to the client', async () => {
+    const key = 'super-secret-pc-key-0123456789';
+    // A fetch error whose message echoes the failing URL (some runtimes do this), so the key
+    // would appear twice over if either the url field or the error message were left unredacted.
+    const fetchSpy = vi.fn(async () => {
+      throw new Error(`fetch failed: GET https://www.pricecharting.com/api/products?q=charizard&t=${key} unreachable`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const owner = await setupOwner(s.app);
+    await owner.put('/api/admin/integrations/pricecharting', { key });
+    const res = await owner.post('/api/admin/integrations/pricecharting/test');
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).not.toContain(key);
+    expect(JSON.stringify(res.json())).not.toContain(key);
+    for (const call of warnSpy.mock.calls) expect(JSON.stringify(call)).not.toContain(key);
+    warnSpy.mockRestore();
+  });
+
+  it('redacts a key-shaped error message before storing it as a job last_error', async () => {
+    const { JOBS, runJob } = await import('../src/jobs.ts');
+    const key = 'another-secret-key-value-99999';
+    JOBS.push({
+      name: 'test-leaky-job',
+      label: 'Leaky test job',
+      schedule: '0 0 31 2 *', // never fires on its own; only run() here
+      staleMs: 0,
+      run: async () => {
+        throw new Error(`upstream call failed: https://www.pricecharting.com/api/product?id=1&t=${key}`);
+      },
+    });
+    await expect(runJob(s.ctx, 'test-leaky-job')).rejects.toThrow();
+    const row = s.ctx.db.get<{ last_error: string }>("SELECT last_error FROM jobs WHERE name = 'test-leaky-job'");
+    expect(row!.last_error).not.toContain(key);
+    expect(row!.last_error).toContain('t=REDACTED');
+  });
 });
