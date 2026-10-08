@@ -396,10 +396,13 @@ describe('CardPage', () => {
       expect(screen.queryByText('Manual')).not.toBeInTheDocument();
       const box = screen.getByRole('textbox', { name: 'Your value per Normal copy' });
       await userEvent.type(box, '5{Enter}');
-      await waitFor(() => expect(useCollectionStore.getState().entries.get('sv03-002::normal')?.valueUsd).toBe(5));
+      // Typed in the display currency: £5 at the test FX rate (£0.50/USD) is stored as $10
+      await waitFor(() => expect(useCollectionStore.getState().entries.get('sv03-002::normal')?.valueUsd).toBe(10));
       expect(toasts().at(-1)?.message).toBe('Your value saved');
-      // $5 at the test FX rate (£0.50/USD) → £2.50, overriding the $1 market price
-      expect(await screen.findByText('£2.50')).toBeInTheDocument();
+      expect(box).toHaveValue('5.00');
+      expect(screen.getAllByText('£', { exact: true }).length).toBeGreaterThan(0);
+      // Overrides the $1 (£0.50) market price
+      expect(await screen.findByText('£5.00')).toBeInTheDocument();
       expect(screen.getAllByText('Manual').length).toBeGreaterThan(0);
 
       await userEvent.clear(box);
