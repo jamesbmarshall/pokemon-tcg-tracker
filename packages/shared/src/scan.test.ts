@@ -76,4 +76,32 @@ describe('parseScanText', () => {
     const candidates = parseScanText('TG05/TG30');
     expect(candidates).toHaveLength(1);
   });
+
+  it('rejects a lone "1/1" as unreliable noise', () => {
+    expect(parseScanText('1/1')).toEqual([]);
+  });
+
+  it('rejects a lone "3/4" as unreliable noise', () => {
+    expect(parseScanText('3/4')).toEqual([]);
+  });
+
+  it('accepts a single-digit collector number with a multi-digit total', () => {
+    const [c] = parseScanText('5/198');
+    expect(c).toMatchObject({ number: '5', total: '198' });
+  });
+
+  it('accepts a zero-padded single-digit collector number', () => {
+    const [c] = parseScanText('07/102');
+    expect(c).toMatchObject({ number: '07', total: '102' });
+  });
+
+  it('accepts a secret rare number above the printed total', () => {
+    const [c] = parseScanText('201/198');
+    expect(c).toMatchObject({ number: '201', total: '198' });
+  });
+
+  it('still accepts a Trainer Gallery number after the plain-fraction change', () => {
+    const [c] = parseScanText('TG05/TG30');
+    expect(c).toMatchObject({ number: 'TG05', total: 'TG30' });
+  });
 });
