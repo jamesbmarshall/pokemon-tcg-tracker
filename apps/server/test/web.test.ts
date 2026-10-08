@@ -48,4 +48,18 @@ describe('web app serving', () => {
     expect((await s.app.inject({ method: 'GET', url: '/missing.png' })).statusCode).toBe(404);
     expect((await s.app.inject({ method: 'POST', url: '/sets' })).statusCode).toBe(404);
   });
+
+  it('allows the web app manifest and service worker under the CSP', async () => {
+    const res = await s.app.inject({ method: 'GET', url: '/' });
+    const csp = res.headers['content-security-policy'] as string;
+    expect(csp).toContain("manifest-src 'self'");
+    expect(csp).toContain("worker-src 'self' blob:");
+  });
+
+  it('allows the self-hosted OCR wasm core under the CSP, but never plain JS eval', async () => {
+    const res = await s.app.inject({ method: 'GET', url: '/' });
+    const csp = res.headers['content-security-policy'] as string;
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(csp).not.toContain("'unsafe-eval'");
+  });
 });

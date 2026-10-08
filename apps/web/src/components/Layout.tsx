@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
+import { AlertTriangle, BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, ScanLine, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
@@ -24,6 +24,7 @@ const NAV = [
   { to: '/wishlist', label: 'Wishlist', icon: Heart },
   { to: '/sealed', label: 'Sealed', icon: Package },
   { to: '/search', label: 'Search', icon: Search },
+  { to: '/scan', label: 'Scan', icon: ScanLine },
 ];
 
 /**
@@ -250,7 +251,7 @@ export default function Layout() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}

@@ -56,6 +56,12 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean } = {}): Promi
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
+        // The web app manifest and the generated service worker (both same-origin only).
+        manifestSrc: ["'self'"],
+        workerSrc: ["'self'", 'blob:'],
+        // The camera-scan page runs tesseract.js's OCR core (self-hosted wasm, no CDN) in a
+        // worker; wasm-unsafe-eval is Wasm's own instantiation, not JS eval.
+        scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
         // Many installs are plain HTTP on a LAN; upgrading would break every subresource there.
         upgradeInsecureRequests: null,
       },

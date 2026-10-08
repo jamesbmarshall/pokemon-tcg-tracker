@@ -12,11 +12,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { cardVariants, setIdFromCardId } from '@poketracker/shared/catalog';
+import { cardVariants, getCardsByIds, getSetCards, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
+import { buildCodeIndex, setIdsForCode, SUBSET_PREFIXES } from '@poketracker/shared/setCodes';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
-import type { CardNote, CollectionEntry, GradedCopy, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
+import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
-import { hydrateMissing, readCards, readEntries, readGraded, readHistory, readPriceHistory, biggestMovers, recordValue } from './cards.ts';
+import { hydrateMissing, readCards, readEntries, readGraded, readHistory, readPriceHistory, biggestMovers, recordValue, saveSnapshots } from './cards.ts';
 import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
 import { cleanSealed, deleteSealedPhotoFiles, putSealed, readSealed, saveSealedPhoto } from './sealed.ts';
@@ -26,6 +27,9 @@ import { tcgdexProvider } from './providers/tcgdex.ts';
 /** Set ids as TCGdex issues them, optionally prefixed with a language (e.g. `sv01`, `ja:SV1a`). */
 const SET_ID = /^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,40}$/;
 const SET_STAT_TTL_MS = 12 * 60 * 60_000;
+// Printed set code (e.g. "SVI", "PR-SV") and printed collector number/total (e.g. "123", "TG05"), as read off a card.
+const SCAN_SET_CODE = /^[A-Za-z0-9-]{2,8}$/;
+const SCAN_NUMBER = /^[A-Za-z0-9]{1,10}$/;
 
 export type Access = 'owner' | 'editor' | 'viewer';
 
@@ -404,6 +408,35 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
   return { entries: entries.size, graded: graded.length, sealed: sealed.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
 }
 
+// -------------------------------------------------------------- scan lookup
+
+const SCAN_SET_CARDS_TTL_MS = 10 * 60_000;
+// Per-set brief card listing, so repeated scans against the same set within a short window
+// (every OCR frame while a card sits under the camera) don't each hit TCGdex.
+const scanSetCardsCache = new Map<string, { cards: PokemonCard[]; at: number }>();
+
+async function scanSetCards(setId: string): Promise<PokemonCard[]> {
+  const hit = scanSetCardsCache.get(setId);
+  if (hit && Date.now() - hit.at < SCAN_SET_CARDS_TTL_MS) return hit.cards;
+  const cards = await getSetCards(setId).catch(() => [] as PokemonCard[]);
+  scanSetCardsCache.set(setId, { cards, at: Date.now() });
+  return cards;
+}
+
+/** Printed numbers match case-insensitively; purely numeric ones also ignore leading zeros. */
+function numbersMatch(requested: string, printed: string): boolean {
+  if (/^\d+$/.test(requested) && /^\d+$/.test(printed)) return Number(requested) === Number(printed);
+  return requested.toUpperCase() === printed.toUpperCase();
+}
+
+/** Every TCGdex set id worth searching for a sub-printing (Trainer/Galarian Gallery, SV shiny vault). */
+function subsetIds(index: Map<string, Set<string>>): string[] {
+  const regexes = Object.values(SUBSET_PREFIXES);
+  const ids = new Set<string>();
+  for (const perCode of index.values()) for (const id of perCode) if (regexes.some((r) => r.test(id))) ids.add(id);
+  return Array.from(ids).slice(0, 20);
+}
+
 // ---------------------------------------------------------------- routes
 
 export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
@@ -742,6 +775,53 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     const clean = ids.filter((i): i is string => typeof i === 'string' && CARD_ID.test(i));
     await hydrateMissing(ctx, clean);
     return Array.from(readCards(ctx.db, clean).values());
+  });
+
+  /**
+   * Resolves an OCR-read set code + collector number (or number + printed total, when no code
+   * was read reliably) to candidate cards for the camera-scan feature. A misread or unknown set
+   * code resolves to zero candidate sets rather than a 400: the scan should keep trying, not die
+   * on one bad frame.
+   */
+  const scanLookupLimiter = new Limiter(120, 60_000);
+  app.get('/api/cards/lookup', async (req, reply) => {
+    const u = requireUser(req);
+    scanLookupLimiter.check(u.id, reply);
+    const q = req.query as { set?: string; number?: string; total?: string };
+    const setCode = str(q.set, 8);
+    const number = str(q.number, 10);
+    const total = str(q.total, 10);
+    if (setCode && !SCAN_SET_CODE.test(setCode)) throw bad('Invalid set code');
+    if (!number || !SCAN_NUMBER.test(number)) throw bad('Invalid collector number');
+    if (total && !SCAN_NUMBER.test(total)) throw bad('Invalid printed total');
+
+    const sets = await getSets('en').catch(() => []);
+    const index = buildCodeIndex(sets);
+    let setIds: string[];
+    if (setCode) {
+      setIds = setIdsForCode(setCode, index);
+    } else if (total && /^\d+$/.test(total)) {
+      const printedTotal = Number(total);
+      setIds = sets.filter((s) => s.printedTotal === printedTotal).map((s) => s.id).slice(0, 20);
+    } else {
+      setIds = subsetIds(index);
+    }
+
+    const matchedIds: string[] = [];
+    for (const setId of setIds) {
+      if (matchedIds.length >= 10) break;
+      const cards = await scanSetCards(setId);
+      for (const card of cards) {
+        if (numbersMatch(number, card.number)) matchedIds.push(card.id);
+        if (matchedIds.length >= 10) break;
+      }
+    }
+    if (!matchedIds.length) return { candidates: [] };
+
+    const cards = await getCardsByIds(matchedIds);
+    const snaps: CardSnapshot[] = cards.map(toSnapshot);
+    saveSnapshots(ctx.db, snaps);
+    return { candidates: snaps };
   });
 
   /**

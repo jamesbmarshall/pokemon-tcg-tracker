@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Download, FileJson, FileSpreadsheet, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getBackend } from '../api/backend';
 import { isAdmin, useAuth } from '../store/authStore';
+import InstallPrompt from '../components/InstallPrompt';
 import UpdatesSection from '../components/UpdatesSection';
 import { computeValue, entryValue, gradedValue, useCollectionStore } from '../store/collectionStore';
 import { useSettings, type Currency, type ThemePref } from '../store/settingsStore';
@@ -121,6 +122,8 @@ export default function SettingsPage() {
           ]}
         />
       </Section>
+
+      <InstallPrompt />
 
       <Section title="Currency" description="Prices come from TCGplayer (USD) and Cardmarket (EUR) and are converted at the latest ECB reference rate.">
         <Segmented<Currency>
