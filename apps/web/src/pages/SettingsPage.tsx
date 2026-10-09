@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Download, FileJson, FileSpreadsheet, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { Coffee, Download, FileJson, FileSpreadsheet, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { getBackend } from '../api/backend';
 import { isAdmin, useAuth } from '../store/authStore';
 import UpdatesSection from '../components/UpdatesSection';
@@ -211,6 +211,14 @@ export default function SettingsPage() {
         <p className="mt-3 text-sm leading-relaxed text-muted">
           Your server keeps its own copy of every owned and wishlisted card and its image, so your collection still works if a data source changes.
         </p>
+        <a
+          href="https://ko-fi.com/jamesbmarshall"
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex items-center gap-1.5 text-sm text-faint underline underline-offset-2 hover:text-muted"
+        >
+          <Coffee size={14} /> Support PokéTracker on Ko-fi
+        </a>
       </Section>
 
       {role === 'owner' && (
