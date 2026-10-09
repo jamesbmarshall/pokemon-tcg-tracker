@@ -14,7 +14,9 @@
 
 ARG NODE_VERSION=24
 
-FROM node:${NODE_VERSION}-bookworm-slim AS build
+# mirror.gcr.io is Google's public read-through cache of Docker Hub; pulling the base image
+# through it avoids Docker Hub's rate limit and auth.docker.io congestion on CI runners.
+FROM mirror.gcr.io/library/node:${NODE_VERSION}-bookworm-slim AS build
 WORKDIR /src
 ENV CI=1 npm_config_fund=false npm_config_audit=false npm_config_update_notifier=false
 # Manifests first so the npm ci layer is reused until a dependency actually changes.
@@ -36,7 +38,7 @@ ARG GIT_SHA=""
 RUN npm run build \
  && GITHUB_SHA="$GIT_SHA" node scripts/make-bundle.mjs --stage-only ${VERSION:+--version "$VERSION"}
 
-FROM node:${NODE_VERSION}-bookworm-slim
+FROM mirror.gcr.io/library/node:${NODE_VERSION}-bookworm-slim
 # The runtime stage has no node_modules: server.mjs is a self-contained esbuild bundle and the
 # launcher has no dependencies.
 ARG VERSION=""
