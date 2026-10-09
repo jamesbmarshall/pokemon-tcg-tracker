@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7
 # PokéTracker: one container with the launcher, the API server and the web app.
 #
 #   docker build -t poketracker .
