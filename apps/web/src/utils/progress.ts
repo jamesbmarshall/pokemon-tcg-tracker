@@ -16,11 +16,14 @@ export interface SetProgress {
   master: { owned: number; total: number };
 }
 
-// Non-numeric numbers (TG01, SV001, promo codes) are always outside the base set.
-const isNumeric = (n: string) => /^\d+$/.test(n);
+/** Prefixes identify a numbering series; they do not make a card secret. */
+export function isWithinPrintedTotal(number: string, printedTotal: number): boolean {
+  const match = /^(?:[a-z]+)?(\d+)$/i.exec(number);
+  return !!match && Number(match[1]) >= 1 && Number(match[1]) <= printedTotal;
+}
 
 /** Part of the numbered set (1 to printed total), i.e. not a secret rare. */
-export const isBaseCard = (c: Pick<PokemonCard, 'number' | 'set'>) => isNumeric(c.number) && Number(c.number) <= c.set.printedTotal;
+export const isBaseCard = (c: Pick<PokemonCard, 'number' | 'set'>) => isWithinPrintedTotal(c.number, c.set.printedTotal);
 
 /** Base = numbered cards up to printed total; Full = every card; Master = every variant of every card. */
 export function setProgress(cards: PokemonCard[], byCard: Map<string, Record<string, number>>): SetProgress {

@@ -53,6 +53,21 @@ describe('useCollectionStats', () => {
     expect(s.sets.find((x) => x.setId === 'tiny')).toMatchObject({ baseOwned: 2, uniqueOwned: 2, masterTotal: undefined });
   });
 
+  it('counts prefixed cards toward completed gallery sets', () => {
+    const cards = Array.from({ length: 30 }, (_, i) => makeSnapshot({
+      id: `swsh10tg-${i + 1}`, setId: 'swsh10tg', printedTotal: 30,
+      number: `TG${String(i + 1).padStart(2, '0')}`,
+    }));
+    const entries = cards.map((c) => makeEntry({ cardId: c.id, setId: c.setId, variant: 'holofoil' }));
+    useCollectionStore.setState({
+      cards: new Map(cards.map((c) => [c.id, c])),
+      entries: new Map(entries.map((e) => [e.id, e])),
+    });
+    const { result } = renderStats();
+    expect(result.current.sets[0]).toMatchObject({ baseOwned: 30, uniqueOwned: 30 });
+    expect(result.current.completedSets).toBe(1);
+  });
+
   it('adds slab value to cards and sets, but only counting slabs fill set progress', () => {
     const graded = new Map(
       [
