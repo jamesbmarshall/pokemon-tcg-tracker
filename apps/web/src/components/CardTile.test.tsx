@@ -23,7 +23,14 @@ describe('CardTile', () => {
     expect(screen.getByRole('link', { name: 'Charmander 1, not owned' })).toHaveAttribute('href', '/card/sv03-001');
     expect(screen.getByRole('link', { name: 'Charmander' })).toBeInTheDocument();
     expect(screen.getByText('#1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add Normal' })).toHaveTextContent('N');
+    const addNormal = screen.getByRole('button', { name: 'Add Normal' });
+    expect(addNormal).toHaveTextContent('N');
+    expect(addNormal.parentElement?.parentElement).toHaveClass(
+      'flex-wrap',
+      'pointer-coarse:opacity-100',
+      'pointer-coarse:[&_button]:min-h-9',
+      'pointer-coarse:[&_button]:min-w-8',
+    );
     expect(screen.getByRole('button', { name: 'Add Reverse Holo' })).toHaveTextContent('RH');
     // Highest variant price ($2) in GBP at the test rate
     expect(screen.getByText('£1.00')).toBeInTheDocument();

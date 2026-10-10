@@ -105,7 +105,7 @@ export default function SearchPage() {
               )
             )}
           </div>
-          <button onClick={() => setShowFilters((s) => !s)} className={`btn !h-12 !rounded-2xl ${showFilters ? 'btn-primary' : 'btn-ghost'}`} aria-expanded={showFilters}>
+          <button onClick={() => setShowFilters((s) => !s)} className={`btn !h-12 !rounded-2xl ${showFilters ? 'btn-primary' : 'btn-ghost'}`} aria-label="Filters" aria-expanded={showFilters}>
             <SlidersHorizontal size={16} />
             <span className="hidden sm:inline">Filters</span>
             {activeCount > 0 && <span className="rounded-full bg-ink/20 px-1.5 font-mono text-[10px]">{activeCount}</span>}
@@ -152,7 +152,7 @@ export default function SearchPage() {
                 })}
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <label className="space-y-1.5">
                 <span className="eyebrow">Card type</span>
                 <select value={supertype} onChange={(e) => set('supertype', e.target.value)} className="input">

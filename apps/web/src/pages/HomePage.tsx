@@ -75,7 +75,7 @@ function Welcome() {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
           { icon: MousePointerClick, title: 'Tap to collect', body: 'Each card shows its printings — N, RH, H. Tap one to add it. Right-click to take one away.' },
           { icon: Layers, title: 'Master set mode', body: 'Track base, full and master completion separately, so secret rares and reverse holos count properly.' },
@@ -91,7 +91,7 @@ function Welcome() {
 
       <section>
         <h2 className="mb-4 font-display text-xl font-semibold">Latest releases</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {isLoading && Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-36" />)}
           {latest.map((s) => (
             <Link key={s.id} to={`/sets/${s.id}`} className="panel group flex h-36 flex-col justify-between p-5 transition-colors hover:border-line-strong">
@@ -156,7 +156,7 @@ export default function HomePage() {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <section className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
         <div className="panel relative overflow-hidden p-6 sm:p-8">
           <div className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-[conic-gradient(from_0deg,#ffd23f33,#ff8ad833,#7ad7ff33,#ffd23f33)] blur-3xl" />
           <p className="eyebrow">Collection value</p>
@@ -219,7 +219,7 @@ export default function HomePage() {
             All sets →
           </Link>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {inProgress.map((s) => (
             <Link key={s.setId} to={`/sets/${s.setId}`} className="panel group flex items-center gap-4 p-4 transition-colors hover:border-line-strong">
               <ProgressRing value={s.baseOwned} total={s.printedTotal} size={58} />
@@ -242,7 +242,7 @@ export default function HomePage() {
       </section>
 
       {/* Showcase */}
-      <section className="grid gap-8 xl:grid-cols-2 xl:gap-12">
+      <section className="grid grid-cols-1 gap-8 xl:grid-cols-2 xl:gap-12">
         <Strip title="Most valuable" icon={<Sparkles size={16} className="text-volt" />} link="/collection?sort=value">
           {top.map((o) => (
             <MiniCard key={o.card.id} o={o} line={money(o.topPrice)} />

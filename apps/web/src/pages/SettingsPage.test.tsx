@@ -220,6 +220,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
     const button = screen.getByRole('button', { name: 'Clear everything' });
     const input = screen.getByText('delete').closest('div')!.querySelector('input')!;
+    expect(input.parentElement).toHaveClass('flex-wrap');
     expect(button).toBeDisabled();
     await userEvent.type(input, 'delet');
     expect(button).toBeDisabled();

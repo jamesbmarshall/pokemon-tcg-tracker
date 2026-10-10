@@ -42,6 +42,7 @@ describe('ListsPage', () => {
     renderWithProviders(<ListsPage />);
     const fire = screen.getByRole('link', { name: /Fire deck/ });
     expect(fire).toHaveAttribute('href', '/lists/l1');
+    expect(fire.closest('ul')).toHaveClass('grid-cols-1');
     // $2 + $4 + $40 = $46 → £23.00
     expect(fire).toHaveTextContent('3 cards · £23.00');
     expect(screen.getByRole('link', { name: /To grade/ })).toHaveTextContent('0 cards');
@@ -77,6 +78,7 @@ describe('ListPage', () => {
     expect(screen.getByRole('heading', { name: 'Fire deck' })).toBeInTheDocument();
     expect(screen.getByText('Burn it all')).toBeInTheDocument();
     expect(tileNames()).toEqual(['Charmander', 'Charmeleon', 'Charizard']);
+    expect(screen.getByRole('link', { name: /Charmander 1/ }).closest('[class*="grid-cols-"]')).toHaveClass('grid-cols-1');
     expect(screen.getByRole('button', { name: 'Move Charmander earlier' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move Charizard later' })).toBeDisabled();
   });

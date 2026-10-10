@@ -102,6 +102,15 @@
   button { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
 
+  @media (pointer: coarse) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+    .input, .btn { min-height: 44px; }
+  }
+
   .font-sans { font-stretch: 100%; }
   .font-display { font-stretch: 112.5%; }
   .font-mono, code, kbd, samp { font-stretch: 75%; }

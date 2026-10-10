@@ -96,7 +96,7 @@ export default function SetsPage() {
       {error && !sets && <ErrorState title="Couldn't load sets" error={error} onRetry={() => refetch()} />}
 
       {isLoading && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {Array.from({ length: 12 }, (_, i) => (
             <Skeleton key={i} className="h-40" />
           ))}
@@ -115,7 +115,7 @@ export default function SetsPage() {
             <h2 className="font-display text-lg font-semibold">{name}</h2>
             <span className="font-mono text-xs text-faint">{list.length} sets</span>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {list.map((s) => {
               const p = progress.get(s.id);
               const done = p && p.baseOwned >= s.printedTotal;

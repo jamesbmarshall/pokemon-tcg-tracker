@@ -35,6 +35,7 @@ describe('Layout', () => {
   it('renders the outlet, footer and nav links in sidebar and tab bar', () => {
     renderLayout();
     expect(screen.getByText('Home content')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'PokéTracker home' })).toHaveAttribute('href', '/');
     for (const name of ['Dashboard', 'Sets', 'Collection', 'Wishlist']) {
       expect(screen.getAllByRole('link', { name: new RegExp(`^${name}`) })).toHaveLength(2);
     }

@@ -112,12 +112,13 @@ describe('SearchPage', () => {
 
   it('keeps filters closed by default and opens them on demand', async () => {
     renderPage();
-    const toggle = screen.getByRole('button', { name: /Filters/ });
+    const toggle = screen.getByRole('button', { name: 'Filters' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: /Fire/ })).not.toBeInTheDocument();
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('button', { name: /Fire/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('combobox', { name: 'Card type' }).closest('.grid')).toHaveClass('grid-cols-1');
     expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
   });
 

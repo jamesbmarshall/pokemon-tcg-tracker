@@ -189,7 +189,7 @@ export default function CardPage() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-10 md:grid-cols-[minmax(0,420px)_1fr]">
+      <div className="grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,420px)_1fr]">
         <Skeleton className="aspect-[63/88]" />
         <div className="space-y-4">
           <Skeleton className="h-10 w-2/3" />
@@ -256,7 +256,7 @@ export default function CardPage() {
         </div>
       </div>
 
-      <div className="relative grid gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
+      <div className="relative grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
         <div className="pointer-events-none absolute -left-20 -top-20 h-[420px] w-[420px] rounded-full opacity-25 blur-[100px]" style={{ background: accent }} />
         <div className="relative mx-auto w-full max-w-[400px] md:sticky md:top-10 md:self-start">
           <div key={card.id} className={slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : undefined}>
@@ -455,7 +455,7 @@ export default function CardPage() {
           )}
 
           {(card.weaknesses || card.resistances || card.retreatCost) && (
-            <section className="grid grid-cols-3 gap-3">
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {[
                 { label: 'Weakness', items: card.weaknesses },
                 { label: 'Resistance', items: card.resistances },

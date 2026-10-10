@@ -122,7 +122,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
 
       {readOnly ? null : variant ? (
         <div
-          className={`mt-1.5 flex px-0.5 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100'}`}
+          className={`mt-1.5 flex flex-wrap px-0.5 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100'} pointer-coarse:[&_button]:min-h-9 pointer-coarse:[&_button]:min-w-8`}
         >
           <button
             onClick={() => change(variant, 1)}
@@ -155,7 +155,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
         </div>
       ) : (
         <div
-          className={`mt-1.5 flex flex-wrap gap-1 px-0.5 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100'}`}
+          className={`mt-1.5 flex flex-wrap gap-1 px-0.5 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100'} pointer-coarse:[&_button]:min-h-9 pointer-coarse:[&_button]:min-w-8`}
         >
           {s.variants.map((v) => {
             const n = owned?.[v] ?? 0;
