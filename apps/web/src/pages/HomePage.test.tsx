@@ -69,6 +69,7 @@ describe('HomePage', () => {
       expect(screen.getByRole('link', { name: /Start with Paradox Rift/ })).toHaveAttribute('href', '/sets/sv04');
       expect(screen.getByRole('link', { name: 'Browse all sets' })).toHaveAttribute('href', '/sets');
       expect(screen.getByRole('heading', { name: 'Tap to collect' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Tap to collect' }).closest('section')).toHaveClass('grid-cols-1');
       const latest = screen.getByRole('heading', { name: 'Latest releases' }).nextElementSibling as HTMLElement;
       const links = within(latest).getAllByRole('link');
       expect(links.map((l) => l.getAttribute('href'))).toEqual(['/sets/sv04', '/sets/sv03', '/sets/sv02']);

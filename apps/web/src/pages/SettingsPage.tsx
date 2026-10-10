@@ -30,12 +30,12 @@ const csvCell = (v: unknown) => {
 
 function Section({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="grid gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
+    <section className="grid grid-cols-1 gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
       <div>
         <h2 className="font-semibold">{title}</h2>
         {description && <p className="mt-1 text-sm text-muted">{description}</p>}
       </div>
-      <div>{children}</div>
+      <div className="min-w-0">{children}</div>
     </section>
   );
 }
@@ -227,7 +227,7 @@ export default function SettingsPage() {
           <label className="text-xs text-muted">
             Type <b className="font-mono text-fg">delete</b> to confirm
           </label>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="input !w-40" />
             <button
               disabled={confirmText !== 'delete'}

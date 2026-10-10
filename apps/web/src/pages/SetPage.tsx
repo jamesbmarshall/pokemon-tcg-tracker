@@ -141,7 +141,7 @@ export default function SetPage() {
       ) : (
         <section className="panel relative overflow-hidden">
           <div className="pointer-events-none absolute inset-0 opacity-[0.13] blur-2xl" style={{ background: `url("${imageSrc(set.images.logo)}") center/60% no-repeat` }} />
-          <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div className="relative grid grid-cols-1 gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
               <SetLogo
                 src={set.images.logo}

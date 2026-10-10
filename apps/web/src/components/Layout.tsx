@@ -211,9 +211,9 @@ export default function Layout() {
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-ink/80 px-4 backdrop-blur-xl lg:hidden">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/" aria-label="PokéTracker home" className="flex min-w-0 items-center gap-2">
           <Logo size={26} />
-          <span className="font-display text-lg font-extrabold tracking-tight font-stretch-expanded">
+          <span className="hidden truncate font-display text-lg font-extrabold tracking-tight font-stretch-expanded min-[400px]:inline">
             Poké<span className="holo-text">Tracker</span>
           </span>
         </Link>
