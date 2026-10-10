@@ -163,4 +163,21 @@ describe('CardTile', () => {
     expect(screen.getByRole('img', { name: 'Charmander 1, not owned' })).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+
+  it('keeps hover-reveal quick-add actions reachable on coarse-pointer (touch) devices regardless of viewport width', () => {
+    // Regression test: the variant-button row is hidden until hover/focus so it doesn't clutter
+    // the desktop grid, with a `max-sm:opacity-100` escape hatch for narrow phones. That escape
+    // hatch is width-based and misses coarse-pointer tablets wider than `sm` (e.g. iPad at
+    // 768-1024px), which would have no way to reveal the buttons by hovering. `pointer-coarse:`
+    // must be present alongside `max-sm:` so any touch device, at any width, can tap to reveal.
+    renderWithProviders(<CardTile card={makeSnapshot()} />);
+    const addButton = screen.getByRole('button', { name: 'Add Normal' });
+    const revealRow = addButton.closest('div[class*="opacity-0"]');
+    expect(revealRow?.className).toContain('max-sm:opacity-100');
+    expect(revealRow?.className).toContain('pointer-coarse:opacity-100');
+    expect(revealRow?.className).toContain('pointer-coarse:basis-full');
+    expect(revealRow?.parentElement?.className).toContain('pointer-coarse:flex-wrap');
+    expect(revealRow?.parentElement?.className).toContain('pointer-coarse:[&_button]:min-h-9');
+    expect(revealRow?.parentElement?.className).toContain('pointer-coarse:[&_button]:min-w-8');
+  });
 });

@@ -47,6 +47,13 @@ describe('ListsPage', () => {
     expect(screen.getByRole('link', { name: /To grade/ })).toHaveTextContent('0 cards');
   });
 
+  it('stacks the lists grid on narrow screens (regression: sm:-only grid overflowed below 640px)', () => {
+    seedLists([list(), list({ id: 'l2', name: 'To grade', description: undefined, cards: [] })]);
+    renderWithProviders(<ListsPage />);
+    const grid = screen.getByRole('link', { name: /Fire deck/ }).closest('.grid')!;
+    expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+  });
+
   it('creates a list and opens it', async () => {
     seedLists([]);
     renderWithProviders(<ListsPage />);

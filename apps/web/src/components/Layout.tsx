@@ -12,6 +12,7 @@ import { relativeTime } from '../utils/format';
 import { isAdmin, useAuth } from '../store/authStore';
 import { Logo } from './ui';
 import CommandPalette from './CommandPalette';
+import ThemeToggle from './ThemeToggle';
 import Toaster from './Toaster';
 
 const NAV = [
@@ -36,10 +37,10 @@ function ValueBadge() {
   const money = useMoney();
   const { valueUsd, count } = useMemo(() => computeValue(entries.values(), cards, graded.values()), [entries, cards, graded]);
   return (
-    <div className="rounded-2xl border border-line bg-gradient-to-br from-surface-2 to-surface p-4">
+    <div className="border-t border-line px-3 pt-4">
       <p className="eyebrow">Collection value</p>
-      <p className="mt-1 font-display text-2xl font-bold tabular">{money(valueUsd)}</p>
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
+      <p className="mt-1 font-display text-[1.75rem] font-medium leading-none tabular">{money(valueUsd)}</p>
+      <div className="mt-2.5 flex items-center justify-between text-[11px] text-muted">
         <span className="tabular">{count.toLocaleString('en-GB')} cards</span>
         <button
           onClick={async () => {
@@ -87,14 +88,14 @@ function CollectionSwitcher({ className = '' }: { className?: string }) {
 }
 
 const sideLink = ({ isActive }: { isActive: boolean }) =>
-  `flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors ${isActive ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg'}`;
+  `flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors ${isActive ? 'bg-accent/10 font-semibold text-accent' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg'}`;
 
 function AccountLink() {
   const user = useAuth((s) => s.user);
   if (!user) return null;
   return (
-    <NavLink to="/account" className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2 transition-colors ${isActive ? 'bg-surface-2' : 'hover:bg-surface'}`}>
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line bg-surface-2 font-display text-sm font-semibold uppercase text-volt">
+    <NavLink to="/account" className={({ isActive }) => `flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1.5 transition-colors ${isActive ? 'bg-surface-2' : 'hover:bg-surface-2'}`}>
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line-strong font-display text-[15px] font-medium uppercase text-fg">
         {user.displayName.slice(0, 1)}
       </span>
       <span className="min-w-0 flex-1">
@@ -138,17 +139,17 @@ export default function Layout() {
   return (
     <div className="min-h-dvh lg:pl-64">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-line bg-ink-2/80 px-4 py-5 backdrop-blur-xl lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-line bg-surface px-4 py-5 lg:flex">
         <Link to="/" className="flex items-center gap-2.5 px-2">
-          <Logo size={30} />
-          <span className="font-display text-[19px] font-extrabold tracking-tight font-stretch-expanded">
+          <Logo size={28} />
+          <span className="font-display text-[21px] font-medium tracking-tight">
             Poké<span className="holo-text">Tracker</span>
           </span>
         </Link>
 
         <button
           onClick={() => setPalette(true)}
-          className="mt-6 flex h-10 items-center gap-2.5 rounded-xl border border-line bg-surface px-3 text-sm text-faint transition-colors hover:border-line-strong hover:text-muted"
+          className="mt-7 flex h-9 items-center gap-2.5 rounded-md border border-line-strong bg-canvas px-3 text-sm text-faint transition-colors hover:text-muted"
         >
           <Search size={15} />
           <span className="flex-1 text-left">Quick search</span>
@@ -157,77 +158,67 @@ export default function Layout() {
 
         <CollectionSwitcher className="mt-4" />
 
-        <nav className="mt-6 space-y-0.5">
+        <nav className="mt-7 space-y-0.5">
           {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `group relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-surface-2 text-fg' : 'text-muted hover:bg-surface hover:text-fg'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && <span className="absolute left-0 top-2.5 h-5 w-[3px] rounded-r-full bg-volt" />}
-                  <Icon size={17} className={isActive ? 'text-volt' : ''} />
-                  <span className="flex-1">{label}</span>
-                  {to === '/wishlist' && wishCount > 0 && <span className="font-mono text-[10px] text-faint">{wishCount}</span>}
-                </>
-              )}
+            <NavLink key={to} to={to} end={end} className={sideLink}>
+              <Icon size={16} strokeWidth={1.9} />
+              <span className="flex-1">{label}</span>
+              {to === '/wishlist' && wishCount > 0 && <span className="font-mono text-[10px] font-normal text-faint">{wishCount}</span>}
             </NavLink>
           ))}
-          <NavLink to="/lists" className={({ isActive }) => `${sideLink({ isActive })} ${isActive ? '' : 'hover:bg-surface'}`}>
-            <ListChecks size={17} />
+          <NavLink to="/lists" className={sideLink}>
+            <ListChecks size={16} strokeWidth={1.9} />
             Lists
           </NavLink>
         </nav>
 
-        <div className="mt-auto space-y-3">
+        <div className="mt-auto space-y-4">
           <ValueBadge />
           <div className="space-y-0.5">
             <NavLink to="/sharing" className={sideLink}>
-              <Share2 size={17} />
+              <Share2 size={16} strokeWidth={1.9} />
               Sharing
             </NavLink>
             <NavLink to="/settings" className={sideLink}>
-              <Settings size={17} />
+              <Settings size={16} strokeWidth={1.9} />
               Settings
             </NavLink>
             {admin && (
               <NavLink to="/admin" className={sideLink}>
-                <ShieldCheck size={17} />
+                <ShieldCheck size={16} strokeWidth={1.9} />
                 Admin
               </NavLink>
             )}
           </div>
-          <div className="border-t border-line pt-3">
+          <div className="flex items-center gap-1 border-t border-line pt-3">
             <AccountLink />
+            <ThemeToggle />
           </div>
         </div>
       </aside>
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-ink/80 px-4 backdrop-blur-xl lg:hidden">
-        <Link to="/" className="flex items-center gap-2">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur-md lg:hidden">
+        <Link to="/" aria-label="PokéTracker home" className="flex min-w-0 items-center gap-2">
           <Logo size={26} />
-          <span className="font-display text-lg font-extrabold tracking-tight font-stretch-expanded">
+          {/* The wordmark plus five 40px icon buttons doesn't fit under ~360px; the logo mark alone
+              stays recognisable and tappable, so drop the text rather than shrink touch targets. */}
+          <span className="hidden truncate font-display text-lg font-medium tracking-tight min-[400px]:inline">
             Poké<span className="holo-text">Tracker</span>
           </span>
         </Link>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setPalette(true)} className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Search">
+        <div className="flex items-center">
+          <ThemeToggle className="!h-10 !w-10" />
+          <button onClick={() => setPalette(true)} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
             <Search size={19} />
           </button>
-          <Link to="/sharing" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Sharing">
+          <Link to="/sharing" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Sharing">
             <Share2 size={19} />
           </Link>
-          <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Settings">
+          <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Settings">
             <Settings size={19} />
           </Link>
-          <Link to="/account" className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:text-fg" aria-label="Account">
+          <Link to="/account" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Account">
             <UserRound size={19} />
           </Link>
         </div>
@@ -250,13 +241,13 @@ export default function Layout() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-ink/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
-            className={({ isActive }) => `flex h-16 flex-col items-center justify-center gap-1 text-[10.5px] font-medium ${isActive ? 'text-volt' : 'text-muted'}`}
+            className={({ isActive }) => `flex h-16 flex-col items-center justify-center gap-1 text-[10.5px] ${isActive ? 'font-semibold text-accent' : 'font-medium text-muted'}`}
           >
             <Icon size={20} />
             {label}

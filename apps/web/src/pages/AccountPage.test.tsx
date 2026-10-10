@@ -29,6 +29,16 @@ it('updates the display name', async () => {
   expect(m.called('PATCH /api/account')[0].body).toEqual({ displayName: 'Ash K' });
 });
 
+it('stacks each Section heading/control pair on narrow screens (regression: md:-only grid overflowed below 768px)', () => {
+  mockApi({ 'GET /api/account/sessions': sessions });
+  renderWithProviders(<AccountPage />);
+  const grids = Array.from(document.querySelectorAll('.grid')).filter((el) => /\bmd:grid-cols-/.test(el.className));
+  expect(grids.length).toBeGreaterThan(0);
+  for (const grid of grids) {
+    expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+  }
+});
+
 describe('password', () => {
   it('checks the new password locally', async () => {
     const user = userEvent.setup();

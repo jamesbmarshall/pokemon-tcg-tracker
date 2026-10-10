@@ -52,7 +52,7 @@ export default function HoloCard({ id, src, name, number, setName, types, foil =
         ref={ref}
         onPointerMove={move}
         onPointerLeave={leave}
-        className="relative aspect-[63/88] w-full touch-pan-y overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 shadow-[0_40px_80px_-30px_rgb(0_0_0/0.95),0_0_0_1px_rgb(255_255_255/0.06)] [transform-style:preserve-3d] [transform:rotateX(var(--rx,0))_rotateY(var(--ry,0))]"
+        className="relative aspect-[63/88] w-full touch-pan-y overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 shadow-object [transform-style:preserve-3d] [transform:rotateX(var(--rx,0))_rotateY(var(--ry,0))]"
       >
         {!loaded && <div className="absolute inset-0 animate-pulse bg-surface-2" />}
         <CardImage

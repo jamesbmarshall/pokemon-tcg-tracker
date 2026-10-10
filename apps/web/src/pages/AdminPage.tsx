@@ -175,7 +175,7 @@ function UsersTab({ me }: { me: User }) {
                       </select>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-xs">
-                        {u.role === 'owner' && <Crown size={12} className="text-volt" />}
+                        {u.role === 'owner' && <Crown size={12} className="text-accent" />}
                         {ROLE_LABEL[u.role]}
                       </span>
                     )}
@@ -309,7 +309,7 @@ function InvitesTab({ me }: { me: User }) {
         </div>
         <FormError error={create.error} />
         {link && (
-          <div className="space-y-2 rounded-xl border border-volt/30 bg-volt/5 p-3">
+          <div className="space-y-2 rounded-xl border border-accent/30 bg-accent/5 p-3">
             <p className="text-xs text-muted">Copy this now. For security, it can't be shown again.</p>
             <CopyField value={link} label="Invite link" />
           </div>
@@ -406,7 +406,7 @@ function JobsTab({ me }: { me: User }) {
       </ul>
 
       {storage.data && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="panel p-4">
             <p className="eyebrow">Database</p>
             <p className="mt-1 font-display text-xl font-semibold tabular">{bytes(storage.data.dbBytes)}</p>

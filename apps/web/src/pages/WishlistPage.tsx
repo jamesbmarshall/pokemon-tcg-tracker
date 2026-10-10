@@ -66,7 +66,7 @@ export default function WishlistPage() {
             />
             <div className="text-right">
               <p className="eyebrow">To buy them all</p>
-              <p className="font-display text-2xl font-bold tabular">{money(total)}</p>
+              <p className="font-display text-2xl font-semibold tabular">{money(total)}</p>
             </div>
           </div>
         }
@@ -79,10 +79,10 @@ export default function WishlistPage() {
           return (
             <div key={card.id} className="group animate-rise" style={{ animationDelay: `${Math.min(i, 20) * 20}ms` }}>
               <Link to={`/card/${card.id}`} className="relative block">
-                <div className="aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] ring-1 ring-[#ff6fae]/30 transition-transform duration-300 group-hover:-translate-y-1">
+                <div className="aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] ring-1 ring-wish/30 transition-transform duration-300 group-hover:-translate-y-1">
                   <CardImage id={card.id} src={card.image} name={card.name} number={card.number} setName={card.setName} types={card.types} alt={card.name} />
                 </div>
-                {owned && <span className="absolute left-1.5 top-1.5 rounded-full bg-volt px-2 py-0.5 text-[10px] font-bold text-ink">Owned</span>}
+                {owned && <span className="absolute left-1.5 top-1.5 rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-on-accent">Owned</span>}
               </Link>
               <p className="mt-2 truncate text-[13px] font-medium">{card.name}</p>
               <p className="truncate font-mono text-[10.5px] text-faint">

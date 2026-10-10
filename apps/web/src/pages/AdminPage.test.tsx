@@ -34,6 +34,20 @@ it('only shows backups to the owner', () => {
   expect(screen.queryByRole('radio', { name: 'Backups' })).not.toBeInTheDocument();
 });
 
+it('stacks the storage stats panel on narrow screens (regression: sm:-only grid overflowed below 640px)', async () => {
+  const user = userEvent.setup();
+  mockApi({
+    'GET /api/admin/users': users,
+    'GET /api/admin/jobs': [],
+    'GET /api/admin/storage': { dbBytes: 5 * 1024 * 1024, images: { count: 1200, bytes: 300 * 1024 * 1024, capBytes: 2 * 1024 ** 3 }, backups: 4 },
+  });
+  renderWithProviders(<AdminPage />);
+  await user.click(screen.getByRole('radio', { name: 'Jobs' }));
+  const stat = await screen.findByText('5.0 MB');
+  const grid = stat.closest('.grid')!;
+  expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+});
+
 describe('Users', () => {
   it('lets the owner manage everyone but themselves', async () => {
     mockApi({ 'GET /api/admin/users': users });

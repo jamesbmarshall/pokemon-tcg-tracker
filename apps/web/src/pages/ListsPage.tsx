@@ -94,7 +94,7 @@ export function ListsPage() {
           {readOnly ? 'Nobody has made a list in this collection.' : 'Start one here, or use the Lists button on any card page.'}
         </EmptyState>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {lists.map((l) => (
             <li key={l.id}>
               <Link to={`/lists/${l.id}`} className="panel group flex gap-4 p-4 transition-colors hover:border-line-strong">
@@ -110,7 +110,7 @@ export function ListsPage() {
                   {!l.cards.length && <div className="aspect-[63/88] w-14 rounded-[4.5%/3.2%] border border-dashed border-line" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-lg font-semibold group-hover:text-volt">{l.name}</p>
+                  <p className="truncate font-display text-lg font-semibold group-hover:text-accent">{l.name}</p>
                   <p className="font-mono text-xs text-muted tabular">
                     {l.cards.length} card{l.cards.length === 1 ? '' : 's'} · {money(listValue(l, cards))}
                   </p>

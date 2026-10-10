@@ -7,7 +7,7 @@ export function LanguageBadge({ id, className = '' }: { id: string; className?: 
   if (lang === 'en') return null;
   const l = language(lang);
   return (
-    <span title={l.name} className={`rounded-md border border-line-strong bg-ink/80 px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none tracking-wide text-fg backdrop-blur ${className}`}>
+    <span title={l.name} className={`rounded-md border border-paper/20 bg-onyx/80 px-1.5 py-0.5 font-mono text-[10px] font-bold leading-none tracking-wide text-paper ${className}`}>
       {l.short}
     </span>
   );

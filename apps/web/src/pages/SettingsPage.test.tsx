@@ -48,6 +48,23 @@ beforeEach(async () => {
 });
 
 describe('SettingsPage', () => {
+  it('stacks each Section heading/control pair on narrow screens (regression: md:-only grid overflowed below 768px)', () => {
+    renderWithProviders(<SettingsPage />);
+    const grids = Array.from(document.querySelectorAll('.grid')).filter((el) => /\bmd:grid-cols-/.test(el.className));
+    expect(grids.length).toBeGreaterThan(0);
+    for (const grid of grids) {
+      expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+    }
+  });
+
+  it('switches the theme from the Appearance section', async () => {
+    renderWithProviders(<SettingsPage />);
+    expect(screen.getByRole('radio', { name: 'System' })).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    expect(useSettings.getState().theme).toBe('dark');
+    expect(screen.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('switches currency and shows the conversion rate', async () => {
     renderWithProviders(<SettingsPage />);
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
@@ -213,6 +230,16 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
     expect(screen.getByRole('button', { name: 'Import JSON' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear everything' })).not.toBeInTheDocument();
+  });
+
+  it('wraps the danger-zone confirm row instead of letting the button overflow the viewport', () => {
+    // Regression test: the "delete" input + "Clear everything" button sat in a non-wrapping
+    // flex row, which overflowed a 320px viewport by 10px. flex-wrap lets the button drop to
+    // its own line instead of being clipped off-screen.
+    renderWithProviders(<SettingsPage />);
+    const button = screen.getByRole('button', { name: 'Clear everything' });
+    const row = button.closest('div[class*="flex"]')!;
+    expect(row.className).toContain('flex-wrap');
   });
 
   it('requires typing "delete", then backs up and clears everything', async () => {

@@ -194,4 +194,26 @@ describe('Layout', () => {
     expect(screen.getAllByRole('link', { name: /^Lists/ })[0]).toHaveAttribute('href', '/lists');
     expect(screen.getAllByRole('link', { name: /Sharing/ })[0]).toHaveAttribute('href', '/sharing');
   });
+
+  it('hides the mobile wordmark below 400px so the icon row never overflows a 320px viewport', () => {
+    // Regression test: at narrow widths the wordmark + 5 40px icon buttons overflowed the
+    // viewport and clipped the Account button off-screen. The wordmark is hidden by default
+    // and only revealed from the min-[400px] breakpoint up; the logo mark is always visible.
+    renderLayout();
+    const wordmark = screen.getAllByText('Tracker').map((el) => el.parentElement).find((el) => el?.className.includes('min-[400px]:inline'))!;
+    expect(wordmark).toHaveClass('hidden');
+    expect(wordmark).toHaveClass('min-[400px]:inline');
+    const brandLink = wordmark?.closest('a');
+    expect(brandLink).toHaveClass('min-w-0');
+    expect(brandLink).toHaveAccessibleName('PokéTracker home');
+  });
+
+  it('keeps every mobile header icon button at a full 40px (h-10 w-10) touch target', () => {
+    renderLayout();
+    const roleByName: Record<string, 'button' | 'link'> = { Search: 'button', Sharing: 'link', Settings: 'link', Account: 'link' };
+    for (const [name, role] of Object.entries(roleByName)) {
+      const el = screen.getAllByRole(role, { name }).find((n) => n.className.includes('h-10'));
+      expect(el, `expected a 40px touch target for ${name}`).toBeTruthy();
+    }
+  });
 });

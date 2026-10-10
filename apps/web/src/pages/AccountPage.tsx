@@ -18,7 +18,7 @@ import { describeAgent, relativeTime } from '../utils/format';
 /** Two-column settings section (heading left, controls right), also used by the Admin page. */
 export function Section({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="grid gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
+    <section className="grid grid-cols-1 gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
       <div>
         <h2 className="font-semibold">{title}</h2>
         {description && <div className="mt-1 text-sm text-muted">{description}</div>}

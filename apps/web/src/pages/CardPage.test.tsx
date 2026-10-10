@@ -38,6 +38,15 @@ describe('CardPage', () => {
     expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
+  it('stacks the artwork/detail grid on narrow screens (regression: md:-only grid overflowed below 768px)', () => {
+    setup();
+    const grids = Array.from(document.querySelectorAll('.grid')).filter((el) => /\bmd:grid-cols-/.test(el.className));
+    expect(grids.length).toBeGreaterThan(0);
+    for (const grid of grids) {
+      expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+    }
+  });
+
   it('shows an error with retry and a way back', async () => {
     const err = errorResult('Card API down');
     mocks.useCard.mockReturnValue(err);

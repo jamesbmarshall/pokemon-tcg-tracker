@@ -56,7 +56,7 @@ function Pocket({ slot }: { slot?: BinderSlot }) {
 }
 
 const TURN_MS = 750;
-const PAGE_BG = 'linear-gradient(180deg, #1d1c26, #15141c), #15141c';
+const PAGE_BG = 'linear-gradient(180deg, var(--color-surface-2), var(--color-surface)), var(--color-surface)';
 
 interface Turn {
   from: number;
@@ -197,7 +197,7 @@ export default function BinderView({ slots, pocketSize = 9 }: { slots: BinderSlo
   return (
     <div className="space-y-4">
       <div
-        className="relative mx-auto grid gap-0 rounded-[22px] p-3 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)] sm:p-4"
+        className="relative mx-auto grid gap-0 rounded-[22px] p-3 shadow-pop sm:p-4"
         style={{
           gridTemplateColumns: `repeat(${perView}, minmax(0, 1fr))`,
           maxWidth: perView === 2 ? (pocketSize === 9 ? 1060 : 1240) : 520,

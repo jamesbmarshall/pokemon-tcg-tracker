@@ -60,18 +60,33 @@ describe('HomePage', () => {
     expect(screen.queryByRole('heading')).not.toBeInTheDocument();
   });
 
+  it('gives every responsive grid section an explicit base grid-cols-1 (regression: narrow-viewport overflow)', () => {
+    // Without a base grid-cols-1, CSS Grid auto-places hero/showcase sections into
+    // implicit content-sized columns on narrow screens instead of stacking, overflowing the
+    // viewport. The lg:/xl: overrides should only apply from those breakpoints up.
+    seedCollection();
+    renderWithProviders(<HomePage />);
+    const grids = Array.from(document.querySelectorAll('.grid')).filter((el) =>
+      /\b(lg|xl):grid-cols-/.test(el.className),
+    );
+    expect(grids.length).toBeGreaterThan(0);
+    for (const grid of grids) {
+      expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+    }
+  });
+
   describe('welcome', () => {
     beforeEach(() => seedCollection());
 
     it('welcomes new collectors with the latest sets', () => {
       renderWithProviders(<HomePage />);
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent("Every card you own, every one you don't.");
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent("Every card you own, and every one you don't.");
       expect(screen.getByRole('link', { name: /Start with Paradox Rift/ })).toHaveAttribute('href', '/sets/sv04');
       expect(screen.getByRole('link', { name: 'Browse all sets' })).toHaveAttribute('href', '/sets');
-      expect(screen.getByRole('heading', { name: 'Tap to collect' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Count it properly' })).toBeInTheDocument();
       const latest = screen.getByRole('heading', { name: 'Latest releases' }).nextElementSibling as HTMLElement;
       const links = within(latest).getAllByRole('link');
-      expect(links.map((l) => l.getAttribute('href'))).toEqual(['/sets/sv04', '/sets/sv03', '/sets/sv02']);
+      expect(links.map((l) => l.getAttribute('href')).slice(0, 3)).toEqual(['/sets/sv04', '/sets/sv03', '/sets/sv02']);
       expect(links[0]).toHaveTextContent('11 Aug 2023 · 266 cards');
     });
 

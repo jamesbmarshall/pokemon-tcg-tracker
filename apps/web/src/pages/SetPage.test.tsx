@@ -37,6 +37,17 @@ describe('SetPage', () => {
     expect(mocks.useSetCards).toHaveBeenCalledWith('sv03');
   });
 
+  it('stacks the hero grid on narrow screens (regression: hero overflowed below the lg: breakpoint)', () => {
+    renderPage();
+    const heroGrids = Array.from(document.querySelectorAll('.grid')).filter((el) =>
+      /\blg:grid-cols-/.test(el.className),
+    );
+    expect(heroGrids.length).toBeGreaterThan(0);
+    for (const grid of heroGrids) {
+      expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+    }
+  });
+
   it('shows skeletons while loading', () => {
     mocks.useSet.mockReturnValue(loadingResult());
     mocks.useSetCards.mockReturnValue(loadingResult());

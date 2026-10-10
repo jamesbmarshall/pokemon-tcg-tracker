@@ -155,4 +155,13 @@ describe('SetsPage', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Card language' }), 'en');
     expect(mocks.useSets).toHaveBeenLastCalledWith('en');
   });
+
+  it('stacks the set-card grid into a single column by default (regression: missing base grid-cols-1 caused 320px overflow)', () => {
+    // CSS Grid with no explicit grid-template-columns auto-places items into implicit,
+    // content-sized columns instead of stacking — a base `grid-cols-1` is required so the
+    // responsive `sm:`/`lg:`/`2xl:` overrides only kick in at wider viewports.
+    renderPage();
+    const grid = tile('sv02').closest('.grid');
+    expect(grid?.className).toContain('grid-cols-1');
+  });
 });
