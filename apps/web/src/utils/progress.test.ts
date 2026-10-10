@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ownedBySet, setProgress } from './progress';
+import { isWithinPrintedTotal, ownedBySet, setProgress } from './progress';
 import { makeCard, makeEntry, makeSet } from '../test/fixtures';
 
 const set = makeSet({ printedTotal: 3 });
@@ -8,7 +8,7 @@ const cards = [
   makeCard({ id: 'sv03-002', number: '2', set, variants: ['normal', 'reverseHolofoil'] }),
   makeCard({ id: 'sv03-003', number: '3', set, variants: ['holofoil'] }),
   makeCard({ id: 'sv03-004', number: '4', set, variants: ['holofoil'] }),
-  makeCard({ id: 'sv03-TG01', number: 'TG01', set, variants: [] }),
+  makeCard({ id: 'sv03-TG01', number: 'TG04', set, variants: [] }),
 ];
 
 describe('setProgress', () => {
@@ -54,5 +54,30 @@ describe('ownedBySet', () => {
     expect(out.get('sv03')).toMatchObject({ slots: 3, copies: 6 });
     expect(out.get('sv03')!.cards.size).toBe(2);
     expect(out.get('base1')!.cards.size).toBe(1);
+  });
+});
+
+
+describe('prefixed set numbering', () => {
+  it.each(['TG01', 'TG30', 'GG01', 'SV001', 'SWSH001', '001'])(
+    'includes %s within its own printed total', (number) => {
+      expect(isWithinPrintedTotal(number, 30)).toBe(true);
+    },
+  );
+  it.each(['TG31', '31', '0', 'TG00', 'unknown', '1a', 'TG01/30'])(
+    'excludes %s outside the printed range', (number) => {
+      expect(isWithinPrintedTotal(number, 30)).toBe(false);
+    },
+  );
+  it('counts a complete Trainer Gallery in base, full and master', () => {
+    const gallery = makeSet({ id: 'swsh10tg', printedTotal: 30, total: 30 });
+    const cards = Array.from({ length: 30 }, (_, i) => makeCard({
+      id: `swsh10tg-${i + 1}`, number: `TG${String(i + 1).padStart(2, '0')}`,
+      set: gallery, variants: ['holofoil'],
+    }));
+    const holdings = new Map(cards.map((c) => [c.id, { holofoil: 1 }]));
+    expect(setProgress(cards, holdings)).toEqual({
+      base: { owned: 30, total: 30 }, full: { owned: 30, total: 30 }, master: { owned: 30, total: 30 },
+    });
   });
 });
