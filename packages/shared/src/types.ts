@@ -237,11 +237,45 @@ export interface GradedCopy {
   subgrades?: Subgrades;
   /** Whether this slab fills the card's slot for set / master-set progress */
   countsTowardSet: boolean;
-  /** Owner's valuation in USD; falls back to the raw market price */
+  /** Owner's valuation in USD; falls back to the PriceCharting graded price, then the raw market price */
   valueUsd?: number;
   /** Total paid for the slab, including any grading fees */
   paid?: Paid;
   notes?: string;
+  /** PriceCharting product this slab is linked to, if any (set via the "Link" action in GradedForm) */
+  pcProductId?: string;
+  /** PriceCharting price (USD) for this slab's company + grade, fetched when linked */
+  pcPrice?: number;
+  pcUpdatedAt?: string;
+  addedAt: string;
+  updatedAt?: string;
+}
+
+/** Sealed product types tracked by PokéTracker; 'other' covers anything not in this list. */
+export type SealedProductType = 'booster_box' | 'etb' | 'booster_bundle' | 'tin' | 'collection_box' | 'blister' | 'booster_pack' | 'other';
+
+/**
+ * A sealed (or since-opened) product: a booster box, ETB and so on. Unopened items count
+ * towards collection value; opened ones are kept for history but excluded from totals.
+ */
+export interface SealedItem {
+  id: string;
+  name: string;
+  productType: SealedProductType;
+  setId?: string;
+  language?: string;
+  quantity: number;
+  paid?: Paid;
+  /** Owner's valuation in USD (total, not per unit); falls back to the PriceCharting price */
+  valueUsd?: number;
+  notes?: string;
+  /** PriceCharting product this item is linked to, if any */
+  pcProductId?: string;
+  /** PriceCharting loose/sealed price (USD), per unit */
+  pcPrice?: number;
+  pcUpdatedAt?: string;
+  status: 'sealed' | 'opened';
+  openedAt?: string;
   addedAt: string;
   updatedAt?: string;
 }

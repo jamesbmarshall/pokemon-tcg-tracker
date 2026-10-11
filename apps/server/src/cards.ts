@@ -8,6 +8,7 @@ import { FALLBACK_RATES, todayKey, valuePoint, type Rates } from '@poketracker/s
 import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, MoverCard, PokemonCard, PriceHistorySeries, PriceHistorySource, ValuePoint } from '@poketracker/shared/types';
 import { json, type Db } from './db.ts';
 import type { Ctx } from './context.ts';
+import { readSealed } from './sealed.ts';
 
 /** Latest stored FX rates, or built-in fallbacks before the first successful fx job. */
 export function currentRates(db: Db): Rates {
@@ -307,9 +308,10 @@ export function readHistory(db: Db, collectionId: string): ValuePoint[] {
 export function recordValue(ctx: Ctx, collectionId: string): ValuePoint | undefined {
   const entries = readEntries(ctx.db, collectionId);
   const graded = readGraded(ctx.db, collectionId);
+  const sealed = readSealed(ctx, collectionId);
   const cards = readCards(ctx.db, [...entries.map((e) => e.cardId), ...graded.map((g) => g.cardId)]);
   const hasHistory = !!ctx.db.get('SELECT 1 FROM value_history WHERE collection_id = ? LIMIT 1', collectionId);
-  const point = valuePoint(entries, cards, graded, currentRates(ctx.db), hasHistory);
+  const point = valuePoint(entries, cards, graded, currentRates(ctx.db), hasHistory, sealed);
   if (point) ctx.db.run('INSERT OR REPLACE INTO value_history (collection_id, date, data) VALUES (?, ?, ?)', collectionId, point.date, JSON.stringify(point));
   return point;
 }

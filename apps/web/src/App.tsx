@@ -16,6 +16,7 @@ import SetPage from './pages/SetPage';
 import CardPage from './pages/CardPage';
 import CollectionPage from './pages/CollectionPage';
 import WishlistPage from './pages/WishlistPage';
+import SealedPage from './pages/SealedPage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
 import AccountPage from './pages/AccountPage';
@@ -59,6 +60,7 @@ function SignedInApp() {
         <Route path="card/:cardId" element={<CardPage />} />
         <Route path="collection" element={<CollectionPage />} />
         <Route path="wishlist" element={<WishlistPage />} />
+        <Route path="sealed" element={<SealedPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="account" element={<AccountPage />} />

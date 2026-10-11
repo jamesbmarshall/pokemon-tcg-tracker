@@ -1,6 +1,6 @@
 import { getCardsByIds, setIdFromCardId, toSnapshot } from '../api/client';
-import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PhotoRef, SystemStatus } from '../api/backend';
-import type { CardNote, CardPriceHistory, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, MoverCard, SetStat, ValuePoint, WishlistEntry } from '../api/types';
+import type { Backend, CollectionData, CollectionRole, CollectionSummary, CustomList, ImportResult, PcProduct, PhotoRef, SystemStatus } from '../api/backend';
+import type { CardNote, CardPriceHistory, CardSnapshot, PokemonCard, CollectionEntry, GradedCopy, MoverCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX, valuePoint } from '@poketracker/shared/value';
 import { currentRates } from '../utils/fx';
 
@@ -10,6 +10,12 @@ interface StoredPhoto {
   id: string;
   gradedId: string;
   side: PhotoRef['side'];
+  addedAt: string;
+}
+
+interface StoredSealedPhoto {
+  id: string;
+  sealedId: string;
   addedAt: string;
 }
 
@@ -33,6 +39,8 @@ export class MemoryBackend implements Backend {
   graded = new Map<string, GradedCopy>();
   deletedGraded = new Set<string>();
   gradedPhotos = new Map<string, StoredPhoto>();
+  sealed = new Map<string, SealedItem>();
+  sealedPhotosStore = new Map<string, StoredSealedPhoto>();
   notes = new Map<string, CardNote>();
   lists: CustomList[] = [];
   lastPriceSync: string | null = null;
@@ -42,6 +50,10 @@ export class MemoryBackend implements Backend {
   moversResponse: { gainers: MoverCard[]; losers: MoverCard[] } | null = null;
   /** The catalogue the "server" hydrates from; swap in a mock to control prices. */
   catalog: (ids: string[]) => Promise<PokemonCard[]> = getCardsByIds;
+  /** Controls pcConfigured()/pcAdminStatus(); tests flip this to show/hide PriceCharting UI. */
+  pricechartingConfigured = false;
+  /** What pcSearch() returns regardless of query, for tests to seed. */
+  pcResults: PcProduct[] = [];
   /** Set to make every call reject, e.g. to test optimistic rollback */
   fail: Error | null = null;
   calls: string[] = [];
@@ -76,6 +88,7 @@ export class MemoryBackend implements Backend {
         role: this.role,
         entries: [...this.collection.values()],
         graded,
+        sealed: [...this.sealed.values()],
         wishlist: [...this.wishlist.values()],
         notes: [...this.notes.values()],
         history: [...this.valueHistory.values()].sort((a, b) => a.date.localeCompare(b.date)),
@@ -125,6 +138,16 @@ export class MemoryBackend implements Backend {
     return this.callIn(cid, 'deleteGraded', () => void this.deletedGraded.add(gid));
   }
 
+  linkGraded(cid: string, gid: string, pcProductId: string) {
+    return this.callIn(cid, 'linkGraded', (): GradedCopy => {
+      const copy = this.graded.get(gid);
+      if (!copy) throw new Error('Graded copy not found');
+      const updated = { ...copy, pcProductId, pcPrice: 42, pcUpdatedAt: new Date().toISOString() };
+      this.graded.set(gid, updated);
+      return { ...updated };
+    });
+  }
+
   /** What the cleanup job does a day after a slab is deleted. */
   purgeDeleted() {
     for (const gid of this.deletedGraded) {
@@ -156,6 +179,92 @@ export class MemoryBackend implements Backend {
 
   deletePhoto(cid: string, pid: string) {
     return this.callIn(cid, 'deletePhoto', () => void this.gradedPhotos.delete(pid));
+  }
+
+  putSealed(cid: string, item: SealedItem) {
+    return this.callIn(cid, 'putSealed', () => {
+      this.sealed.set(item.id, { ...item });
+      return { ...item };
+    });
+  }
+
+  deleteSealed(cid: string, sid: string) {
+    return this.callIn(cid, 'deleteSealed', () => {
+      this.sealed.delete(sid);
+      for (const [pid, p] of this.sealedPhotosStore) if (p.sealedId === sid) this.sealedPhotosStore.delete(pid);
+    });
+  }
+
+  openSealed(cid: string, sid: string) {
+    return this.callIn(cid, 'openSealed', (): SealedItem => {
+      const item = this.sealed.get(sid);
+      if (!item) throw new Error('Sealed item not found');
+      const updated: SealedItem = { ...item, status: 'opened', openedAt: new Date().toISOString() };
+      this.sealed.set(sid, updated);
+      return { ...updated };
+    });
+  }
+
+  linkSealed(cid: string, sid: string, pcProductId: string) {
+    return this.callIn(cid, 'linkSealed', (): SealedItem => {
+      const item = this.sealed.get(sid);
+      if (!item) throw new Error('Sealed item not found');
+      const updated = { ...item, pcProductId, pcPrice: 42, pcUpdatedAt: new Date().toISOString() };
+      this.sealed.set(sid, updated);
+      return { ...updated };
+    });
+  }
+
+  sealedPhotos(cid: string, sid: string) {
+    return this.callIn(cid, 'sealedPhotos', () =>
+      [...this.sealedPhotosStore.values()]
+        .filter((p) => p.sealedId === sid)
+        .sort((a, b) => a.addedAt.localeCompare(b.addedAt))
+        .map((p) => ({ id: p.id, side: 'other' as const, addedAt: p.addedAt, url: `/api/collections/${cid}/photos/sealed/${p.id}` })),
+    );
+  }
+
+  addSealedPhotos(cid: string, sid: string, files: Blob[]) {
+    return this.callIn(cid, 'addSealedPhotos', () => {
+      if (!this.sealed.has(sid)) throw new Error('Save the sealed item first');
+      return files.map(() => {
+        const p = { id: id(), sealedId: sid, addedAt: new Date().toISOString() };
+        this.sealedPhotosStore.set(p.id, p);
+        return { id: p.id, side: 'other' as const, addedAt: p.addedAt, url: `/api/collections/${cid}/photos/sealed/${p.id}` };
+      });
+    });
+  }
+
+  deleteSealedPhoto(cid: string, pid: string) {
+    return this.callIn(cid, 'deleteSealedPhoto', () => void this.sealedPhotosStore.delete(pid));
+  }
+
+  pcConfigured() {
+    return this.call('pcConfigured', () => this.pricechartingConfigured);
+  }
+
+  /** Ignores the query; tests seed canned results via `pcResults` instead. */
+  pcSearch(query: string) {
+    void query;
+    return this.call('pcSearch', () => this.pcResults);
+  }
+
+  pcAdminStatus() {
+    return this.call('pcAdminStatus', () => this.pricechartingConfigured);
+  }
+
+  /** Ignores the key's value; what matters for tests is that a key becomes "configured". */
+  pcSetKey(key: string) {
+    void key;
+    return this.call('pcSetKey', () => void (this.pricechartingConfigured = true));
+  }
+
+  pcClearKey() {
+    return this.call('pcClearKey', () => void (this.pricechartingConfigured = false));
+  }
+
+  pcTest() {
+    return this.call('pcTest', () => undefined);
   }
 
   recordValue(cid: string) {
@@ -198,6 +307,14 @@ export class MemoryBackend implements Backend {
         this.graded.set(copy.id, copy);
         graded++;
       }
+      let sealed = 0;
+      for (const r of Array.isArray(obj.sealed) ? obj.sealed : []) {
+        const sp = r as Partial<SealedItem>;
+        if (typeof sp?.name !== 'string' || !sp.name.trim() || typeof sp.productType !== 'string') continue;
+        const item = { ...sp, id: typeof sp.id === 'string' ? sp.id : id(), quantity: Math.max(1, Math.floor(Number(sp.quantity) || 1)), status: sp.status === 'opened' ? 'opened' : 'sealed', addedAt: sp.addedAt ?? new Date().toISOString() } as SealedItem;
+        this.sealed.set(item.id, item);
+        sealed++;
+      }
       let notes = 0;
       for (const r of Array.isArray(obj.notes) ? obj.notes : []) {
         const n = r as Partial<CardNote>;
@@ -212,13 +329,13 @@ export class MemoryBackend implements Backend {
         this.wishlist.set(w.cardId, { cardId: w.cardId, addedAt: w.addedAt ?? new Date().toISOString() });
         wishlist++;
       }
-      return { entries, graded, wishlist, notes, history: 0, photos: 0, remapped: 0 };
+      return { entries, graded, sealed, wishlist, notes, history: 0, photos: 0, remapped: 0 };
     });
   }
 
   clear(cid: string) {
     return this.callIn(cid, 'clear', () => {
-      for (const m of [this.collection, this.wishlist, this.valueHistory, this.graded, this.gradedPhotos, this.notes]) m.clear();
+      for (const m of [this.collection, this.wishlist, this.valueHistory, this.graded, this.gradedPhotos, this.sealed, this.sealedPhotosStore, this.notes]) m.clear();
       this.deletedGraded.clear();
       this.lists = [];
     });
