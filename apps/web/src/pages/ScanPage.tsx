@@ -21,6 +21,7 @@ type OcrState = 'idle' | 'loading' | 'ready' | 'error';
 // Kept in sync with the dashed guide box drawn over the video.
 const GUIDE = { x: 0.1, y: 0.72, w: 0.8, h: 0.17 };
 const RECOGNISE_INTERVAL_MS = 1200;
+const FALLBACK_FRAME_ASPECT_RATIO = 4 / 3;
 
 /** Self-hosted so no OCR asset is ever fetched from a CDN; copied from node_modules at build time. */
 const TESSERACT_PATHS = { workerPath: '/tesseract/worker.min.js', corePath: '/tesseract/core', langPath: '/tesseract/lang' };
@@ -132,10 +133,15 @@ export default function ScanPage() {
     if (!vw || !vh) return null;
     const canvas = canvasRef.current ?? document.createElement('canvas');
     canvasRef.current = canvas;
-    const sx = Math.round(vw * GUIDE.x);
-    const sy = Math.round(vh * GUIDE.y);
-    const sw = Math.round(vw * GUIDE.w);
-    const sh = Math.round(vh * GUIDE.h);
+    const frameAspectRatio = video.clientWidth && video.clientHeight
+      ? video.clientWidth / video.clientHeight
+      : FALLBACK_FRAME_ASPECT_RATIO;
+    const visibleWidth = Math.min(vw, vh * frameAspectRatio);
+    const visibleHeight = Math.min(vh, vw / frameAspectRatio);
+    const sx = Math.round((vw - visibleWidth) / 2 + visibleWidth * GUIDE.x);
+    const sy = Math.round((vh - visibleHeight) / 2 + visibleHeight * GUIDE.y);
+    const sw = Math.round(visibleWidth * GUIDE.w);
+    const sh = Math.round(visibleHeight * GUIDE.h);
     canvas.width = sw;
     canvas.height = sh;
     const ctx = canvas.getContext('2d');

@@ -17,6 +17,7 @@ vi.mock('../api/client', async (importOriginal) => {
 // tesseract.js is only ever dynamically imported by the scan page itself; stub it out so no real
 // worker, wasm or CDN asset is ever touched in tests.
 const worker = { recognize: vi.fn(), terminate: vi.fn() };
+const drawImage = vi.fn();
 vi.mock('tesseract.js', () => ({
   createWorker: vi.fn(async () => worker),
   OEM: { LSTM_ONLY: 2 },
@@ -45,7 +46,7 @@ beforeEach(async () => {
   Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { configurable: true, value: 4 });
   Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, value: 640 });
   Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, value: 480 });
-  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({ drawImage: vi.fn() }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({ drawImage }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
   worker.recognize.mockResolvedValue({ data: { text: '' } });
 });
 
@@ -76,6 +77,8 @@ describe('ScanPage', () => {
   it('scans a frame, finds one match, adds a copy, and offers undo', async () => {
     const getUserMedia = vi.fn().mockResolvedValue(fakeStream());
     stubSecureCamera(getUserMedia);
+    Object.defineProperty(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, value: 480 });
+    Object.defineProperty(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, value: 640 });
     const card = makeSnapshot();
     mocks.lookupScan.mockResolvedValue([card]);
     worker.recognize.mockResolvedValue({ data: { text: 'SVI 001/198' } });
@@ -88,6 +91,7 @@ describe('ScanPage', () => {
     );
 
     expect(await screen.findByText('Found a match', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(drawImage).toHaveBeenCalledWith(expect.any(HTMLVideoElement), 48, 399, 384, 61, 0, 0, 384, 61);
     expect(screen.getByRole('link', { name: 'Charmander' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Add Normal' }));
