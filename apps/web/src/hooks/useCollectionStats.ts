@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isWithinPrintedTotal } from '../utils/progress';
 import { computeValue, costBasis, entryValue, gradedValue, useCollectionStore, type CostBasis } from '../store/collectionStore';
 import { useFx } from './useMoney';
 import type { CardSnapshot, CollectionEntry, GradedCopy } from '../api/types';
@@ -92,7 +93,7 @@ export function useCollectionStats() {
       if (held.size) {
         s.uniqueOwned++;
         s.slotsOwned += held.size;
-        if (/^\d+$/.test(c.number) && Number(c.number) <= c.printedTotal) s.baseOwned++;
+        if (isWithinPrintedTotal(c.number, c.printedTotal)) s.baseOwned++;
       }
       sets.set(c.setId, s);
     }
