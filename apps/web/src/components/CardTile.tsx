@@ -31,6 +31,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
   const slabs = useMemo(() => (variant ? allSlabs.filter((g) => g.variant === variant) : allSlabs), [allSlabs, variant]);
   const wished = useWished(s.id);
   const adjust = useCollectionStore((st) => st.adjust);
+  const toggleWishlist = useCollectionStore((st) => st.toggleWishlist);
   const readOnly = useReadOnly();
   const shared = usePublicShare();
   const money = useMoney();
@@ -59,49 +60,65 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
       className="group relative animate-rise scroll-mt-24"
       style={{ animationDelay: `${Math.min(index, 24) * 18}ms` }}
     >
-      <CardLink
-        to={shared ? undefined : `/card/${s.id}`}
-        className="block focus-visible:outline-offset-4"
-        label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
-      >
-        <div
-          onPointerMove={foilMove}
-          onPointerLeave={foilLeave}
-          className={`relative aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 transition-all duration-300 group-hover:-translate-y-1 ${
-            isOwned ? 'shadow-[0_10px_30px_-12px_rgb(0_0_0/0.9)] ring-1 ring-volt/60' : 'ring-1 ring-line'
-          } ${isOwned ? 'group-hover:shadow-[0_18px_40px_-14px_rgb(255_210_63/0.45)]' : ''}`}
+      <div className="relative transition-transform duration-300 group-hover:-translate-y-1">
+        <CardLink
+          to={shared ? undefined : `/card/${s.id}`}
+          className="block focus-visible:outline-offset-4"
+          label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
         >
-          <CardImage
-            id={s.id}
-            src={s.image}
-            name={s.name}
-            number={s.number}
-            setName={s.setName}
-            types={s.types}
-            className={`transition-[filter,opacity] duration-300 ${dimMissing && !isOwned ? 'opacity-45 grayscale-[0.85] group-hover:opacity-90 group-hover:grayscale-0' : ''}`}
-          />
-          {(hasFoil || !dimMissing) && <div className="foil" style={{ opacity: hasFoil ? undefined : 'calc(var(--foil-o,0) * 0.35)' }} />}
-          <div className="glare" />
-          {qty > 0 && <span className="absolute right-1.5 top-1.5 animate-pop rounded-full bg-volt px-1.5 py-0.5 font-mono text-[10px] font-bold text-ink shadow-md">×{qty}</span>}
-          {topSlab && (
-            <span
-              className={`absolute bottom-1.5 left-1.5 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold shadow-md ${
-                topSlab.countsTowardSet ? 'bg-fg text-ink' : 'border border-dashed border-fg/70 bg-ink/80 text-fg backdrop-blur'
-              }`}
-              title={`${slabs.length} graded cop${slabs.length > 1 ? 'ies' : 'y'}${topSlab.countsTowardSet ? '' : ' · kept out of set progress'}`}
-            >
-              {formatGrade(topSlab)}
-              {slabs.length > 1 && <span className="ml-1 opacity-60">+{slabs.length - 1}</span>}
-            </span>
-          )}
-          <LanguageBadge id={s.id} className="absolute bottom-1.5 right-1.5" />
-          {wished && !isOwned && !topSlab && (
-            <span className="absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-ink/80 text-[#ff6fae] backdrop-blur" title="On wishlist">
-              <Heart size={13} fill="currentColor" />
-            </span>
-          )}
-        </div>
-      </CardLink>
+          <div
+            onPointerMove={foilMove}
+            onPointerLeave={foilLeave}
+            className={`relative aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 transition-all duration-300 ${
+              isOwned ? 'shadow-[0_10px_30px_-12px_rgb(0_0_0/0.9)] ring-1 ring-volt/60' : 'ring-1 ring-line'
+            } ${isOwned ? 'group-hover:shadow-[0_18px_40px_-14px_rgb(255_210_63/0.45)]' : ''}`}
+          >
+            <CardImage
+              id={s.id}
+              src={s.image}
+              name={s.name}
+              number={s.number}
+              setName={s.setName}
+              types={s.types}
+              className={`transition-[filter,opacity] duration-300 ${dimMissing && !isOwned ? 'opacity-45 grayscale-[0.85] group-hover:opacity-90 group-hover:grayscale-0' : ''}`}
+            />
+            {(hasFoil || !dimMissing) && <div className="foil" style={{ opacity: hasFoil ? undefined : 'calc(var(--foil-o,0) * 0.35)' }} />}
+            <div className="glare" />
+            {qty > 0 && <span className="absolute right-1.5 top-1.5 animate-pop rounded-full bg-volt px-1.5 py-0.5 font-mono text-[10px] font-bold text-ink shadow-md">×{qty}</span>}
+            {topSlab && (
+              <span
+                className={`absolute bottom-1.5 left-1.5 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold shadow-md ${
+                  topSlab.countsTowardSet ? 'bg-fg text-ink' : 'border border-dashed border-fg/70 bg-ink/80 text-fg backdrop-blur'
+                }`}
+                title={`${slabs.length} graded cop${slabs.length > 1 ? 'ies' : 'y'}${topSlab.countsTowardSet ? '' : ' · kept out of set progress'}`}
+              >
+                {formatGrade(topSlab)}
+                {slabs.length > 1 && <span className="ml-1 opacity-60">+{slabs.length - 1}</span>}
+              </span>
+            )}
+            <LanguageBadge id={s.id} className={`absolute right-1.5 ${(!readOnly && !shared) || wished ? 'bottom-12' : 'bottom-1.5'}`} />
+          </div>
+        </CardLink>
+        {!readOnly && !shared ? (
+          <button
+            type="button"
+            onClick={async () => {
+              const on = await toggleWishlist(s);
+              toast(on ? `Added ${s.name} to wishlist` : `Removed ${s.name} from wishlist`, { tone: on ? 'success' : 'default' });
+            }}
+            aria-pressed={wished}
+            aria-label={wished ? `Remove ${s.name} from wishlist` : `Add ${s.name} to wishlist`}
+            title={wished ? 'On wishlist' : 'Add to wishlist'}
+            className={`absolute bottom-1.5 right-1.5 grid h-9 w-9 place-items-center rounded-full bg-ink/80 shadow-md transition-colors hover:bg-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6fae] active:scale-90 ${wished ? 'text-[#ff6fae]' : 'text-fg/80 hover:text-[#ff6fae]'}`}
+          >
+            <Heart size={17} fill={wished ? 'currentColor' : 'none'} />
+          </button>
+        ) : wished ? (
+          <span className="absolute bottom-1.5 right-1.5 grid h-9 w-9 place-items-center rounded-full bg-ink/80 text-[#ff6fae]" title="On wishlist">
+            <Heart size={17} fill="currentColor" />
+          </span>
+        ) : null}
+      </div>
 
       <div className="mt-2 flex items-start justify-between gap-2 px-0.5">
         <div className="min-w-0">
