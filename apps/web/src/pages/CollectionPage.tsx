@@ -55,7 +55,14 @@ export default function CollectionPage() {
       .sort(view === 'binder' && sort === 'added' ? SORTERS.set : SORTERS[sort]);
   }, [stats.owned, q, setFilter, gradedOnly, sort, view, notes]);
 
-  const filteredValue = useMemo(() => items.reduce((s, o) => s + o.valueUsd, 0), [items]);
+  const ledger = useMemo(
+    () =>
+      items.reduce(
+        (t, o) => ({ value: t.value + o.valueUsd, copies: t.copies + o.quantity, cost: t.cost + o.cost.costUsd, costedValue: t.costedValue + o.cost.valueUsd, costed: t.costed + o.cost.costed }),
+        { value: 0, copies: 0, cost: 0, costedValue: 0, costed: 0 },
+      ),
+    [items],
+  );
   const slabCount = useMemo(() => stats.owned.reduce((n, o) => n + o.graded.length, 0), [stats.owned]);
   // Binder pages only hold copies that count towards sets; display slabs live elsewhere.
   const binderItems = useMemo(() => items.filter((o) => holdings.has(o.card.id)), [items, holdings]);
@@ -91,15 +98,36 @@ export default function CollectionPage() {
             </Link>
             <ShareButton scope="collection" what="your collection" compact />
             <ShareButton scope="graded" what="your graded cards" compact />
-            <div className="ml-2 text-right">
-              <p className="eyebrow">{setFilter || q ? 'Filtered value' : 'Total value'}</p>
-              <p className="font-display text-2xl font-bold tabular">{money(filteredValue)}</p>
-            </div>
           </>
         }
       />
 
-      <div className="sticky top-14 z-20 -mx-4 flex flex-wrap items-center gap-2 border-b border-line bg-ink/85 px-4 py-3 backdrop-blur-xl lg:top-0">
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-4 sm:flex sm:flex-wrap sm:items-end sm:gap-x-12">
+        <div>
+          <dt className="eyebrow">{setFilter || q || gradedOnly ? 'Filtered value' : 'Total value'}</dt>
+          <dd className="mt-1 font-display text-[2.4rem] font-medium leading-none tracking-tight tabular">{money(ledger.value)}</dd>
+        </div>
+        <div>
+          <dt className="eyebrow">Copies</dt>
+          <dd className="mt-1 font-display text-2xl font-medium leading-none tabular">{ledger.copies.toLocaleString('en-GB')}</dd>
+        </div>
+        {ledger.costed > 0 && (
+          <>
+            <div>
+              <dt className="eyebrow">Paid</dt>
+              <dd className="mt-1 font-display text-2xl font-medium leading-none tabular">{money(ledger.cost)}</dd>
+            </div>
+            <div>
+              <dt className="eyebrow">Gain / loss</dt>
+              <dd className="mt-1 text-2xl leading-none">
+                <Gain valueUsd={ledger.costedValue} costUsd={ledger.cost} percent={false} className="!font-display font-medium" />
+              </dd>
+            </div>
+          </>
+        )}
+      </dl>
+
+      <div className="sticky top-14 z-20 -mx-4 flex flex-wrap items-center gap-2 border-b border-line bg-canvas/95 px-4 py-3 lg:top-0">
         <div className="relative">
           <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, artist or note" aria-label="Filter collection" className="input !h-9 !w-48 !pl-8 !text-xs" />
@@ -132,8 +160,8 @@ export default function CollectionPage() {
           <button
             onClick={() => update('graded', gradedOnly ? '' : '1')}
             aria-pressed={gradedOnly}
-            className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition-colors ${
-              gradedOnly ? 'border-volt bg-volt/15 text-volt' : 'border-line bg-surface-2 text-muted hover:text-fg'
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${
+              gradedOnly ? 'border-accent bg-accent/10 text-accent' : 'border-line-strong text-muted hover:text-fg'
             }`}
           >
             <Award size={13} /> Graded <span className="font-mono tabular opacity-70">{slabCount}</span>
@@ -156,17 +184,17 @@ export default function CollectionPage() {
       {unsynced > 0 && <p className="text-xs text-muted">Fetching details for {unsynced} card{unsynced > 1 ? 's' : ''}…</p>}
 
       {items.length === 0 ? (
-        <p className="panel p-10 text-center text-sm text-muted">No cards match.</p>
+        <p className="border-y border-line py-12 text-center text-sm text-muted">No cards match.</p>
       ) : view === 'binder' ? (
         binderItems.length ? (
           <BinderView slots={binderItems.map((o) => ({ card: o.card, owned: true }))} pocketSize={pocketSize} />
         ) : (
-          <p className="panel p-10 text-center text-sm text-muted">These graded cards are kept out of your binder.</p>
+          <p className="border-y border-line py-12 text-center text-sm text-muted">These graded cards are kept out of your binder.</p>
         )
       ) : view === 'list' ? (
-        <div className="overflow-x-auto rounded-2xl border border-line">
+        <div className="overflow-x-auto border-y border-line-strong">
           <table className="w-full min-w-[640px] text-sm">
-            <thead className="bg-surface-2 text-left">
+            <thead className="border-b border-line text-left">
               <tr className="eyebrow">
                 <th className="px-4 py-2.5 font-normal">Card</th>
                 <th className="px-4 py-2.5 font-normal">Set</th>
@@ -177,10 +205,10 @@ export default function CollectionPage() {
             </thead>
             <tbody className="divide-y divide-line">
               {items.map((o) => (
-                <tr key={o.card.id} className="transition-colors hover:bg-surface">
+                <tr key={o.card.id} className="transition-colors hover:bg-surface-2/60">
                   <td className="px-4 py-2">
-                    <Link to={`/card/${o.card.id}`} className="flex items-center gap-3 hover:text-volt">
-                      <span className="block h-12 w-[34px] shrink-0 overflow-hidden rounded-[3px]">
+                    <Link to={`/card/${o.card.id}`} className="flex items-center gap-3 hover:text-accent">
+                      <span className="block h-12 w-[34px] shrink-0 overflow-hidden rounded-[3px] shadow-card">
                         <CardImage id={o.card.id} src={o.card.image} name={o.card.name} types={o.card.types} />
                       </span>
                       <span>
@@ -188,7 +216,7 @@ export default function CollectionPage() {
                         <span className="block text-[11px] text-faint">{o.card.rarity} · {relativeTime(o.addedAt)}</span>
                         {notes.has(o.card.id) && (
                           <span className="mt-0.5 flex max-w-64 items-center gap-1 text-[11px] text-muted" title={notes.get(o.card.id)}>
-                            <NotebookPen size={11} className="shrink-0 text-volt" />
+                            <NotebookPen size={11} className="shrink-0 text-accent" />
                             <span className="truncate">{notes.get(o.card.id)}</span>
                           </span>
                         )}
@@ -204,7 +232,7 @@ export default function CollectionPage() {
                         <span
                           key={e.variant}
                           title={`${variantLabel(e.variant)} · ${e.condition ?? 'NM'}`}
-                          className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink ${isFoil(e.variant) ? 'holo-bar' : 'bg-volt'}`}
+                          className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${isFoil(e.variant) ? 'holo-bar text-onyx' : 'bg-accent text-on-accent'}`}
                         >
                           {variantShort(e.variant)}
                           {e.quantity > 1 && `×${e.quantity}`}
@@ -214,7 +242,7 @@ export default function CollectionPage() {
                         <span
                           key={g.id}
                           title={`${variantLabel(g.variant)} · ${g.label ?? 'Graded'}${g.certNumber ? ` · cert ${g.certNumber}` : ''}${g.countsTowardSet ? '' : ' · kept out of set progress'}`}
-                          className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${g.countsTowardSet ? 'bg-fg text-ink' : 'border border-dashed border-fg/60 text-fg'}`}
+                          className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${g.countsTowardSet ? 'bg-fg text-canvas' : 'border border-dashed border-fg/60 text-fg'}`}
                         >
                           {formatGrade(g)}
                         </span>

@@ -2,43 +2,60 @@ import { useMemo, useState } from 'react';
 import type { ValuePoint } from '../api/types';
 import { formatDate } from '../utils/format';
 
-interface Props {
-  points: ValuePoint[];
+interface Props<T extends { date: string }> {
+  points: T[];
   format: (usd: number) => string;
   height?: number;
-  /** 'gain' plots market value minus cost for copies with a recorded purchase price. */
+  /** 'gain' plots market value minus cost for copies with a recorded purchase price. Only meaningful for ValuePoint data. */
   metric?: 'value' | 'gain';
+  /** Extracts the plotted value from a point. Defaults to a ValuePoint's valueUsd. */
+  value?: (point: T) => number;
+  /** Message shown when there are fewer than two points to plot. Defaults to the collection-value copy. */
+  emptyMessage?: string;
+  /** Caps how many of the most recent points are plotted. Defaults to 90, matching the original behaviour. */
+  maxPoints?: number;
 }
 
 const gainOf = (p: ValuePoint) => (p.costUsd == null ? undefined : (p.costedValueUsd ?? 0) - p.costUsd);
+const defaultValue = (p: ValuePoint) => p.valueUsd;
 
 const W = 600;
 
-export default function ValueChart({ points, format, height = 160, metric = 'value' }: Props) {
+export default function ValueChart<T extends { date: string } = ValuePoint>({
+  points,
+  format,
+  height = 160,
+  metric = 'value',
+  value,
+  emptyMessage,
+  maxPoints = 90,
+}: Props<T>) {
   const [hover, setHover] = useState<number | null>(null);
   const gain = metric === 'gain';
+  const accessor = value ?? (defaultValue as unknown as (point: T) => number);
   const data = useMemo(
     () =>
       [...points]
-        .filter((p) => !gain || gainOf(p) !== undefined)
+        .filter((p) => !gain || gainOf(p as unknown as ValuePoint) !== undefined)
         .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(-90),
-    [points, gain],
+        .slice(-maxPoints),
+    [points, gain, maxPoints],
   );
 
   if (data.length < 2) {
     return (
-      <div className="grid place-items-center rounded-xl border border-dashed border-line text-center text-xs text-faint" style={{ height }}>
+      <div className="grid place-items-center rounded-lg border border-dashed border-line text-center text-xs text-faint" style={{ height }}>
         <p className="max-w-60">
-          {gain
-            ? 'Gain and loss is tracked daily from the first day you record what you paid. Check back tomorrow.'
-            : 'Your value history builds up day by day. Come back tomorrow to see the trend line.'}
+          {emptyMessage ??
+            (gain
+              ? 'Gain and loss is tracked daily from the first day you record what you paid. Check back tomorrow.'
+              : 'Your value history builds up day by day. Come back tomorrow to see the trend line.')}
         </p>
       </div>
     );
   }
 
-  const values = data.map((d) => (gain ? gainOf(d)! : d.valueUsd));
+  const values = data.map((d) => (gain ? gainOf(d as unknown as ValuePoint)! : accessor(d)));
   const min = Math.min(...values, ...(gain ? [0] : []));
   const max = Math.max(...values, ...(gain ? [0] : []));
   const pad = (max - min) * 0.15 || Math.abs(max) * 0.1 || 1;
@@ -73,12 +90,12 @@ export default function ValueChart({ points, format, height = 160, metric = 'val
           </linearGradient>
         </defs>
         <path d={area} fill="url(#vc-fill)" />
-        {gain && <line x1="0" x2={W} y1={base} y2={base} stroke="rgb(255 255 255 / 0.25)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" data-testid="zero-line" />}
+        {gain && <line x1="0" x2={W} y1={base} y2={base} stroke="var(--color-faint)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" data-testid="zero-line" />}
         <path d={line} fill="none" stroke={stroke} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-        <line x1={x(h)} x2={x(h)} y1="0" y2={height} stroke="rgb(255 255 255 / 0.15)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        <line x1={x(h)} x2={x(h)} y1="0" y2={height} stroke="var(--color-line-strong)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
       </svg>
       <span
-        className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-ink"
+        className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-surface"
         style={{ left: `${(x(h) / W) * 100}%`, top: y(values[h]), background: stroke }}
       />
       <div className="mt-2 flex justify-between font-mono text-[10.5px] text-faint">

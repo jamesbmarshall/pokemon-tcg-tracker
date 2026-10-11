@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, Search } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, Package, ScanLine, Search } from 'lucide-react';
 import { useSets } from '../api/hooks';
 import { searchCards } from '../api/client';
 import { useDebounced } from '../hooks/useDebounced';
@@ -36,6 +36,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     const needle = q.trim().toLowerCase();
+    if (needle.length === 0) out.push({ kind: 'action', id: 'scan', title: 'Scan a card', sub: 'Use your camera to look one up' });
     if (needle.length >= 1 && sets) {
       for (const s of sets) {
         if (s.name.toLowerCase().includes(needle) || s.ptcgoCode?.toLowerCase() === needle || s.id === needle) {
@@ -48,6 +49,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
       out.push({ kind: 'card', id: c.id, title: c.name, sub: `${c.set.name} · #${c.number}`, image: c.images.small, owned: byCard.has(c.id) || slabs.has(c.id) });
     }
     if (needle.length >= 2) out.push({ kind: 'action', id: 'search', title: `Search all cards for “${q.trim()}”`, sub: 'Open advanced search' });
+    if (needle.length >= 1 && 'sealed products'.includes(needle)) out.push({ kind: 'action', id: 'sealed', title: 'Sealed products', sub: 'Go to Sealed' });
     return out;
   }, [q, sets, cards.data, byCard, slabs]);
 
@@ -55,6 +57,8 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     onClose();
     if (it.kind === 'card') navigate(`/card/${it.id}`);
     else if (it.kind === 'set') navigate(`/sets/${it.id}`);
+    else if (it.kind === 'action' && it.id === 'scan') navigate('/scan');
+    else if (it.kind === 'action' && it.id === 'sealed') navigate('/sealed');
     else navigate(`/search?q=${encodeURIComponent(q.trim())}`);
   };
 
@@ -65,12 +69,12 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/60 px-3 pt-[12vh] backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-onyx/45 px-3 pt-[12vh]" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search"
-        className="w-full max-w-xl animate-rise overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_40px_120px_-20px_rgb(0_0_0/0.9)]"
+        className="w-full max-w-xl animate-rise overflow-hidden rounded-xl border border-line-strong bg-surface shadow-pop"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-line px-4">
@@ -103,9 +107,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         </div>
         <div ref={listRef} className="max-h-[55vh] overflow-y-auto p-2">
           {items.length === 0 && (
-            <p className="px-3 py-10 text-center text-sm text-faint">
-              {q.trim().length < 2 ? 'Try “Charizard”, “151” or “Umbreon VMAX”' : cards.isFetching ? 'Searching…' : 'Nothing found'}
-            </p>
+            <p className="px-3 py-10 text-center text-sm text-faint">{cards.isFetching ? 'Searching…' : 'Nothing found'}</p>
           )}
           {items.map((it, i) => (
             <button
@@ -113,7 +115,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
               data-idx={i}
               onMouseEnter={() => setActive(i)}
               onClick={() => go(it)}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${i === active ? 'bg-surface-3' : ''}`}
+              className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left ${i === active ? 'bg-surface-2' : ''}`}
             >
               {it.kind === 'card' && (
                 <span className="block h-11 w-8 shrink-0 overflow-hidden rounded-[3px]">
@@ -126,8 +128,8 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 </span>
               )}
               {it.kind === 'action' && (
-                <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-volt">
-                  <ArrowRight size={16} />
+                <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-accent">
+                  {it.id === 'scan' ? <ScanLine size={16} /> : it.id === 'sealed' ? <Package size={16} /> : <ArrowRight size={16} />}
                 </span>
               )}
               <span className="min-w-0 flex-1">
@@ -135,10 +137,13 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 <span className="block truncate text-xs text-muted">{it.sub}</span>
               </span>
               {it.kind === 'set' && <Layers size={14} className="text-faint" />}
-              {it.kind === 'card' && it.owned && <span className="rounded-full bg-volt/15 px-2 py-0.5 text-[10px] font-semibold text-volt">Owned</span>}
+              {it.kind === 'card' && it.owned && <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">Owned</span>}
               {i === active && <CornerDownLeft size={14} className="text-faint" />}
             </button>
           ))}
+          {q.trim().length < 2 && (
+            <p className="px-3 py-4 text-center text-xs text-faint">Try “Charizard”, “151” or “Umbreon VMAX”</p>
+          )}
         </div>
       </div>
     </div>

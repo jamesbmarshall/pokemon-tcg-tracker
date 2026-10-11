@@ -16,7 +16,9 @@ import SetPage from './pages/SetPage';
 import CardPage from './pages/CardPage';
 import CollectionPage from './pages/CollectionPage';
 import WishlistPage from './pages/WishlistPage';
+import SealedPage from './pages/SealedPage';
 import SearchPage from './pages/SearchPage';
+import ScanPage from './pages/ScanPage';
 import SettingsPage from './pages/SettingsPage';
 import AccountPage from './pages/AccountPage';
 import AdminPage from './pages/AdminPage';
@@ -26,6 +28,7 @@ import PublicSharePage from './pages/PublicSharePage';
 import { AuthShell, InvitePage, LoginPage, ResetPage, SetupPage } from './pages/AuthPages';
 import { useAuth } from './store/authStore';
 import { Logo } from './components/ui';
+import { useThemeSync } from './utils/theme';
 
 // Catalogue queries retry with backoff because upstream TCGdex hiccups are common and transient.
 // Focus refetching is off: the data changes rarely and a refetch would hit the server for nothing.
@@ -58,7 +61,9 @@ function SignedInApp() {
         <Route path="card/:cardId" element={<CardPage />} />
         <Route path="collection" element={<CollectionPage />} />
         <Route path="wishlist" element={<WishlistPage />} />
+        <Route path="sealed" element={<SealedPage />} />
         <Route path="search" element={<SearchPage />} />
+        <Route path="scan" element={<ScanPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="admin" element={<AdminPage />} />
@@ -114,6 +119,7 @@ function Gate() {
 
 function AppInner() {
   const init = useAuth((s) => s.init);
+  useThemeSync();
   // Guarded so StrictMode's double effect and remounts don't restart an auth check already done.
   useEffect(() => {
     if (useAuth.getState().status === 'loading') void init();

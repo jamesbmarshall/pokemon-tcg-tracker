@@ -1,11 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, Search, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import type { GradedCopy, GradingCompany, PokemonCard, Subgrades } from '../api/types';
 import { cardVariants } from '../api/client';
+import { getBackend } from '../api/backend';
 import { useCollectionStore, type GradedInput } from '../store/collectionStore';
 import { addPhotos, removePhotos, useGradedPhotos } from '../db/gradedPhotos';
 import { useFx } from '../hooks/useMoney';
+import { useDebounced } from '../hooks/useDebounced';
 import { parseAmount } from './Paid';
 import { COMPANIES, GRADE_SCALES, SUBGRADE_COMPANIES, SUBGRADE_KEYS, defaultLabel, labelOptions } from '../utils/grading';
 import { variantLabel } from '../utils/variants';
@@ -24,6 +27,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const variants = useMemo(() => cardVariants(card), [card]);
   const byCard = useCollectionStore((s) => s.byCard);
   const saveGraded = useCollectionStore((s) => s.saveGraded);
+  const linkGraded = useCollectionStore((s) => s.linkGraded);
   const { currency, rate } = useFx();
   const existingPhotos = useGradedPhotos(copy?.id);
   const uid = useId();
@@ -41,6 +45,9 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const [value, setValue] = useState(copy?.valueUsd != null ? String(round2(copy.valueUsd * rate)) : '');
   const [notes, setNotes] = useState(copy?.notes ?? '');
   const [paid, setPaid] = useState(copy?.paid ? copy.paid.amount.toFixed(2) : '');
+  const [pcQuery, setPcQuery] = useState(card.name);
+  const [selectedPc, setSelectedPc] = useState<string | undefined>(copy?.pcProductId);
+  const debouncedPcQuery = useDebounced(pcQuery, 300);
   // Default: a slab fills the set slot only if there's no raw copy of the same printing already in the binder.
   const smartDefault = (v: string) => !byCard.get(card.id)?.[v];
   const [counts, setCounts] = useState(copy?.countsTowardSet ?? smartDefault(variant));
@@ -53,6 +60,17 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const labels = labelOptions(company, grade);
   const previews = useMemo(() => newFiles.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })), [newFiles]);
   useEffect(() => () => previews.forEach((p) => URL.revokeObjectURL(p.url)), [previews]);
+
+  const { data: pcConfigured } = useQuery({
+    queryKey: ['graded-pc-configured'],
+    queryFn: () => getBackend().pcConfigured(),
+    staleTime: 5 * 60_000,
+  });
+  const { data: pcResults = [] } = useQuery({
+    queryKey: ['graded-pc-search', debouncedPcQuery],
+    queryFn: () => getBackend().pcSearch(debouncedPcQuery),
+    enabled: pcConfigured === true && debouncedPcQuery.trim().length > 1,
+  });
 
   useEffect(() => {
     first.current?.focus();
@@ -99,6 +117,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
         notes,
       };
       const saved = await saveGraded(card, input);
+      if (selectedPc && selectedPc !== copy?.pcProductId) await linkGraded(saved.id, selectedPc);
       if (dropIds.length) await removePhotos(dropIds, saved.id);
       if (newFiles.length) await addPhotos(saved.id, newFiles);
       toast(copy ? 'Graded copy updated' : `Added ${card.name} · ${company === 'Other' ? companyName : company} ${grade}`, { tone: 'success' });
@@ -114,14 +133,14 @@ export default function GradedForm({ card, copy, onClose }: Props) {
 
   // Portalled so ancestor transforms/overflow (panels, page animations) can't clip the overlay.
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/65 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-onyx/45 sm:items-center sm:p-4" onMouseDown={onClose}>
       <form
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${uid}-title`}
         onSubmit={submit}
         onMouseDown={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-lg animate-rise flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-ink-2 shadow-2xl sm:rounded-3xl"
+        className="flex max-h-[92vh] w-full max-w-lg animate-rise flex-col overflow-hidden rounded-t-xl border border-line-strong bg-surface shadow-pop sm:rounded-xl"
       >
         <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
@@ -197,7 +216,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
                     type="button"
                     onClick={() => pickVariant(v)}
                     aria-pressed={variant === v}
-                    className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${variant === v ? 'border-volt bg-volt/15 text-volt' : 'border-line bg-surface-2 text-muted hover:text-fg'}`}
+                    className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${variant === v ? 'border-accent bg-accent/15 text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg'}`}
                   >
                     {variantLabel(v)}
                   </button>
@@ -208,7 +227,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
 
           <div>
             {!showSubs ? (
-              <button type="button" onClick={() => setShowSubs(true)} className="text-xs font-medium text-muted underline-offset-4 hover:text-volt hover:underline">
+              <button type="button" onClick={() => setShowSubs(true)} className="text-xs font-medium text-muted underline-offset-4 hover:text-accent hover:underline">
                 + Add sub-grades{SUBGRADE_COMPANIES.has(company) ? '' : ' (optional)'}
               </button>
             ) : (
@@ -234,7 +253,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
             )}
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-line bg-surface p-3.5">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-surface p-3.5">
             <input
               type="checkbox"
               checked={counts}
@@ -244,7 +263,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
               }}
               className="peer sr-only"
             />
-            <span aria-hidden className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-surface-3 transition-colors peer-checked:bg-volt peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-volt after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-ink" />
+            <span aria-hidden className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-surface-3 transition-colors peer-checked:bg-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-on-accent" />
             <span>
               <span className="block text-sm font-medium">Counts towards set completion</span>
               <span className="mt-0.5 block text-xs leading-relaxed text-muted">
@@ -265,9 +284,45 @@ export default function GradedForm({ card, copy, onClose }: Props) {
               <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" placeholder="Optional" className="input font-mono" />
             </label>
             <p className="col-span-2 -mt-1 text-[11px] leading-snug text-faint">
-              Include grading fees in what you paid. Leave the valuation blank to use the raw market price; graded prices aren't in the price feed.
+              Include grading fees in what you paid. Leave the valuation blank to use the linked PriceCharting graded price, if any, else the raw market price.
             </p>
           </div>
+
+          {pcConfigured === true && (
+            <fieldset className="space-y-1.5">
+              <legend className={field}>Link to PriceCharting</legend>
+              <div className="relative">
+                <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+                <input
+                  value={pcQuery}
+                  onChange={(e) => setPcQuery(e.target.value)}
+                  placeholder="Search PriceCharting…"
+                  aria-label="Search PriceCharting"
+                  className="input !pl-8"
+                />
+              </div>
+              {pcResults.length > 0 && (
+                <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line p-1">
+                  {pcResults.map((r) => (
+                    <li key={r.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPc(r.id)}
+                        aria-pressed={selectedPc === r.id}
+                        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                          selectedPc === r.id ? 'bg-accent/15 text-accent' : 'hover:bg-surface-2'
+                        }`}
+                      >
+                        <span className="truncate">{r.name}</span>
+                        {r.consoleName && <span className="shrink-0 text-faint">{r.consoleName}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {selectedPc && <p className="text-[11px] text-faint">Linked on save; its {company} {grade} price is used automatically if you leave your valuation blank.</p>}
+            </fieldset>
+          )}
 
           <label className="block space-y-1.5">
             <span className={field}>Notes</span>
@@ -285,7 +340,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
               {previews.map((p, i) => (
                 <Thumb key={p.url} url={p.url} onRemove={() => setNewFiles((f) => f.filter((_, j) => j !== i))} />
               ))}
-              <label className="grid h-24 w-[68px] cursor-pointer place-items-center rounded-lg border border-dashed border-line-strong text-faint transition-colors hover:border-volt hover:text-volt focus-within:border-volt">
+              <label className="grid h-24 w-[68px] cursor-pointer place-items-center rounded-lg border border-dashed border-line-strong text-faint transition-colors hover:border-accent hover:text-accent focus-within:border-accent">
                 <ImagePlus size={18} />
                 <span className="sr-only">Add photos</span>
                 <input
@@ -327,7 +382,7 @@ function Thumb({ url, onRemove }: { url: string; onRemove: () => void }) {
         type="button"
         onClick={onRemove}
         aria-label="Remove photo"
-        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-ink/85 text-fg opacity-90 hover:text-loss"
+        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-onyx/85 text-paper opacity-90 hover:text-loss"
       >
         <X size={11} />
       </button>

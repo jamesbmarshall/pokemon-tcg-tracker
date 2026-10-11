@@ -46,7 +46,7 @@ describe('ProgressRing', () => {
   it('treats an empty total as 0%', () => {
     const { container } = render(<ProgressRing value={0} total={0} />);
     expect(screen.getByText('0%')).toBeInTheDocument();
-    expect(container.querySelectorAll('circle')[1]).toHaveAttribute('stroke', 'var(--color-volt)');
+    expect(container.querySelectorAll('circle')[1]).toHaveAttribute('stroke', 'var(--color-accent)');
   });
 });
 
@@ -55,7 +55,7 @@ describe('ProgressBar', () => {
     const { container } = render(<ProgressBar value={1} total={4} />);
     const fill = container.firstChild!.firstChild as HTMLElement;
     expect(fill.style.width).toBe('25%');
-    expect(fill).toHaveClass('bg-volt');
+    expect(fill).toHaveClass('bg-accent');
   });
 
   it('caps at 100% and uses the holo bar when complete', () => {

@@ -40,11 +40,19 @@ describe('CommandPalette', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('opens focused with a hint', () => {
+  it('opens focused with a scan shortcut and a hint', () => {
     setup();
     expect(screen.getByRole('dialog', { name: 'Search' })).toBeInTheDocument();
     expect(input()).toHaveFocus();
+    expect(screen.getByText('Scan a card')).toBeInTheDocument();
     expect(screen.getByText(/Try “Charizard”/)).toBeInTheDocument();
+  });
+
+  it('navigates to the scan page when the scan shortcut is chosen', async () => {
+    const { user, onClose } = setup();
+    await user.click(screen.getByText('Scan a card'));
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/scan');
   });
 
   it('matches sets by name', async () => {
@@ -103,14 +111,14 @@ describe('CommandPalette', () => {
   it('moves the selection with the arrow keys', async () => {
     const { user } = setup();
     await user.type(input(), 'obs');
-    expect(options()[0].className).toContain('bg-surface-3');
+    expect(options()[0].className).toContain('bg-surface-2');
     await user.keyboard('{ArrowDown}');
-    expect(options()[1].className).toContain('bg-surface-3');
-    expect(options()[0].className).not.toContain('bg-surface-3');
+    expect(options()[1].className).toContain('bg-surface-2');
+    expect(options()[0].className).not.toContain('bg-surface-2');
     await user.keyboard('{ArrowDown}{ArrowDown}'); // clamped at the end
-    expect(options()[1].className).toContain('bg-surface-3');
+    expect(options()[1].className).toContain('bg-surface-2');
     await user.keyboard('{ArrowUp}{ArrowUp}');
-    expect(options()[0].className).toContain('bg-surface-3');
+    expect(options()[0].className).toContain('bg-surface-2');
     await user.keyboard('{ArrowDown}{Enter}');
     expect(screen.getByTestId('location')).toHaveTextContent('/search?q=obs');
   });
@@ -119,7 +127,7 @@ describe('CommandPalette', () => {
     const { user } = setup();
     await user.type(input(), 'obs');
     await user.hover(options()[1]);
-    expect(options()[1].className).toContain('bg-surface-3');
+    expect(options()[1].className).toContain('bg-surface-2');
   });
 
   it('encodes the query in the search action', async () => {

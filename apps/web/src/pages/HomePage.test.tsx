@@ -6,7 +6,8 @@ import { renderWithProviders } from '../test/render';
 import { dayKey, loadingResult, queryResult, resetStores, seedCollection } from '../test/ui-helpers';
 import { makeEntry, makeSet, makeSnapshot } from '../test/fixtures';
 import { useCollectionStore } from '../store/collectionStore';
-import type { ValuePoint } from '../api/types';
+import { memory } from '../test/memoryBackend';
+import type { MoverCard, ValuePoint } from '../api/types';
 
 const mocks = vi.hoisted(() => ({ useSets: vi.fn() }));
 vi.mock('../api/hooks', () => ({ useSets: mocks.useSets }));
@@ -46,6 +47,18 @@ const stripNames = (title: string) =>
   within(screen.getByRole('heading', { name: title }).parentElement!.nextElementSibling as HTMLElement)
     .getAllByRole('link')
     .map((l) => l.querySelector('p')!.textContent);
+const mover = (over: Partial<MoverCard> = {}): MoverCard => ({
+  cardId: 'sv03-223',
+  name: 'Charizard ex',
+  image: 'https://example.com/charizard.png',
+  setName: 'Obsidian Flames',
+  variant: 'holofoil',
+  valueUsd: 20,
+  previousValueUsd: 10,
+  changeUsd: 10,
+  changePct: 100,
+  ...over,
+});
 
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -60,19 +73,33 @@ describe('HomePage', () => {
     expect(screen.queryByRole('heading')).not.toBeInTheDocument();
   });
 
+  it('gives every responsive grid section an explicit base grid-cols-1 (regression: narrow-viewport overflow)', () => {
+    // Without a base grid-cols-1, CSS Grid auto-places hero/showcase sections into
+    // implicit content-sized columns on narrow screens instead of stacking, overflowing the
+    // viewport. The lg:/xl: overrides should only apply from those breakpoints up.
+    seedCollection();
+    renderWithProviders(<HomePage />);
+    const grids = Array.from(document.querySelectorAll('.grid')).filter((el) =>
+      /\b(lg|xl):grid-cols-/.test(el.className),
+    );
+    expect(grids.length).toBeGreaterThan(0);
+    for (const grid of grids) {
+      expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+    }
+  });
+
   describe('welcome', () => {
     beforeEach(() => seedCollection());
 
     it('welcomes new collectors with the latest sets', () => {
       renderWithProviders(<HomePage />);
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent("Every card you own, every one you don't.");
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent("Every card you own, and every one you don't.");
       expect(screen.getByRole('link', { name: /Start with Paradox Rift/ })).toHaveAttribute('href', '/sets/sv04');
       expect(screen.getByRole('link', { name: 'Browse all sets' })).toHaveAttribute('href', '/sets');
-      expect(screen.getByRole('heading', { name: 'Tap to collect' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Tap to collect' }).closest('section')).toHaveClass('grid-cols-1');
+      expect(screen.getByRole('heading', { name: 'Count it properly' })).toBeInTheDocument();
       const latest = screen.getByRole('heading', { name: 'Latest releases' }).nextElementSibling as HTMLElement;
       const links = within(latest).getAllByRole('link');
-      expect(links.map((l) => l.getAttribute('href'))).toEqual(['/sets/sv04', '/sets/sv03', '/sets/sv02']);
+      expect(links.map((l) => l.getAttribute('href')).slice(0, 3)).toEqual(['/sets/sv04', '/sets/sv03', '/sets/sv02']);
       expect(links[0]).toHaveTextContent('11 Aug 2023 · 266 cards');
     });
 
@@ -204,4 +231,46 @@ describe('HomePage', () => {
     });
   });
 
+  describe('biggest movers', () => {
+    it('shows gainers and losers from the backend', async () => {
+      seedDashboard();
+      memory.moversResponse = {
+        gainers: [mover(), mover({ cardId: 'base1-4', name: 'Blastoise', variant: 'normal', changeUsd: 2, changePct: 20 })],
+        losers: [mover({ cardId: 'tiny-1', name: 'Promo', variant: 'reverseHolofoil', changeUsd: -5, changePct: -25 })],
+      };
+      renderWithProviders(<HomePage />);
+      const heading = await screen.findByRole('heading', { name: 'Biggest movers' });
+      const section = heading.closest('section') as HTMLElement;
+      expect(await within(section).findByText('Charizard ex')).toBeInTheDocument();
+      expect(within(section).getByText('Blastoise')).toBeInTheDocument();
+      expect(within(section).getByText('Promo')).toBeInTheDocument();
+      expect(within(section).getByText('Holo')).toBeInTheDocument();
+      expect(within(section).getByText('Reverse Holo')).toBeInTheDocument();
+      expect(within(section).getByText(/\+£5\.00 \(100\.0%\)/)).toBeInTheDocument();
+      expect(within(section).getByText(/−£2\.50 \(25\.0%\)/)).toBeInTheDocument();
+      expect(within(section).getByRole('link', { name: /Charizard ex/ })).toHaveAttribute('href', '/card/sv03-223');
+    });
+
+    it('toggles between 7 and 30 days and remembers the choice', async () => {
+      seedDashboard();
+      memory.moversResponse = { gainers: [mover()], losers: [] };
+      const { unmount } = renderWithProviders(<HomePage />);
+      await screen.findByRole('heading', { name: 'Biggest movers' });
+      expect(screen.getByRole('radio', { name: '7 days' })).toHaveAttribute('aria-checked', 'true');
+      await userEvent.click(screen.getByRole('radio', { name: '30 days' }));
+      expect(screen.getByRole('radio', { name: '30 days' })).toHaveAttribute('aria-checked', 'true');
+      unmount();
+      renderWithProviders(<HomePage />);
+      await screen.findByRole('heading', { name: 'Biggest movers' });
+      expect(screen.getByRole('radio', { name: '30 days' })).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('shows a friendly empty state when there is not enough history yet', async () => {
+      seedDashboard();
+      memory.moversResponse = { gainers: [], losers: [] };
+      renderWithProviders(<HomePage />);
+      await screen.findByRole('heading', { name: 'Biggest movers' });
+      expect(await screen.findByText(/Check back once there's more price history to compare/)).toBeInTheDocument();
+    });
+  });
 });

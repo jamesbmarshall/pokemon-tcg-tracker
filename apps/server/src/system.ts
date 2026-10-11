@@ -8,6 +8,8 @@ import { createReadStream, rmSync, statSync } from 'node:fs';
 import { audit, bad, HttpError, notFound, requireRole, requireUser, type Ctx } from './context.ts';
 import { backupNow, backupPath, jobStatus, JOBS, listBackups, runJob } from './jobs.ts';
 import { imageCacheStats } from './catalog.ts';
+import { allProviderHealth, isHealthy } from './providers/resilience.ts';
+import { pcConfigured } from './providers/pricecharting.ts';
 import {
   applyUpdate,
   autoUpdateEnabled,
@@ -20,15 +22,30 @@ import {
 } from './updater.ts';
 
 export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
-  /** Small status for every signed-in user: version and when prices last refreshed. */
+  /**
+   * Small status for every signed-in user: version and when prices last refreshed.
+   * `catalogDegraded` is a non-sensitive flag (no error detail) so the web app can show a
+   * "card data may be out of date" banner without needing admin access.
+   */
   app.get('/api/system/status', async (req) => {
     const u = requireUser(req);
     const lastPriceSync = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'last_price_sync'")?.value ?? null;
     const fx = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'fx'");
-    const base = { version: ctx.config.version, lastPriceSync, fxAt: fx ? (JSON.parse(fx.value) as { at: number }).at : null };
+    const base = { version: ctx.config.version, lastPriceSync, fxAt: fx ? (JSON.parse(fx.value) as { at: number }).at : null, catalogDegraded: !isHealthy('tcgdex') };
     // Members can't act on updates, so don't show them a nag they can't resolve.
     if (u.role === 'member') return base;
     return { ...base, updateAvailable: updateAvailable(ctx), latest: readUpdateState(ctx).latest?.version ?? null };
+  });
+
+  /** Per-provider health for the admin "providers" panel: breaker state, recent errors, stale-serve counts. */
+  app.get('/api/admin/providers', async (req) => {
+    requireRole(req, 'owner', 'admin');
+    const byName = new Map(allProviderHealth().map((h) => [h.name, h]));
+    const blank = (name: string) => ({ name, state: 'closed' as const, consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null });
+    return {
+      tcgdex: byName.get('tcgdex') ?? blank('tcgdex'),
+      pricecharting: { ...(byName.get('pricecharting') ?? blank('pricecharting')), configured: pcConfigured(ctx) },
+    };
   });
 
   // ------------------------------------------------------------ jobs (admins)

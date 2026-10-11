@@ -10,18 +10,19 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Award, Eye, Heart, Layers, ListChecks } from 'lucide-react';
+import { Award, Eye, Heart, Layers, ListChecks, Package } from 'lucide-react';
 import { ApiError } from '../api/http';
 import { httpBackend, setBackend } from '../api/backend';
 import { publicBackend } from '../api/publicBackend';
 import { sharing, type PublicShare } from '../api/sharing';
 import { compareCardNumber } from '../api/client';
 import { useSetCards } from '../api/hooks';
-import type { CardSnapshot } from '../api/types';
-import { computeValue, useCollectionStore } from '../store/collectionStore';
+import type { CardSnapshot, SealedItem } from '../api/types';
+import { computeValue, sealedValue, useCollectionStore } from '../store/collectionStore';
 import { useAuth } from '../store/authStore';
 import { useMoney } from '../hooks/useMoney';
 import { formatDate } from '../utils/format';
+import { PRODUCT_TYPE_LABEL } from '../utils/sealed';
 import { PublicShareContext } from '../components/shareContext';
 import CardGrid from '../components/CardGrid';
 import { Logo } from '../components/ui';
@@ -33,7 +34,7 @@ function Section({ icon, title, count, children }: { icon: ReactNode; title: str
   return (
     <section className="space-y-4">
       <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
-        <span className="text-volt">{icon}</span>
+        <span className="text-accent">{icon}</span>
         {title}
         {count !== undefined && <span className="font-mono text-sm text-faint">{count}</span>}
       </h2>
@@ -52,6 +53,27 @@ function SetChecklist({ setId }: { setId: string }) {
   const fallback = useMemo(() => [...cards.values()].filter((c) => c.setId === setId).sort(compareCardNumber), [cards, setId]);
   if (data && !isError) return <CardGrid cards={data} dimMissing />;
   return <CardGrid cards={fallback} />;
+}
+
+/** A shared sealed item, shown name/type/quantity/value (redaction already applied server-side). */
+function SealedCard({ item }: { item: SealedItem }) {
+  const money = useMoney();
+  const value = sealedValue(item);
+  return (
+    <div className="rounded-xl border border-line bg-surface-2 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-medium">{item.name}</p>
+          <p className="text-xs text-muted">{PRODUCT_TYPE_LABEL[item.productType]}</p>
+        </div>
+        {item.status === 'opened' && <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[10px] text-faint">Opened</span>}
+      </div>
+      <div className="mt-3 flex items-end justify-between">
+        <span className="text-xs text-muted">Qty {item.quantity}</span>
+        {value > 0 && <span className="font-display text-lg font-semibold tabular">{money(value)}</span>}
+      </div>
+    </div>
+  );
 }
 
 function ShareBody({ data }: { data: PublicShare }) {
@@ -73,6 +95,16 @@ function ShareBody({ data }: { data: PublicShare }) {
       return wished.length ? <CardGrid cards={wished} showSet /> : <Empty>The wishlist is empty.</Empty>;
     case 'graded':
       return graded.length ? <CardGrid cards={graded} showSet /> : <Empty>No graded cards yet.</Empty>;
+    case 'sealed':
+      return data.sealed.length ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {data.sealed.map((item) => (
+            <SealedCard key={item.id} item={item} />
+          ))}
+        </div>
+      ) : (
+        <Empty>No sealed products yet.</Empty>
+      );
     case 'list': {
       // A list share carries exactly one list: the shared one.
       const list = data.lists[0];
@@ -103,7 +135,7 @@ function ShareBody({ data }: { data: PublicShare }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="panel px-6 py-10 text-center text-sm text-muted">{children}</p>;
+  return <p className="border-y border-line px-6 py-12 text-center text-sm text-muted">{children}</p>;
 }
 
 function heading(data: PublicShare) {
@@ -117,6 +149,8 @@ function heading(data: PublicShare) {
       return `${owner} wishlist`;
     case 'graded':
       return `${owner} graded cards`;
+    case 'sealed':
+      return `${owner} sealed products`;
     case 'list':
       return data.lists[0]?.name ?? `${owner} list`;
     default:
@@ -130,6 +164,8 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
   const graded = useCollectionStore((s) => s.graded);
   const cards = useCollectionStore((s) => s.cards);
   const { valueUsd, count } = useMemo(() => computeValue(entries.values(), cards, graded.values()), [entries, cards, graded]);
+  const sealedCount = data.sealed.length;
+  const sealedTotal = useMemo(() => data.sealed.reduce((sum, item) => sum + sealedValue(item), 0), [data.sealed]);
   const title = heading(data);
 
   useEffect(() => {
@@ -138,14 +174,15 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
 
   // Wishlists and lists aren't owned cards, so a count or value total would be misleading.
   const showTotals = data.share.scope !== 'wishlist' && data.share.scope !== 'list';
+  const sealedScope = data.share.scope === 'sealed';
 
   return (
     <PublicShareContext.Provider value={{ token }}>
       <div className="min-h-dvh">
-        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-ink/80 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur-md sm:px-6">
           <a href="/" className="flex items-center gap-2">
             <Logo size={26} />
-            <span className="font-display text-lg font-extrabold tracking-tight font-stretch-expanded">
+            <span className="font-display text-lg font-semibold tracking-tight">
               Poké<span className="holo-text">Tracker</span>
             </span>
           </a>
@@ -157,21 +194,26 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="eyebrow mb-2">Shared by {data.share.ownerName}</p>
-              <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
+              <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
               {data.share.scope === 'list' && data.lists[0]?.description && <p className="mt-2 text-sm text-muted">{data.lists[0].description}</p>}
               {data.share.expiresAt && <p className="mt-2 text-xs text-faint">This link works until {formatDate(data.share.expiresAt)}.</p>}
             </div>
             {showTotals && (
               <div className="text-right">
-                <p className="eyebrow">{count.toLocaleString('en-GB')} cards</p>
+                <p className="eyebrow">{sealedScope ? `${sealedCount.toLocaleString('en-GB')} item${sealedCount === 1 ? '' : 's'}` : `${count.toLocaleString('en-GB')} cards`}</p>
                 {/* With hideValue the server sends no prices, so this would only ever show zero. */}
-                {!data.share.hideValue && <p className="font-display text-2xl font-bold tabular">{money(valueUsd)}</p>}
+                {!data.share.hideValue && <p className="font-display text-2xl font-semibold tabular">{money(sealedScope ? sealedTotal : valueUsd)}</p>}
               </div>
             )}
           </div>
           {data.share.scope === 'graded' && graded.size > 0 && (
             <p className="flex items-center gap-2 text-sm text-muted">
-              <Award size={15} className="text-volt" /> {graded.size} slab{graded.size === 1 ? '' : 's'}
+              <Award size={15} className="text-accent" /> {graded.size} slab{graded.size === 1 ? '' : 's'}
+            </p>
+          )}
+          {sealedScope && sealedCount > 0 && (
+            <p className="flex items-center gap-2 text-sm text-muted">
+              <Package size={15} className="text-accent" /> {sealedCount} item{sealedCount === 1 ? '' : 's'}
             </p>
           )}
           <ShareBody data={data} />
@@ -210,6 +252,7 @@ export default function PublicSharePage() {
       collectionId: shownId,
       entries: new Map(data.entries.map((e) => [e.id, e])),
       graded: new Map(data.graded.map((g) => [g.id, g])),
+      sealed: new Map(data.sealed.map((item) => [item.id, item])),
       wishlist: new Map(data.wishlist.map((w) => [w.cardId, w])),
       notes: new Map(data.notes.map((n) => [n.cardId, n.text])),
       cards: new Map(data.cards.map((c) => [c.id, c])),

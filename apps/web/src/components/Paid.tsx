@@ -39,7 +39,7 @@ export function PaidInput({ value, onCommit, label, className = '' }: { value?: 
   };
 
   return (
-    <label className={`group relative flex h-8 items-center rounded-lg border border-line bg-surface-2 pl-2 transition-colors focus-within:border-volt/60 ${className}`}>
+    <label className={`group relative flex h-8 items-center rounded-lg border border-line bg-surface-2 pl-2 transition-colors focus-within:border-accent/60 ${className}`}>
       <span className="text-[10px] font-semibold uppercase tracking-wider text-faint">Paid</span>
       <span className="ml-1.5 font-mono text-xs text-muted">{SYMBOL[cur]}</span>
       <input

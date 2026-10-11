@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { computeValue, costBasis, gradedValue, priceOf, useCollectionStore, type CostBasis } from '../store/collectionStore';
+import { computeValue, costBasis, entryValue, gradedValue, useCollectionStore, type CostBasis } from '../store/collectionStore';
 import { useFx } from './useMoney';
 import type { CardSnapshot, CollectionEntry, GradedCopy } from '../api/types';
 
@@ -38,15 +38,16 @@ export function useCollectionStats() {
   const setStats = useCollectionStore((s) => s.setStats);
   const graded = useCollectionStore((s) => s.graded);
   const gradedByCard = useCollectionStore((s) => s.gradedByCard);
+  const sealed = useCollectionStore((s) => s.sealed);
   const { rates } = useFx();
 
   return useMemo(() => {
-    const value = computeValue(entries.values(), cards, graded.values());
+    const value = computeValue(entries.values(), cards, graded.values(), sealed.values());
     const ownedCards = new Map<string, OwnedCard>();
     for (const e of entries.values()) {
       const card = cards.get(e.cardId);
       if (!card) continue;
-      const price = priceOf(card, e.variant) ?? 0;
+      const price = entryValue(e, cards) ?? 0;
       const o = ownedCards.get(e.cardId) ?? { card, entries: [], graded: [], quantity: 0, valueUsd: 0, topPrice: 0, addedAt: e.addedAt, cost: NO_COST };
       o.entries.push(e);
       o.quantity += e.quantity;
@@ -100,10 +101,10 @@ export function useCollectionStats() {
     const owned = Array.from(ownedCards.values());
     return {
       ...value,
-      cost: costBasis(entries.values(), cards, graded.values(), rates),
+      cost: costBasis(entries.values(), cards, graded.values(), rates, sealed.values()),
       owned,
       sets: Array.from(sets.values()),
       completedSets: Array.from(sets.values()).filter((s) => s.printedTotal > 0 && s.baseOwned >= s.printedTotal).length,
     };
-  }, [entries, cards, setStats, graded, gradedByCard, rates]);
+  }, [entries, cards, setStats, graded, gradedByCard, sealed, rates]);
 }

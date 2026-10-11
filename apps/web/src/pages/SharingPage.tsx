@@ -168,7 +168,7 @@ function CollectionsSection() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">
                 {c.name}
-                {c.id === current && <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-volt">Open</span>}
+                {c.id === current && <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-accent">Open</span>}
               </p>
               <p className="text-xs text-muted">
                 {c.kind === 'personal' ? 'Personal' : 'Shared'}

@@ -48,6 +48,14 @@ beforeEach(async () => {
 });
 
 describe('SettingsPage', () => {
+  it('switches the theme from the Appearance section', async () => {
+    renderWithProviders(<SettingsPage />);
+    expect(screen.getByRole('radio', { name: 'System' })).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    expect(useSettings.getState().theme).toBe('dark');
+    expect(screen.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('switches currency and shows the conversion rate', async () => {
     renderWithProviders(<SettingsPage />);
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
@@ -246,6 +254,15 @@ describe('SettingsPage', () => {
     expect(JSON.parse(await downloads[0].blob.text()).notes).toEqual([{ cardId: 'sv03-001', text: 'Card fair, Birmingham, "£3"' }]);
     await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     expect((await downloads[1].blob.text()).split('\n')[1]).toMatch(/,"Card fair, Birmingham, ""£3"""$/);
+  });
+
+  it('neutralises a formula-injection payload in a card note before writing the CSV export', async () => {
+    seedCollection({ entries: [makeEntry()], cards: [makeSnapshot()], notes: { 'sv03-001': '=HYPERLINK("http://evil.example","click")' } });
+    const downloads = captureDownloads();
+    renderWithProviders(<SettingsPage />);
+    await userEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    const lastCell = (await downloads[0].blob.text()).split('\n')[1];
+    expect(lastCell.endsWith('"\'=HYPERLINK(""http://evil.example"",""click"")"')).toBe(true);
   });
 
   it('allows a JSON export of just notes', () => {

@@ -235,4 +235,105 @@ export const MIGRATIONS: string[] = [
     last_result TEXT
   );
   `,
+  /* 2: per-variant price history and manual entry valuations. */ `
+  ALTER TABLE entries ADD COLUMN value_override TEXT;
+
+  CREATE TABLE price_history (
+    card_id TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('tcgplayer','cardmarket')),
+    date TEXT NOT NULL,
+    price REAL NOT NULL,
+    currency TEXT NOT NULL,
+    PRIMARY KEY (card_id, variant, source, date)
+  );
+  CREATE INDEX price_history_card_date ON price_history(card_id, date);
+  `,
+  /* 3: sealed product tracking and optional PriceCharting pricing. Graded's PriceCharting fields
+     live inside its existing JSON data column, so graded needs no schema change here. */ `
+  CREATE TABLE sealed (
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    product_type TEXT NOT NULL CHECK (product_type IN ('booster_box','etb','booster_bundle','tin','collection_box','blister','booster_pack','other')),
+    set_id TEXT,
+    language TEXT,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    paid TEXT,
+    value_override TEXT,
+    pc_product_id TEXT,
+    pc_price REAL,
+    pc_updated_at TEXT,
+    status TEXT NOT NULL DEFAULT 'sealed' CHECK (status IN ('sealed','opened')),
+    opened_at TEXT,
+    notes TEXT,
+    added_at TEXT NOT NULL,
+    updated_at TEXT,
+    PRIMARY KEY (collection_id, id)
+  );
+  CREATE INDEX sealed_collection ON sealed(collection_id);
+
+  CREATE TABLE sealed_photos (
+    id TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    sealed_id TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    added_at TEXT NOT NULL
+  );
+  CREATE INDEX sealed_photos_sealed ON sealed_photos(collection_id, sealed_id);
+
+  -- SQLite can't ALTER a CHECK constraint, so adding the 'sealed' share scope means rebuilding
+  -- the table: create the new shape, copy every row across, drop the old table, rename the new
+  -- one into place, then recreate its index. With foreign_keys on (as this connection always
+  -- runs), DROP TABLE performs an implicit DELETE first, which fires share_users' ON DELETE
+  -- CASCADE and wipes it -- so share_users is backed up to a temp table first and restored
+  -- once the renamed table exists again, rather than relying on the dropped rows surviving.
+  CREATE TABLE shares_new (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    token_enc TEXT NOT NULL,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL CHECK (scope IN ('collection','set','wishlist','graded','list','sealed')),
+    target TEXT,
+    audience TEXT NOT NULL CHECK (audience IN ('public','users','instance')),
+    title TEXT,
+    hide_paid INTEGER NOT NULL DEFAULT 1,
+    hide_value INTEGER NOT NULL DEFAULT 0,
+    hide_notes INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    revoked_at TEXT,
+    views INTEGER NOT NULL DEFAULT 0,
+    last_viewed_at TEXT
+  );
+  INSERT INTO shares_new (id, token_hash, token_enc, owner_id, collection_id, scope, target, audience, title, hide_paid, hide_value, hide_notes, created_at, expires_at, revoked_at, views, last_viewed_at)
+    SELECT id, token_hash, token_enc, owner_id, collection_id, scope, target, audience, title, hide_paid, hide_value, hide_notes, created_at, expires_at, revoked_at, views, last_viewed_at FROM shares;
+  CREATE TEMP TABLE share_users_backup AS SELECT * FROM share_users;
+  DROP TABLE shares;
+  ALTER TABLE shares_new RENAME TO shares;
+  CREATE INDEX shares_owner ON shares(owner_id);
+  DELETE FROM share_users;
+  INSERT INTO share_users (share_id, user_id) SELECT share_id, user_id FROM share_users_backup;
+  DROP TABLE share_users_backup;
+  `,
+  /* 4: PriceCharting as a third price-history source. SQLite can't ALTER a CHECK constraint, so
+     this rebuilds price_history with the wider one, same as the shares rebuild above. No
+     foreign keys point at price_history, so there is no cascade to work around here. */ `
+  CREATE TABLE price_history_new (
+    card_id TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('tcgplayer','cardmarket','pricecharting')),
+    date TEXT NOT NULL,
+    price REAL NOT NULL,
+    currency TEXT NOT NULL,
+    PRIMARY KEY (card_id, variant, source, date)
+  );
+  INSERT INTO price_history_new (card_id, variant, source, date, price, currency)
+    SELECT card_id, variant, source, date, price, currency FROM price_history;
+  DROP TABLE price_history;
+  ALTER TABLE price_history_new RENAME TO price_history;
+  CREATE INDEX price_history_card_date ON price_history(card_id, date);
+  `,
 ];

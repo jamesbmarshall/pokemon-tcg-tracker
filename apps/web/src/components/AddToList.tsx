@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ListPlus, Plus } from 'lucide-react';
-import type { PokemonCard } from '../api/types';
+import type { CardSnapshot, PokemonCard } from '../api/types';
 import { useCollectionStore } from '../store/collectionStore';
 import { toast } from '../store/toastStore';
 
-/** "Lists" menu on the card page: tick the lists this card belongs in, or start a new one. */
-export default function AddToList({ card }: { card: PokemonCard }) {
+/**
+ * "Lists" menu: tick the lists this card belongs in, or start a new one. `compact` renders an
+ * icon-only trigger for card tiles in a grid.
+ */
+export default function AddToList({ card, compact = false }: { card: PokemonCard | CardSnapshot; compact?: boolean }) {
   const lists = useCollectionStore((s) => s.lists);
   const toggleInList = useCollectionStore((s) => s.toggleInList);
   const createList = useCollectionStore((s) => s.createList);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
+  const [alignLeft, setAlignLeft] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const inCount = lists.filter((l) => l.cards.includes(card.id)).length;
 
@@ -26,6 +30,15 @@ export default function AddToList({ card }: { card: PokemonCard }) {
     };
   }, [open]);
 
+  const toggle = () => {
+    if (!open) {
+      // Grid tiles can sit near the left edge of the screen, where a right-aligned menu would be cut off.
+      const r = ref.current?.getBoundingClientRect();
+      setAlignLeft(!!r && r.right < 272);
+    }
+    setOpen((o) => !o);
+  };
+
   const create = async () => {
     const n = name.trim();
     if (!n) return;
@@ -38,11 +51,31 @@ export default function AddToList({ card }: { card: PokemonCard }) {
 
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="true" className="btn btn-ghost !h-9 !text-xs">
-        <ListPlus size={14} /> Lists{inCount > 0 && <span className="font-mono text-faint">{inCount}</span>}
-      </button>
+      {compact ? (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-haspopup="true"
+          aria-label={`Add ${card.name} to a list${inCount ? ` (in ${inCount})` : ''}`}
+          title={inCount ? `In ${inCount} list${inCount > 1 ? 's' : ''}` : 'Add to a list'}
+          className={`relative grid h-6 w-6 place-items-center rounded-md border transition-colors active:scale-90 ${
+            inCount ? 'border-accent/60 bg-accent/15 text-accent' : 'border-line bg-surface-2 text-muted hover:border-accent/60 hover:text-fg'
+          }`}
+        >
+          <ListPlus size={12} />
+        </button>
+      ) : (
+        <button type="button" onClick={toggle} aria-expanded={open} aria-haspopup="true" className="btn btn-ghost !h-9 !text-xs">
+          <ListPlus size={14} /> Lists{inCount > 0 && <span className="font-mono text-faint">{inCount}</span>}
+        </button>
+      )}
       {open && (
-        <div role="group" aria-label="Custom lists" className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-line bg-surface p-2 shadow-2xl">
+        <div
+          role="group"
+          aria-label="Custom lists"
+          className={`absolute z-30 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-2 shadow-pop ${alignLeft ? 'left-0' : 'right-0'} ${compact ? 'top-8' : 'top-11'}`}
+        >
           {lists.length > 0 ? (
             <ul className="max-h-60 overflow-y-auto">
               {lists.map((l) => {
@@ -59,7 +92,7 @@ export default function AddToList({ card }: { card: PokemonCard }) {
                       }}
                       className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-surface-2"
                     >
-                      <span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${on ? 'border-volt bg-volt text-ink' : 'border-line-strong'}`}>{on && <Check size={11} strokeWidth={3} />}</span>
+                      <span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${on ? 'border-accent bg-accent text-on-accent' : 'border-line-strong'}`}>{on && <Check size={11} strokeWidth={3} />}</span>
                       <span className="min-w-0 flex-1 truncate">{l.name}</span>
                       <span className="font-mono text-[10px] text-faint">{l.cards.length}</span>
                     </button>

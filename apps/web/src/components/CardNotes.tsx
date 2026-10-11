@@ -10,9 +10,9 @@ export default function CardNotes({ cardId }: { cardId: string }) {
   const saved = useNote(cardId);
   if (readOnly) {
     return saved ? (
-      <section className="panel px-5 py-4">
+      <section className="border-t border-line-strong py-4">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <NotebookPen size={15} className="text-volt" /> Notes
+          <NotebookPen size={15} className="text-accent" /> Notes
         </h2>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted">{saved}</p>
       </section>
@@ -59,10 +59,10 @@ function NotesEditor({ cardId }: { cardId: string }) {
   const left = NOTE_MAX - draft.length;
 
   return (
-    <section className="panel overflow-hidden" aria-labelledby={`${id}-h`}>
-      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+    <section className="border-t border-line-strong" aria-labelledby={`${id}-h`}>
+      <div className="flex items-center justify-between gap-3 py-3">
         <h2 id={`${id}-h`} className="flex items-center gap-2 text-sm font-semibold">
-          <NotebookPen size={15} className="text-volt" /> Notes
+          <NotebookPen size={15} className="text-accent" /> Notes
         </h2>
         <span className="text-[11px] text-faint" aria-live="polite">
           {justSaved ? (
@@ -91,7 +91,7 @@ function NotesEditor({ cardId }: { cardId: string }) {
           void setNote(cardId, draft).then(() => setJustSaved(true));
         }}
         placeholder="Where you got it, what you paid, who traded it to you…"
-        className="block w-full resize-y bg-transparent px-5 py-4 text-sm leading-relaxed text-fg placeholder:text-faint focus:outline-none focus-visible:bg-surface/50"
+        className="block w-full resize-y rounded-md border border-line bg-surface px-3.5 py-3 text-sm leading-relaxed text-fg transition-colors placeholder:text-faint hover:border-line-strong focus:outline-none focus-visible:border-accent"
       />
     </section>
   );
