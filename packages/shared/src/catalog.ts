@@ -651,6 +651,8 @@ export function toSnapshot(card: PokemonCard): CardSnapshot {
     prices: card.detailed ? usdPrices(card) : {},
     tcgplayerUrl: card.tcgplayer?.url || undefined,
     cardmarketUrl: card.cardmarket?.url,
+    tcgplayerUpdatedAt: card.tcgplayer?.updatedAt || undefined,
+    cardmarketUpdatedAt: card.cardmarket?.updatedAt || undefined,
     syncedAt: new Date().toISOString(),
   };
 }

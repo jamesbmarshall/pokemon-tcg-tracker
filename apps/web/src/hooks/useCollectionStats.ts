@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { computeValue, costBasis, gradedValue, priceOf, useCollectionStore, type CostBasis } from '../store/collectionStore';
+import { computeValue, costBasis, entryValue, gradedValue, useCollectionStore, type CostBasis } from '../store/collectionStore';
 import { useFx } from './useMoney';
 import type { CardSnapshot, CollectionEntry, GradedCopy } from '../api/types';
 
@@ -46,7 +46,7 @@ export function useCollectionStats() {
     for (const e of entries.values()) {
       const card = cards.get(e.cardId);
       if (!card) continue;
-      const price = priceOf(card, e.variant) ?? 0;
+      const price = entryValue(e, cards) ?? 0;
       const o = ownedCards.get(e.cardId) ?? { card, entries: [], graded: [], quantity: 0, valueUsd: 0, topPrice: 0, addedAt: e.addedAt, cost: NO_COST };
       o.entries.push(e);
       o.quantity += e.quantity;

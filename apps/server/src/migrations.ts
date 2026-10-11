@@ -235,4 +235,18 @@ export const MIGRATIONS: string[] = [
     last_result TEXT
   );
   `,
+  /* 2: per-variant price history and manual entry valuations. */ `
+  ALTER TABLE entries ADD COLUMN value_override TEXT;
+
+  CREATE TABLE price_history (
+    card_id TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('tcgplayer','cardmarket')),
+    date TEXT NOT NULL,
+    price REAL NOT NULL,
+    currency TEXT NOT NULL,
+    PRIMARY KEY (card_id, variant, source, date)
+  );
+  CREATE INDEX price_history_card_date ON price_history(card_id, date);
+  `,
 ];

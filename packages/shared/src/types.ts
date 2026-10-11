@@ -108,6 +108,8 @@ export interface CollectionEntry {
   notes?: string;
   /** Price paid per copy (an average if copies cost different amounts) */
   paid?: Paid;
+  /** Owner's valuation per copy, in USD; falls back to the raw market price (mirrors GradedCopy.valueUsd) */
+  valueUsd?: number;
   addedAt: string;
   updatedAt?: string;
 }
@@ -138,7 +140,46 @@ export interface CardSnapshot {
   prices: Record<string, number>;
   tcgplayerUrl?: string;
   cardmarketUrl?: string;
+  /** When each source's prices were last reported upstream, for "updated …" provenance on the card page. */
+  tcgplayerUpdatedAt?: string;
+  cardmarketUpdatedAt?: string;
   syncedAt: string;
+}
+
+/** Source of one price-history series: TCGplayer (USD) or Cardmarket (EUR, its native currency). */
+export type PriceHistorySource = 'tcgplayer' | 'cardmarket';
+
+export interface PriceHistoryPoint {
+  date: string; // YYYY-MM-DD
+  price: number;
+}
+
+/** Daily price history for one printing from one source, in that source's native currency. */
+export interface PriceHistorySeries {
+  variant: string;
+  source: PriceHistorySource;
+  currency: 'USD' | 'EUR';
+  points: PriceHistoryPoint[];
+  updatedAt?: string;
+  url?: string;
+}
+
+export interface CardPriceHistory {
+  cardId: string;
+  series: PriceHistorySeries[];
+}
+
+/** One card in the "biggest movers" widget: its market value now vs. `days` ago. */
+export interface MoverCard {
+  cardId: string;
+  name: string;
+  image: string;
+  setName: string;
+  variant: string;
+  valueUsd: number;
+  previousValueUsd: number;
+  changeUsd: number;
+  changePct: number;
 }
 
 /** A free-text note about a card, independent of variants or copies owned. */

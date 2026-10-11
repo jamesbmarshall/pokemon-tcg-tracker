@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { LANGUAGES } from '@poketracker/shared/languages';
 import type { Ctx } from './context.ts';
-import { readCards, recordValue, refreshCards, trackedCardIds } from './cards.ts';
+import { readCards, recordValue, refreshCards, trackedCardIds, prunePriceHistory } from './cards.ts';
 import { cachedUpstream, ensureImage, pruneHttpCache, pruneImages, refreshFx, ttlFor } from './catalog.ts';
 import { deletePhotoFiles } from './collections.ts';
 import { applyUpdate, autoUpdateBlockedFor, autoUpdateEnabled, checkForUpdate, pruneVersions, updateAvailable, updateBlocker } from './updater.ts';
@@ -135,7 +135,7 @@ export const JOBS: JobDef[] = [
       ctx.db.run('DELETE FROM invites WHERE expires_at < ? AND used_at IS NULL', weekAgo);
       ctx.db.run('DELETE FROM password_resets WHERE expires_at < ?', weekAgo);
       ctx.db.run('DELETE FROM audit_log WHERE at < ?', new Date(Date.now() - 400 * 24 * H).toISOString());
-      return { graded: old.length, photos, sessions, httpCache: pruneHttpCache(ctx), versions: pruneVersions(ctx) };
+      return { graded: old.length, photos, sessions, httpCache: pruneHttpCache(ctx), versions: pruneVersions(ctx), priceHistory: prunePriceHistory(ctx.db, ctx.config.priceHistoryDays) };
     },
   },
   {

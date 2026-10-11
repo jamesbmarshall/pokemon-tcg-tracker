@@ -16,7 +16,7 @@ import { cardVariants, getSetCards, setIdFromCardId } from '@poketracker/shared/
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { CardNote, CollectionEntry, GradedCopy, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
-import { hydrateMissing, readCards, readEntries, readGraded, readHistory, recordValue } from './cards.ts';
+import { hydrateMissing, readCards, readEntries, readGraded, readHistory, readPriceHistory, biggestMovers, recordValue } from './cards.ts';
 import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
 
@@ -96,6 +96,7 @@ export function cleanEntry(raw: unknown): CollectionEntry | undefined {
     condition: CONDITIONS.has(e.condition as string) ? e.condition : undefined,
     notes: typeof e.notes === 'string' ? e.notes.slice(0, NOTE_MAX) : undefined,
     paid: isPaid(e.paid) ? { amount: e.paid!.amount, currency: e.paid!.currency } : undefined,
+    valueUsd: num(e.valueUsd, 0, 10_000_000),
     addedAt: iso(e.addedAt),
     updatedAt: e.updatedAt ? iso(e.updatedAt) : undefined,
   };
@@ -138,8 +139,8 @@ export function cleanGraded(raw: unknown): GradedCopy | undefined {
 
 function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
   ctx.db.run(
-    `INSERT OR REPLACE INTO entries (collection_id, id, card_id, set_id, variant, quantity, condition, notes, paid, added_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO entries (collection_id, id, card_id, set_id, variant, quantity, condition, notes, paid, value_override, added_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     collectionId,
     e.id,
     e.cardId,
@@ -149,6 +150,7 @@ function putEntry(ctx: Ctx, collectionId: string, e: CollectionEntry) {
     e.condition ?? null,
     e.notes ?? null,
     e.paid ? JSON.stringify(e.paid) : null,
+    e.valueUsd != null ? JSON.stringify(e.valueUsd) : null,
     e.addedAt,
     e.updatedAt ?? null,
   );
@@ -201,7 +203,7 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   let lists = readLists(ctx, collectionId);
   if (opts.hideNotes) lists = lists.map((l) => ({ ...l, description: undefined }));
   if (opts.hidePaid || opts.hideNotes || opts.hideValue) {
-    entries = entries.map((e) => ({ ...e, paid: opts.hidePaid ? undefined : e.paid, notes: opts.hideNotes ? undefined : e.notes }));
+    entries = entries.map((e) => ({ ...e, paid: opts.hidePaid ? undefined : e.paid, notes: opts.hideNotes ? undefined : e.notes, valueUsd: opts.hideValue ? undefined : e.valueUsd }));
     graded = graded.map((g) => ({ ...g, paid: opts.hidePaid ? undefined : g.paid, notes: opts.hideNotes ? undefined : g.notes, valueUsd: opts.hideValue ? undefined : g.valueUsd }));
   }
   let history: ValuePoint[] = opts.hideValue ? [] : readHistory(ctx.db, collectionId);
@@ -560,6 +562,13 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { point: recordValue(ctx, id) ?? null };
   });
 
+  // "Biggest movers": the cards in the collection whose value has changed most over the window.
+  app.get('/api/collections/:id/movers', async (req) => {
+    const { id } = need(ctx, req, 'read');
+    const days = [7, 30].includes(Number((req.query as { days?: string }).days)) ? Number((req.query as { days?: string }).days) : 7;
+    return { days, ...biggestMovers(ctx, id, days) };
+  });
+
   // Backups can carry slab photos as data URLs.
   // Hence the much larger body limit than the global default, on this route only.
   app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req) => {
@@ -668,6 +677,14 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // ------------------------------------------------------------ shared catalogue data
   // Card and set data is instance-wide, not per collection, so any signed-in user may fill it in.
+
+  /** Per-variant, per-source daily price history for a card, used by the card page's chart. */
+  app.get('/api/cards/:id/prices/history', async (req) => {
+    requireUser(req);
+    const id = cardId((req.params as { id: string }).id);
+    const days = Math.min(Math.max(Math.floor(Number((req.query as { days?: string }).days ?? 90)) || 90, 1), 1825);
+    return readPriceHistory(ctx.db, id, days);
+  });
 
   app.post('/api/cards/hydrate', async (req) => {
     requireUser(req);

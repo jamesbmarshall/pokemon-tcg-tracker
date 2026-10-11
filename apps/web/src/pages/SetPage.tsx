@@ -4,7 +4,7 @@ import { ShareButton } from '../components/ShareDialog';
 import { ArrowUpDown, ChevronLeft, Grid3x3, LayoutGrid, Search, X, Zap } from 'lucide-react';
 import { useSet, useSetCards } from '../api/hooks';
 import { cardVariants, toSnapshot } from '../api/client';
-import { gradedValue, priceOf, useCollectionStore, useReadOnly } from '../store/collectionStore';
+import { entryValue, gradedValue, useCollectionStore, useReadOnly } from '../store/collectionStore';
 import { SetLogo, SetSymbol } from '../components/SetArt';
 import { useSettings } from '../store/settingsStore';
 import { useMoney } from '../hooks/useMoney';
@@ -57,7 +57,7 @@ export default function SetPage() {
 
   const ownedValue = useMemo(() => {
     let usd = 0;
-    for (const e of entries.values()) if (e.setId === setId) usd += (priceOf(snapshots.get(e.cardId), e.variant) ?? 0) * e.quantity;
+    for (const e of entries.values()) if (e.setId === setId) usd += (entryValue(e, snapshots) ?? 0) * e.quantity;
     for (const g of graded.values()) if (g.setId === setId) usd += gradedValue(g, snapshots);
     return usd;
   }, [entries, graded, snapshots, setId]);

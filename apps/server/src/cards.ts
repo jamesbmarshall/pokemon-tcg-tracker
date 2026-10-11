@@ -4,8 +4,8 @@
  * number of distinct cards, not with users. Value history is computed here from those prices.
  */
 import { configureCatalog, getCardsByIds, toSnapshot } from '@poketracker/shared/catalog';
-import { FALLBACK_RATES, valuePoint, type Rates } from '@poketracker/shared/value';
-import type { CardSnapshot, CollectionEntry, GradedCopy, ValuePoint } from '@poketracker/shared/types';
+import { FALLBACK_RATES, todayKey, valuePoint, type Rates } from '@poketracker/shared/value';
+import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, MoverCard, PokemonCard, PriceHistorySeries, PriceHistorySource, ValuePoint } from '@poketracker/shared/types';
 import { json, type Db } from './db.ts';
 import type { Ctx } from './context.ts';
 
@@ -47,7 +47,9 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
     for (const next of snaps) {
       const old = prev.get(next.id);
       const priced = Object.keys(next.prices).length > 0;
-      const merged = !old || priced ? next : { ...next, prices: old.prices, tcgplayerUrl: old.tcgplayerUrl, cardmarketUrl: old.cardmarketUrl };
+      const merged = !old || priced
+        ? next
+        : { ...next, prices: old.prices, tcgplayerUrl: old.tcgplayerUrl, cardmarketUrl: old.cardmarketUrl, tcgplayerUpdatedAt: old.tcgplayerUpdatedAt, cardmarketUpdatedAt: old.cardmarketUpdatedAt };
       db.run(
         'INSERT OR REPLACE INTO cards (id, set_id, data, priced, synced_at) VALUES (?, ?, ?, ?, ?)',
         merged.id,
@@ -56,6 +58,40 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
         Object.keys(merged.prices).length ? 1 : 0,
         merged.syncedAt,
       );
+    }
+  });
+}
+
+/**
+ * Upserts today's market price per card/variant/source, in that source's native currency
+ * (TCGplayer USD, Cardmarket EUR). `INSERT OR REPLACE` on the (card, variant, source, date)
+ * primary key makes this idempotent: refreshing the same card again today just updates today's
+ * row rather than creating a duplicate.
+ */
+function writePriceHistory(db: Db, cards: PokemonCard[]) {
+  if (!cards.length) return;
+  const date = todayKey();
+  db.tx(() => {
+    for (const card of cards) {
+      const sources: Array<[PriceHistorySource, { prices: Record<string, { market?: number }> } | undefined, 'USD' | 'EUR']> = [
+        ['tcgplayer', card.tcgplayer, 'USD'],
+        ['cardmarket', card.cardmarket, 'EUR'],
+      ];
+      for (const [source, block, currency] of sources) {
+        if (!block) continue;
+        for (const [variant, price] of Object.entries(block.prices)) {
+          if (price.market == null) continue;
+          db.run(
+            'INSERT OR REPLACE INTO price_history (card_id, variant, source, date, price, currency) VALUES (?, ?, ?, ?, ?, ?)',
+            card.id,
+            variant,
+            source,
+            date,
+            price.market,
+            currency,
+          );
+        }
+      }
     }
   });
 }
@@ -73,6 +109,7 @@ export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
     try {
       const fresh = await getCardsByIds(ids.slice(i, i + 40));
       saveSnapshots(ctx.db, fresh.map(toSnapshot));
+      writePriceHistory(ctx.db, fresh);
       refreshed += fresh.length;
     } catch (err) {
       failed++;
@@ -81,6 +118,101 @@ export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
   }
   if (ids.length && refreshed === 0 && failed > 0) throw new Error('Card API unavailable');
   return refreshed;
+}
+
+/**
+ * Daily price history for one card, per variant and source, within the last `days`.
+ * Source `updatedAt`/`url` come from the current snapshot rather than the history rows, since
+ * that is the latest provenance TCGdex gave us for that source.
+ */
+export function readPriceHistory(db: Db, cardId: string, days: number): CardPriceHistory {
+  const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const rows = db.all<{ variant: string; source: PriceHistorySource; date: string; price: number; currency: 'USD' | 'EUR' }>(
+    'SELECT variant, source, date, price, currency FROM price_history WHERE card_id = ? AND date >= ? ORDER BY date',
+    cardId,
+    since,
+  );
+  const card = readCards(db, [cardId]).get(cardId);
+  const series = new Map<string, PriceHistorySeries>();
+  for (const r of rows) {
+    const key = `${r.variant}::${r.source}`;
+    let s = series.get(key);
+    if (!s) {
+      s = {
+        variant: r.variant,
+        source: r.source,
+        currency: r.currency,
+        points: [],
+        updatedAt: r.source === 'tcgplayer' ? card?.tcgplayerUpdatedAt : card?.cardmarketUpdatedAt,
+        url: r.source === 'tcgplayer' ? card?.tcgplayerUrl : card?.cardmarketUrl,
+      };
+      series.set(key, s);
+    }
+    s.points.push({ date: r.date, price: r.price });
+  }
+  return { cardId, series: Array.from(series.values()) };
+}
+
+/** Deletes price history older than `days`. Returns the number of rows removed. */
+export function prunePriceHistory(db: Db, days: number): number {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  return Number(db.run('DELETE FROM price_history WHERE date < ?', cutoff).changes);
+}
+
+/**
+ * The biggest value movers in a collection over `days`, split into gainers and losers (each up
+ * to 5, sorted by the size of the change). A card needs both a current market price and a
+ * price-history row at or before the cutoff to be considered, so a brand-new collection with
+ * thin history simply yields an empty list rather than a misleading one.
+ */
+export function biggestMovers(ctx: Ctx, collectionId: string, days: number): { gainers: MoverCard[]; losers: MoverCard[] } {
+  const entries = readEntries(ctx.db, collectionId);
+  const graded = readGraded(ctx.db, collectionId);
+  const byCard = new Map<string, string>(); // cardId -> representative variant
+  for (const e of entries) if (!byCard.has(e.cardId)) byCard.set(e.cardId, e.variant);
+  for (const g of graded) if (!byCard.has(g.cardId)) byCard.set(g.cardId, g.variant);
+  const cards = readCards(ctx.db, byCard.keys());
+  const rate = currentRates(ctx.db).EUR;
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const movers: MoverCard[] = [];
+  for (const [cardId, variant] of byCard) {
+    const card = cards.get(cardId);
+    const nowPrice = card?.prices[variant];
+    if (!nowPrice) continue;
+    // TCGplayer (USD) first, else Cardmarket converted at today's rate, matching usdPrices().
+    const tcg = ctx.db.get<{ price: number }>(
+      "SELECT price FROM price_history WHERE card_id = ? AND variant = ? AND source = 'tcgplayer' AND date <= ? ORDER BY date DESC LIMIT 1",
+      cardId,
+      variant,
+      cutoff,
+    );
+    const row = tcg ?? (() => {
+      const r = ctx.db.get<{ price: number }>(
+        "SELECT price FROM price_history WHERE card_id = ? AND variant = ? AND source = 'cardmarket' AND date <= ? ORDER BY date DESC LIMIT 1",
+        cardId,
+        variant,
+        cutoff,
+      );
+      return r && rate > 0 ? { price: Math.round((r.price / rate) * 100) / 100 } : undefined;
+    })();
+    if (!row || row.price <= 0) continue;
+    const changeUsd = nowPrice - row.price;
+    if (Math.abs(changeUsd) < 0.01) continue;
+    movers.push({
+      cardId,
+      name: card!.name,
+      image: card!.image,
+      setName: card!.setName,
+      variant,
+      valueUsd: nowPrice,
+      previousValueUsd: row.price,
+      changeUsd,
+      changePct: (changeUsd / row.price) * 100,
+    });
+  }
+  const gainers = movers.filter((m) => m.changeUsd > 0).sort((a, b) => b.changeUsd - a.changeUsd).slice(0, 5);
+  const losers = movers.filter((m) => m.changeUsd < 0).sort((a, b) => a.changeUsd - b.changeUsd).slice(0, 5);
+  return { gainers, losers };
 }
 
 /**
@@ -147,6 +279,7 @@ export const rowToEntry = (r: Record<string, unknown>): CollectionEntry => ({
   ...(r.condition ? { condition: r.condition as CollectionEntry['condition'] } : {}),
   ...(r.notes ? { notes: r.notes as string } : {}),
   ...(r.paid ? { paid: json(r.paid, undefined) } : {}),
+  ...(r.value_override ? { valueUsd: json<number | undefined>(r.value_override, undefined) } : {}),
   addedAt: r.added_at as string,
   ...(r.updated_at ? { updatedAt: r.updated_at as string } : {}),
 });
