@@ -365,7 +365,7 @@ export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | '
 const CATEGORY: Record<string, string> = { Pokemon: 'Pokémon', Trainer: 'Trainer', Energy: 'Energy' };
 
 function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard {
-  const variants = toVariants(raw.variants, raw.rarity);
+  const variants = cardVariants({ id: raw.id, variants: toVariants(raw.variants, raw.rarity) });
   const category = toEnglishCategory(lang, raw.category ?? '');
   const type = (t: string) => toEnglishType(lang, t);
   const isPokemon = category === 'Pokemon';
@@ -625,7 +625,14 @@ export async function getRarities(lang: Lang = 'en'): Promise<string[]> {
 // ---------------------------------------------------------------- helpers
 
 /** A card's collectible variants, never empty: every card can be owned as at least a normal printing. */
-export function cardVariants(card: Pick<PokemonCard, 'variants'>): string[] {
+export function cardVariants(card: Pick<PokemonCard, 'variants'> & Partial<Pick<PokemonCard, 'id'>>): string[] {
+  // Trainer Galleries have no reverse-holo printings. Some upstream Trainer cards
+  // incorrectly carry the reverse flag; apply this to cached snapshots as well.
+  const setId = card.id ? setIdFromCardId(splitId(card.id).raw) : '';
+  if (/^swsh(?:9|10|11|12)tg$/.test(setId)) {
+    const variants = card.variants?.filter((v) => v !== 'reverseHolofoil') ?? [];
+    return variants.length ? variants : ['holofoil'];
+  }
   return card.variants?.length ? card.variants : ['normal'];
 }
 
