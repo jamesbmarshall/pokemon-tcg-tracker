@@ -31,6 +31,15 @@ export default function ScanPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const workerRef = useRef<Tesseract.Worker | null>(null);
 
+  // Results unmount the preview; reconnect the existing stream when scanning resumes.
+  const attachVideo = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video;
+    if (video && streamRef.current) {
+      video.srcObject = streamRef.current;
+      void video.play().catch(() => {});
+    }
+  }, []);
+
   const [cameraState, setCameraState] = useState<CameraState>('checking');
   const [ocrState, setOcrState] = useState<OcrState>('idle');
   const [match, setMatch] = useState<CardSnapshot[] | null>(null);
@@ -204,7 +213,7 @@ export default function ScanPage() {
           <div className="relative mx-auto aspect-[4/3] w-full max-w-md overflow-hidden rounded-xl bg-onyx">
             {cameraState === 'ready' || cameraState === 'requesting' ? (
               <>
-                <video ref={videoRef} muted playsInline className="h-full w-full object-cover" aria-label="Camera preview" />
+                <video ref={attachVideo} muted playsInline className="h-full w-full object-cover" aria-label="Camera preview" />
                 <div
                   className="pointer-events-none absolute rounded-md border-2 border-dashed border-paper/80"
                   style={{ left: `${GUIDE.x * 100}%`, top: `${GUIDE.y * 100}%`, width: `${GUIDE.w * 100}%`, height: `${GUIDE.h * 100}%` }}
