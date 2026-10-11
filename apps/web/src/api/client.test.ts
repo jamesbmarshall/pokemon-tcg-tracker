@@ -441,3 +441,8 @@ it('passes navigation cancellation signals to detail and printings fetches', asy
   expect(requests).toHaveLength(2);
   for (const [, init] of requests) expect(init?.signal).toBe(controller.signal);
 });
+
+it('maps TCGdex Normal energy to Basic for deck copy limits', async () => {
+  mockFetch([setsRoute, { match: '/cards/sv03-125', body: detail({ category: 'Energy', energyType: 'Normal', stage: undefined, suffix: undefined }) }]);
+  expect((await api.getCard('sv03-125')).subtypes).toContain('Basic');
+});

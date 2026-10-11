@@ -48,6 +48,20 @@ describe('init', () => {
     expect(useSettings.getState().currency).toBe('EUR');
     expect(useSettings.getState()).not.toHaveProperty('bogus');
   });
+
+  it('picks up demoMode from /api/setup', async () => {
+    mockApi({ 'GET /api/setup': { needed: false, demoMode: true }, 'GET /api/auth/me': { user: ash } });
+    await useAuth.getState().init();
+    expect(useAuth.getState().demoMode).toBe(true);
+  });
+});
+
+describe('tryDemo', () => {
+  it('signs in as the demo account', async () => {
+    mockApi({ 'POST /api/demo/login': { user: misty }, 'GET /api/auth/me': { user: misty } });
+    await useAuth.getState().tryDemo();
+    expect(useAuth.getState()).toMatchObject({ status: 'ready', user: misty });
+  });
 });
 
 describe('login', () => {

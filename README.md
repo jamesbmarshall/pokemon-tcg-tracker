@@ -1,5 +1,8 @@
 # PokéTracker
 
+[![CI](https://github.com/jamesbmarshall/pokemon-tcg-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesbmarshall/pokemon-tcg-tracker/actions/workflows/ci.yml)
+[![Image on GHCR](https://img.shields.io/badge/ghcr.io-pokemon--tcg--tracker-2496ED?logo=docker&logoColor=white)](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pkgs/container/pokemon-tcg-tracker)
+
 A fast, good-looking Pokémon TCG collection tracker you host yourself. Tick off cards as you open packs, chase master sets down to the last reverse holo, flip through a virtual binder and watch what it's all worth. Run it on a VPS, in Azure or on your NAS, invite the rest of the household, and share collections with anyone you like.
 
 Once it's deployed, everything happens in the browser. Prices, set lists and exchange rates refresh on their own in the background, and updates install from **Settings → System** with one click.
@@ -9,6 +12,28 @@ Once it's deployed, everything happens in the browser. Prices, set lists and exc
 
 If you've enjoyed PokéTracker, you can support its development on Ko-fi:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jamesbmarshall)
+
+## Quick start in 2 minutes
+
+```bash
+docker run -d --name poketracker -p 3000:3000 -v poketracker-data:/data ghcr.io/jamesbmarshall/pokemon-tcg-tracker:latest
+docker logs poketracker      # prints your one-time setup token
+```
+
+Then open `http://localhost:3000`, enter the setup token and you're in. Prefer Compose? [`deploy/docker/docker-compose.local.yml`](deploy/docker/docker-compose.local.yml) does the same thing with a `.env` file to edit instead of flags.
+
+Running a NAS or home server instead? There's a one-click template for yours:
+
+| Box | Template |
+| --- | --- |
+| Unraid | [`deploy/nas/unraid-poketracker.xml`](deploy/nas/unraid-poketracker.xml) ([Community Applications guide](deploy/nas/README.md#unraid)) |
+| TrueNAS SCALE 24.10+ | [`deploy/nas/truenas/`](deploy/nas/truenas/) |
+| CasaOS | [`deploy/nas/casaos/`](deploy/nas/casaos/) |
+| Umbrel | [`deploy/umbrel/`](deploy/umbrel/) |
+| Home Assistant add-on | [`deploy/home-assistant/`](deploy/home-assistant/) |
+| Synology Container Manager, Portainer and anything else that runs Compose | [`deploy/nas/stack.yml`](deploy/nas/stack.yml) |
+
+See [Deploy](#deploy) below for Azure and a bare VPS, or [`deploy/nas/README.md`](deploy/nas/README.md) for details on each NAS option.
 
 ## Features
 
@@ -24,7 +49,8 @@ If you've enjoyed PokéTracker, you can support its development on Ko-fi:
 - **Graded slabs**: grader, grade, cert number, what you paid and photos of the slab. With a PriceCharting API key configured, link a slab to its product and its graded price is used instead of the raw market price.
 - **Sealed product**: booster boxes, ETBs and the like, with photos, what you paid and an optional PriceCharting link for a live price. Unopened items count towards your collection value and daily history; mark one opened to move it into a history section (with an optional jump to the set page to log what you pulled).
 - **Wishlist**: your chase list with the running cost to buy it all. "Got it" moves a card into your collection.
-- **Custom lists**: binders, trade piles, deck lists, whatever you need.
+- **Custom lists**: binders, trade piles, whatever you need.
+- **Decks**: build a 60-card deck, grouped into Pokémon/Trainer/Energy with quantity steppers, a live legality check (Standard, Expanded or Unlimited) with the issues spelled out, and owned-vs-needed counts across every printing of each card. Paste a PTCGL or Limitless decklist to import it, or copy your deck back out as text, and add whatever you're missing straight to your wishlist.
 - **Search** by name, type, card type, rarity and illustrator, plus a command palette (`⌘K` or `/`).
 - **GBP, EUR or USD**, converted at the daily ECB reference rate.
 - **Multi-user**: an owner account, admins and members, invite links and optional two-factor sign-in.
@@ -143,6 +169,17 @@ Everything has a sensible default. These are the settings you're most likely to 
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
 | `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
+| `DEMO_MODE` | `false` | Boots with a seeded sample collection and a one-click read-only sign-in; blocks all other mutations, sign-up and updates. Resets nightly. See [Demo mode](#demo-mode). |
+
+## Demo mode
+
+Set `DEMO_MODE=1` to run a public, read-only showcase instead of your own tracker: useful for a "try before you self-host it" link, not for everyday use.
+
+On first boot the server seeds a sample owner with a few hundred cards across a handful of popular sets — some owned, some graded, a wishlist, a couple of custom lists and a short value history — from [`apps/server/src/demo/seed.ts`](apps/server/src/demo/seed.ts). The login page then shows a **Try the demo** button instead of (or alongside) sign-in, which signs the visitor straight in as that sample owner.
+
+From there, almost everything is read-only. A single server-side check rejects every mutating request with a 403 and a clear message, except demo sign-in/out and the shared card-data cache (TCGdex lookups, image hydration) that the UI needs to render anything at all. Sign-up, invites, password and two-factor changes, share creation, the updater and admin settings are all disabled outright, and the web app shows a dismissible banner reminding visitors they're looking at a demo. Price and set-data refresh jobs keep running as normal; only the update checker is skipped. A nightly job wipes and re-seeds the collection, so nothing anyone does to it (not that they can do much) sticks around.
+
+`deploy/azure/demo.bicep` deploys a standalone demo instance on Azure Container Apps; see the comments in that file for the `az deployment group create` command. Don't set `DEMO_MODE=1` on an instance you actually want to use — your own data would be reset every night.
 
 ### PriceCharting (optional)
 

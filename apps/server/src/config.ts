@@ -38,6 +38,12 @@ export interface Config {
   jobs: boolean;
   tcgdexBase: string;
   fxUrl: string;
+  /**
+   * Read-only public demo: seeds a sample collection under a demo account, blocks every
+   * mutating request except demo sign-in/out, and resets the seed every night. Never set this
+   * on an instance that holds real data.
+   */
+  demoMode: boolean;
   /** How many days of per-card price history to keep; older rows are pruned by the cleanup job. */
   priceHistoryDays: number;
 }
@@ -106,6 +112,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jobs: bool(env.JOBS, true),
     tcgdexBase: env.TCGDEX_BASE ?? 'https://api.tcgdex.net/v2',
     fxUrl: env.FX_URL ?? 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=GBP,EUR',
+    demoMode: bool(env.DEMO_MODE, false),
     priceHistoryDays: Number(env.PRICE_HISTORY_DAYS ?? 730),
   };
 }

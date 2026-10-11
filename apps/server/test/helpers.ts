@@ -20,7 +20,7 @@ export interface TestServer {
   close: () => Promise<void>;
 }
 
-export async function startServer(env: Record<string, string> = {}): Promise<TestServer> {
+export async function startServer(env: Record<string, string> = {}, opts: { onRoute?: (method: string, url: string) => void } = {}): Promise<TestServer> {
   // Provider health/breaker state is a module-level singleton (by design: it's shared across
   // requests in the real app); reset it so one test file's outage simulation can't leave the
   // breaker open for the next file's server instance.
@@ -30,7 +30,7 @@ export async function startServer(env: Record<string, string> = {}): Promise<Tes
   const db = new Db(join(dir, 'poketracker.db'));
   db.migrate();
   const ctx: Ctx = { config, db, sealer: new Sealer(Buffer.alloc(32, 7)), log: console as unknown as Ctx['log'], services: {} };
-  const app = await buildApp(ctx, { logger: false });
+  const app = await buildApp(ctx, { logger: false, onRoute: opts.onRoute });
   ensureSetupToken(ctx);
   await app.ready();
   return {
