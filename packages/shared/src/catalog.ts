@@ -374,7 +374,7 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     name: raw.name,
     supertype: CATEGORY[category] ?? category,
     // TCGdex reports a non-special energy as energyType 'Normal', which isn't a meaningful subtype.
-    subtypes: [raw.stage, raw.suffix, raw.trainerType, raw.energyType].filter((x): x is string => !!x && x !== 'Normal'),
+    subtypes: [raw.stage, raw.suffix, raw.trainerType, category === 'Energy' && raw.energyType === 'Normal' ? 'Basic' : raw.energyType].filter((x): x is string => !!x && x !== 'Normal'),
     hp: raw.hp ? String(raw.hp) : undefined,
     types: raw.types?.map(type),
     evolvesFrom: raw.evolveFrom,
