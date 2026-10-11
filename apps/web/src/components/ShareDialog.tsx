@@ -101,6 +101,7 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
   const [hideValue, setHideValue] = useState(false);
   const [hideNotes, setHideNotes] = useState(true);
   const [days, setDays] = useState(0);
+  const [created, setCreated] = useState<Share | null>(null);
 
   const shares = useQuery({ queryKey: SHARES_KEY, queryFn: sharing.mine });
   const users = useQuery({ queryKey: ['users'], queryFn: sharing.users, enabled: audience === 'users' });
@@ -111,7 +112,7 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
 
   const { busy, error, onSubmit } = useSubmit(async () => {
     if (audience === 'users' && !userIds.length) throw new Error('Pick at least one person');
-    await sharing.create({
+    const made = await sharing.create({
       collectionId,
       scope,
       target,
@@ -124,9 +125,11 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
       // Ticked people are kept in state if the audience changes, so only send them for 'users'.
       userIds: audience === 'users' ? userIds : undefined,
     });
+    setCreated(made);
+    qc.setQueryData<Share[]>(SHARES_KEY, (rows = []) => [made, ...rows.filter((row) => row.id !== made.id)]);
     setTitle('');
-    await qc.invalidateQueries({ queryKey: SHARES_KEY });
-    toast('Link created. Copy it below.', { tone: 'success' });
+    void qc.invalidateQueries({ queryKey: SHARES_KEY });
+    toast('Link created. Use Copy to send it.', { tone: 'success' });
   });
 
   return (
@@ -201,6 +204,12 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
             <Link2 size={15} /> {busy ? 'Creating…' : 'Create link'}
           </button>
         </div>
+        {created && shares.data?.some((s) => s.id === created.id && s.active) && (
+          <div className="rounded-xl border border-line p-3" role="region" aria-label="New share link">
+            <p className="mb-2 text-sm font-medium">Link created. Copy it to send.</p>
+            <CopyField value={created.url} label="New share link" />
+          </div>
+        )}
         <FormError error={error} />
       </form>
 

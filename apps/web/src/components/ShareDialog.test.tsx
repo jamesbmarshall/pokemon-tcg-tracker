@@ -61,6 +61,7 @@ describe('ShareButton', () => {
 
 describe('ShareDialog', () => {
   it('creates a public link with private details hidden by default, then lists it', async () => {
+    const user = userEvent.setup();
     const made: Share[] = [];
     const api = mockApi({
       'GET /api/shares': () => made,
@@ -96,6 +97,10 @@ describe('ShareDialog', () => {
     });
     expect(await screen.findByRole('textbox', { name: 'Share link' })).toHaveValue('https://cards.example/s/tok1');
     expect(screen.getByText(/Hides what you paid, values, notes/)).toBeInTheDocument();
+    const result = screen.getByRole('region', { name: 'New share link' });
+    expect(within(result).getByRole('textbox', { name: 'New share link' })).toHaveValue('https://cards.example/s/tok1');
+    await user.click(within(result).getByRole('button', { name: 'Copy' }));
+    expect(await navigator.clipboard.readText()).toBe('https://cards.example/s/tok1');
   });
 
   it('only lists links for the same thing', async () => {
