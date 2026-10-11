@@ -430,3 +430,8 @@ describe('search', () => {
     api.primeSets([]);
   });
 });
+
+it('maps TCGdex Normal energy to Basic for deck copy limits', async () => {
+  mockFetch([setsRoute, { match: '/cards/sv03-125', body: detail({ category: 'Energy', energyType: 'Normal', stage: undefined, suffix: undefined }) }]);
+  expect((await api.getCard('sv03-125')).subtypes).toContain('Basic');
+});

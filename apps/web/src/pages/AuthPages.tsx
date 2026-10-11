@@ -107,11 +107,14 @@ export function LoginPage() {
   const login = useAuth((s) => s.login);
   const verifyMfa = useAuth((s) => s.verifyMfa);
   const signedOut = useAuth((s) => s.signedOut);
+  const demoMode = useAuth((s) => s.demoMode);
+  const tryDemo = useAuth((s) => s.tryDemo);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const signIn = useSubmit(() => login(username.trim(), password));
   const second = useSubmit(() => verifyMfa(code));
+  const demo = useSubmit(() => tryDemo());
 
   if (status === 'mfa') {
     return (
@@ -141,6 +144,15 @@ export function LoginPage() {
         </button>
         <p className="text-center text-xs text-faint">Forgotten your password? Ask whoever runs this server for a reset link.</p>
       </form>
+      {demoMode && (
+        <form onSubmit={demo.onSubmit} className="mt-5 border-t border-border pt-5">
+          <FormError error={demo.error} />
+          <button className="btn btn-ghost w-full" disabled={demo.busy}>
+            {demo.busy ? 'Loading the demo…' : 'Try the demo'}
+          </button>
+          <p className="mt-1.5 text-center text-xs text-faint">A shared, read-only collection — no account needed.</p>
+        </form>
+      )}
     </AuthShell>
   );
 }

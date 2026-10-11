@@ -15,12 +15,12 @@ afterEach(async () => {
 describe('first-run setup', () => {
   it('requires the setup token and only works once', async () => {
     const c = new Client(s.app);
-    expect((await c.get('/api/setup')).json()).toEqual({ needed: true });
+    expect((await c.get('/api/setup')).json()).toEqual({ needed: true, demoMode: false });
     expect((await c.post('/api/setup', { token: 'nope', username: 'ash', password: PASSWORD })).statusCode).toBe(403);
     const ok = await c.post('/api/setup', { token: SETUP, username: 'ash', password: PASSWORD });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user).toMatchObject({ username: 'ash', role: 'owner' });
-    expect((await c.get('/api/setup')).json()).toEqual({ needed: false });
+    expect((await c.get('/api/setup')).json()).toEqual({ needed: false, demoMode: false });
     const again = await new Client(s.app).post('/api/setup', { token: SETUP, username: 'gary', password: PASSWORD });
     expect(again.statusCode).toBe(403);
   });

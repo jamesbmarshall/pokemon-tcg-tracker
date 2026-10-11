@@ -15,7 +15,7 @@ import { entryKey } from '../utils/variants';
 import { gradeRank } from '../utils/grading';
 import { toSnapshot } from '../api/client';
 import { isPaid } from '../utils/fx';
-import { getBackend, type CollectionRole, type CollectionSummary, type CustomList } from '../api/backend';
+import { getBackend, type CollectionRole, type CollectionSummary, type CustomList, type DeckFormat } from '../api/backend';
 import { ApiError } from '../api/http';
 import { toast } from './toastStore';
 import type { CardSnapshot, CollectionEntry, GradedCopy, GradedPhoto, PokemonCard, SealedItem, SetStat, ValuePoint, WishlistEntry } from '../api/types';
@@ -122,11 +122,16 @@ interface CollectionState {
   /** Imports a backup file server-side, then reloads. Returns the number of entries plus graded copies imported. */
   importData: (data: unknown) => Promise<number>;
   clearAll: () => Promise<void>;
-  createList: (name: string, description?: string) => Promise<CustomList | undefined>;
-  updateList: (id: string, patch: { name?: string; description?: string; order?: string[] }) => Promise<void>;
+  createList: (name: string, description?: string, opts?: { kind?: 'list' | 'deck'; format?: DeckFormat }) => Promise<CustomList | undefined>;
+  updateList: (id: string, patch: { name?: string; description?: string; order?: string[]; format?: DeckFormat }) => Promise<void>;
   deleteList: (id: string) => Promise<void>;
   /** Adds the card to the list, or removes it if it's already there. Returns whether it's now in the list. */
   toggleInList: (listId: string, card: CardLike) => Promise<boolean>;
+  /**
+   * Sets a card's quantity in a deck (list), adding it if new. A qty of 0 or less removes the
+   * card instead, mirroring a quantity stepper hitting zero.
+   */
+  setDeckCardQty: (listId: string, card: CardLike, qty: number) => Promise<void>;
 }
 
 export type GradedInput = Omit<GradedCopy, 'id' | 'cardId' | 'setId' | 'addedAt' | 'updatedAt'> & { id?: string };
@@ -688,11 +693,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     },
 
     // Not optimistic: the list id comes from the server.
-    createList: async (name, description) => {
+    createList: async (name, description, opts) => {
       const cid = writable();
       if (!cid) return undefined;
       try {
-        const list = await getBackend().createList(cid, name, description);
+        const list = await getBackend().createList(cid, name, description, opts);
         set((s) => ({ lists: [...s.lists, list] }));
         return list;
       } catch (err) {
@@ -713,6 +718,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
               // The new order may come from a filtered view, so cards it doesn't mention keep
               // their relative order at the end instead of being dropped.
               ...(patch.order ? { cards: [...patch.order, ...l.cards.filter((c) => !patch.order!.includes(c))] } : {}),
+              ...(patch.format !== undefined ? { format: patch.format } : {}),
               updatedAt: new Date().toISOString(),
             }
           : l,
@@ -742,6 +748,30 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       );
       if (ok && !has) hydrate(get().cards.get(s.id) ?? s);
       return ok ? !has : has;
+    },
+
+    setDeckCardQty: async (listId, card, qty) => {
+      const cid = writable();
+      const list = get().lists.find((l) => l.id === listId);
+      if (!cid || !list) return;
+      const s = snap(card);
+      if (qty <= 0) {
+        // A stepper going to zero removes the card, same as the plain-list remove button.
+        if (!list.cards.includes(s.id)) return;
+        const cards = list.cards.filter((c) => c !== s.id);
+        const cardQtys = { ...list.cardQtys };
+        delete cardQtys[s.id];
+        const lists = get().lists.map((l) => (l.id === listId ? { ...l, cards, cardQtys, updatedAt: new Date().toISOString() } : l));
+        await persist(() => set({ lists }), () => getBackend().removeFromList(cid, listId, s.id));
+        return;
+      }
+      const isNew = !list.cards.includes(s.id);
+      if (isNew && (!isSnapshot(card) || !get().cards.has(s.id))) await get().remember([s]);
+      const cards = isNew ? [...list.cards, s.id] : list.cards;
+      const cardQtys = { ...list.cardQtys, [s.id]: qty };
+      const lists = get().lists.map((l) => (l.id === listId ? { ...l, cards, cardQtys, updatedAt: new Date().toISOString() } : l));
+      const ok = await persist(() => set({ lists }), () => getBackend().setListCardQty(cid, listId, s.id, qty));
+      if (ok && isNew) hydrate(get().cards.get(s.id) ?? s);
     },
   };
 });
