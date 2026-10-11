@@ -20,7 +20,7 @@ interface Props {
   index?: number;
   /** Show a single printing (master-set view): ownership, price and add button for just this variant. */
   variant?: string;
-  /** Show wishlist and custom-list buttons on the tile (search results). */
+  /** Show a custom-list button on the tile (search results). */
   listActions?: boolean;
 }
 import AddToList from './AddToList';
@@ -64,49 +64,65 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
       className="group relative animate-rise scroll-mt-24 has-[[aria-expanded=true]]:z-30"
       style={{ animationDelay: `${Math.min(index, 24) * 18}ms` }}
     >
-      <CardLink
-        to={shared ? undefined : `/card/${s.id}`}
-        className="block focus-visible:outline-offset-4"
-        label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
-      >
-        <div
-          onPointerMove={foilMove}
-          onPointerLeave={foilLeave}
-          className={`relative aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 transition-all duration-300 group-hover:-translate-y-1 ${
-            isOwned ? 'shadow-card ring-1 ring-accent/50' : 'ring-1 ring-line'
-          } ${isOwned ? 'group-hover:shadow-card-lift' : ''}`}
+      <div className="relative transition-transform duration-300 group-hover:-translate-y-1">
+        <CardLink
+          to={shared ? undefined : `/card/${s.id}`}
+          className="block focus-visible:outline-offset-4"
+          label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
         >
-          <CardImage
-            id={s.id}
-            src={s.image}
-            name={s.name}
-            number={s.number}
-            setName={s.setName}
-            types={s.types}
-            className={`transition-[filter,opacity] duration-300 ${dimMissing && !isOwned ? 'opacity-45 grayscale-[0.85] group-hover:opacity-90 group-hover:grayscale-0' : ''}`}
-          />
-          {(hasFoil || !dimMissing) && <div className="foil" style={{ opacity: hasFoil ? undefined : 'calc(var(--foil-o,0) * 0.35)' }} />}
-          <div className="glare" />
-          {qty > 0 && <span className="absolute right-1.5 top-1.5 animate-pop rounded-full bg-accent px-1.5 py-0.5 font-mono text-[10px] font-bold text-on-accent shadow-md">×{qty}</span>}
-          {topSlab && (
-            <span
-              className={`absolute bottom-1.5 left-1.5 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold shadow-md ${
-                topSlab.countsTowardSet ? 'bg-fg text-canvas' : 'border border-dashed border-paper/70 bg-onyx/80 text-paper'
-              }`}
-              title={`${slabs.length} graded cop${slabs.length > 1 ? 'ies' : 'y'}${topSlab.countsTowardSet ? '' : ' · kept out of set progress'}`}
-            >
-              {formatGrade(topSlab)}
-              {slabs.length > 1 && <span className="ml-1 opacity-60">+{slabs.length - 1}</span>}
-            </span>
-          )}
-          <LanguageBadge id={s.id} className="absolute bottom-1.5 right-1.5" />
-          {wished && !isOwned && !topSlab && (
-            <span className="absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-onyx/80 text-blush" title="On wishlist">
-              <Heart size={13} fill="currentColor" />
-            </span>
-          )}
-        </div>
-      </CardLink>
+          <div
+            onPointerMove={foilMove}
+            onPointerLeave={foilLeave}
+            className={`relative aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 transition-all duration-300 ${
+              isOwned ? 'shadow-card ring-1 ring-accent/50' : 'ring-1 ring-line'
+            } ${isOwned ? 'group-hover:shadow-card-lift' : ''}`}
+          >
+            <CardImage
+              id={s.id}
+              src={s.image}
+              name={s.name}
+              number={s.number}
+              setName={s.setName}
+              types={s.types}
+              className={`transition-[filter,opacity] duration-300 ${dimMissing && !isOwned ? 'opacity-45 grayscale-[0.85] group-hover:opacity-90 group-hover:grayscale-0' : ''}`}
+            />
+            {(hasFoil || !dimMissing) && <div className="foil" style={{ opacity: hasFoil ? undefined : 'calc(var(--foil-o,0) * 0.35)' }} />}
+            <div className="glare" />
+            {qty > 0 && <span className="absolute right-1.5 top-1.5 animate-pop rounded-full bg-accent px-1.5 py-0.5 font-mono text-[10px] font-bold text-on-accent shadow-md">×{qty}</span>}
+            {topSlab && (
+              <span
+                className={`absolute bottom-1.5 left-1.5 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold shadow-md ${
+                  topSlab.countsTowardSet ? 'bg-fg text-canvas' : 'border border-dashed border-paper/70 bg-onyx/80 text-paper'
+                }`}
+                title={`${slabs.length} graded cop${slabs.length > 1 ? 'ies' : 'y'}${topSlab.countsTowardSet ? '' : ' · kept out of set progress'}`}
+              >
+                {formatGrade(topSlab)}
+                {slabs.length > 1 && <span className="ml-1 opacity-60">+{slabs.length - 1}</span>}
+              </span>
+            )}
+            <LanguageBadge id={s.id} className={`absolute right-1.5 ${(!readOnly && !shared) || wished ? 'bottom-12' : 'bottom-1.5'}`} />
+          </div>
+        </CardLink>
+        {!readOnly && !shared ? (
+          <button
+            type="button"
+            onClick={async () => {
+              const on = await toggleWishlist(s);
+              toast(on ? `Added ${s.name} to wishlist` : `Removed ${s.name} from wishlist`, { tone: on ? 'success' : 'default' });
+            }}
+            aria-pressed={wished}
+            aria-label={wished ? `Remove ${s.name} from wishlist` : `Add ${s.name} to wishlist`}
+            title={wished ? 'On wishlist' : 'Add to wishlist'}
+            className={`absolute bottom-1.5 right-1.5 grid h-9 w-9 place-items-center rounded-full bg-onyx/80 shadow-md transition-colors hover:bg-onyx focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wish active:scale-90 ${wished ? 'text-blush' : 'text-paper/80 hover:text-blush'}`}
+          >
+            <Heart size={17} fill={wished ? 'currentColor' : 'none'} />
+          </button>
+        ) : wished ? (
+          <span className="absolute bottom-1.5 right-1.5 grid h-9 w-9 place-items-center rounded-full bg-onyx/80 text-blush" title="On wishlist">
+            <Heart size={17} fill="currentColor" />
+          </span>
+        ) : null}
+      </div>
 
       <div className="mt-2 flex items-start justify-between gap-2 px-0.5">
         <div className="min-w-0">
@@ -126,10 +142,10 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
       </div>
 
       {readOnly ? null : (
-        <div className="mt-1.5 flex items-start gap-1 px-0.5">
+        <div className="mt-1.5 flex items-start gap-1 px-0.5 pointer-coarse:flex-wrap pointer-coarse:[&_button]:min-h-9 pointer-coarse:[&_button]:min-w-8">
           {variant ? (
             <div
-              className={`flex min-w-0 flex-1 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100'}`}
+              className={`flex min-w-0 flex-1 pointer-coarse:basis-full transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100'}`}
             >
               <button
                 onClick={() => change(variant, 1)}
@@ -162,7 +178,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
             </div>
           ) : (
             <div
-              className={`flex min-w-0 flex-1 flex-wrap gap-1 transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100'}`}
+              className={`flex min-w-0 flex-1 flex-wrap gap-1 pointer-coarse:basis-full transition-opacity ${quickAdd || isOwned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100'}`}
             >
               {s.variants.map((v) => {
                 const n = owned?.[v] ?? 0;
@@ -203,21 +219,6 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
           )}
           {listActions && !shared && (
             <div className="flex shrink-0 gap-1">
-              <button
-                type="button"
-                onClick={async () => {
-                  const on = await toggleWishlist(s);
-                  toast(on ? `Added ${s.name} to wishlist` : `Removed ${s.name} from wishlist`, { tone: on ? 'success' : 'default' });
-                }}
-                aria-pressed={wished}
-                aria-label={wished ? `Remove ${s.name} from wishlist` : `Add ${s.name} to wishlist`}
-                title={wished ? 'On wishlist' : 'Add to wishlist'}
-                className={`grid h-6 w-6 place-items-center rounded-md border transition-colors active:scale-90 ${
-                  wished ? 'border-wish/40 bg-wish/10 text-wish' : 'border-line bg-surface-2 text-muted hover:border-wish/50 hover:text-wish'
-                }`}
-              >
-                <Heart size={12} fill={wished ? 'currentColor' : 'none'} />
-              </button>
               <AddToList card={s} compact />
             </div>
           )}

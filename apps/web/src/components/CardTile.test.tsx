@@ -23,7 +23,12 @@ describe('CardTile', () => {
     expect(screen.getByRole('link', { name: 'Charmander 1, not owned' })).toHaveAttribute('href', '/card/sv03-001');
     expect(screen.getByRole('link', { name: 'Charmander' })).toBeInTheDocument();
     expect(screen.getByText('#1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add Normal' })).toHaveTextContent('N');
+    const addNormal = screen.getByRole('button', { name: 'Add Normal' });
+    expect(addNormal).toHaveTextContent('N');
+    expect(addNormal.parentElement?.parentElement).toHaveClass('flex-wrap', 'pointer-coarse:opacity-100');
+    expect(addNormal.closest('div[class*="pointer-coarse:flex-wrap"]')).toHaveClass(
+      'pointer-coarse:[&_button]:min-h-9', 'pointer-coarse:[&_button]:min-w-8',
+    );
     expect(screen.getByRole('button', { name: 'Add Reverse Holo' })).toHaveTextContent('RH');
     // Highest variant price ($2) in GBP at the test rate
     expect(screen.getByText('£1.00')).toBeInTheDocument();
@@ -110,10 +115,22 @@ describe('CardTile', () => {
     expect(screen.getByTitle('On wishlist')).toBeInTheDocument();
   });
 
-  it('hides the wishlist marker once owned', () => {
+  it('keeps the wishlist toggle available for owned cards', () => {
     seedCollection({ entries: [makeEntry()], cards: [makeSnapshot()], wishlist: [{ cardId: 'sv03-001', addedAt: '2025-01-01' }] });
     renderWithProviders(<CardTile card={makeSnapshot()} />);
-    expect(screen.queryByTitle('On wishlist')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Charmander from wishlist' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('toggles wishlist directly without nesting the action in the card link', async () => {
+    renderWithProviders(<CardTile card={makeSnapshot()} dimMissing variant="normal" />);
+    const button = screen.getByRole('button', { name: 'Add Charmander to wishlist' });
+    expect(button.closest('a')).toBeNull();
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(button);
+    expect(await screen.findByRole('button', { name: 'Remove Charmander from wishlist' })).toHaveAttribute('aria-pressed', 'true');
+    expect(qty('sv03-001')).toBeUndefined();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Charmander from wishlist' }));
+    expect(await screen.findByRole('button', { name: 'Add Charmander to wishlist' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('dims missing cards in checklist mode', () => {

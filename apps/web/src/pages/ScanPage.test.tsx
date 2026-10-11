@@ -99,6 +99,21 @@ describe('ScanPage', () => {
     await waitFor(() => expect(qty(card.id)).toEqual({ normal: 1 }));
   });
 
+  it('reconnects the camera preview after scanning a match and choosing the next card', async () => {
+    const stream = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    stubSecureCamera(getUserMedia);
+    mocks.lookupScan.mockResolvedValue([makeSnapshot()]);
+    worker.recognize.mockResolvedValue({ data: { text: 'SVI 001/198' } });
+    renderWithProviders(<ScanPage />);
+    expect(await screen.findByText('Found a match', {}, { timeout: 5000 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Scan next card' }));
+    expect((screen.getByLabelText('Camera preview') as HTMLVideoElement).srcObject).toBe(stream);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(stream.__stop).not.toHaveBeenCalled();
+    expect(await screen.findByText('Found a match', {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+
   it('offers a picker when several printings match, then confirms the chosen one', async () => {
     const getUserMedia = vi.fn().mockResolvedValue(fakeStream());
     stubSecureCamera(getUserMedia);

@@ -210,7 +210,7 @@ export default function CardPage() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-10 md:grid-cols-[minmax(0,420px)_1fr]">
+      <div className="grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,420px)_1fr]">
         <Skeleton className="aspect-[63/88]" />
         <div className="space-y-4">
           <Skeleton className="h-10 w-2/3" />
@@ -279,7 +279,7 @@ export default function CardPage() {
         </div>
       </div>
 
-      <div className="relative grid gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
+      <div className="relative grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
         <div className="relative mx-auto w-full max-w-[400px] md:sticky md:top-10 md:self-start">
           <div key={card.id} className={slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : undefined}>
             <HoloCard id={card.id} src={card.images.large} name={card.name} number={card.number} setName={card.set.name} types={card.types} foil={foilish} />
