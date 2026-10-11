@@ -7,7 +7,11 @@ A fast, good-looking Pokémon TCG collection tracker you host yourself. Tick off
 
 Once it's deployed, everything happens in the browser. Prices, set lists and exchange rates refresh on their own in the background, and updates install from **Settings → System** with one click.
 
-**Try it first:** [**Try the demo**](#) — a public, read-only PokéTracker with a sample collection. <!-- TODO(maintainer): fill in the deployed demo URL once deploy/azure/demo.bicep has been deployed, and remove this comment. -->
+> **Beta**: PokéTracker is looking for outside testers. See [BETA.md](BETA.md) for what
+> to expect and how to report issues.
+
+If you've enjoyed PokéTracker, you can support its development on Ko-fi:
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jamesbmarshall)
 
 ## Quick start in 2 minutes
 
@@ -74,8 +78,6 @@ Open https://cards.example.com/setup and enter this setup token:
 
     Kdj7MuopHWLABs-WJWEZGgr-
 ```
-
-> **While this repository is private**, the container image and the update feed need a GitHub login, so the one-click options below won't work for anyone else yet. Making the repository public fixes both.
 
 ### A VPS with Docker
 
@@ -283,5 +285,18 @@ If you change `deploy/azure/*.bicep`, rebuild the JSON the Deploy buttons use wi
 The server fetches all of this, caches it and shares it between users, so TCGdex sees one request per card rather than one per person. Card images are cached on disk too, up to `IMAGE_CACHE_MB`. About 1,600 older cards, mostly promos, have no TCGdex scan; those fall back to the old pokemontcg.io image CDN, then to a styled placeholder.
 
 Built with React 19, Vite, Tailwind CSS 4, TanStack Query, Zustand, Fastify and lucide icons.
+
+## Support, privacy and license
+
+- **Support**: see [SUPPORT.md](SUPPORT.md) for bug reports, security advisories and
+  where to ask questions. Beta testers, see [BETA.md](BETA.md) first.
+- **Privacy**: see [PRIVACY.md](PRIVACY.md) for what the software stores and sends
+  elsewhere, and what it doesn't.
+- **Contributing**: see [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Release notes**: see [GitHub Releases](https://github.com/jamesbmarshall/pokemon-tcg-tracker/releases)
+  for the changelog; each tagged release's notes are the source of truth.
+- **License**: [AGPL-3.0-or-later](LICENSE). In short: you can self-host, modify and
+  share PokéTracker freely, but if you run a modified version on a server other people
+  use, you must also offer them its source.
 
 Pokémon and all card images are © The Pokémon Company. This is a fan project, not affiliated with or endorsed by The Pokémon Company, Nintendo or Creatures.

@@ -1,0 +1,61 @@
+name: Bug report
+description: Report something broken or behaving unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. If this is a **security
+        vulnerability**, please don't use this form — open a
+        [private security advisory](https://github.com/jamesbmarshall/pokemon-tcg-tracker/security/advisories/new)
+        instead.
+  - type: input
+    id: version
+    attributes:
+      label: PokéTracker version
+      description: Shown in Settings → System
+      placeholder: e.g. 2.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy-method
+    attributes:
+      label: Deploy method
+      options:
+        - VPS with Docker (install.sh / docker-compose)
+        - Azure Container Apps
+        - Azure App Service
+        - Unraid
+        - Synology / Portainer / CasaOS
+        - Local development (npm run dev)
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: e.g. Chrome 131 on macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: e.g. `docker logs poketracker`, or your platform's equivalent
+      render: shell
+    validations:
+      required: false

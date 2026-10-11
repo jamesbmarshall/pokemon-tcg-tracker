@@ -222,9 +222,11 @@ export default function Layout() {
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur-md lg:hidden">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/" aria-label="PokéTracker home" className="flex min-w-0 items-center gap-2">
           <Logo size={26} />
-          <span className="font-display text-lg font-medium tracking-tight">
+          {/* The wordmark plus five 40px icon buttons doesn't fit under ~360px; the logo mark alone
+              stays recognisable and tappable, so drop the text rather than shrink touch targets. */}
+          <span className="hidden truncate font-display text-lg font-medium tracking-tight min-[400px]:inline">
             Poké<span className="holo-text">Tracker</span>
           </span>
         </Link>

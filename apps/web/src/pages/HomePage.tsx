@@ -63,7 +63,7 @@ function Welcome() {
   const latest = sets?.slice(0, 5) ?? [];
   return (
     <div className="space-y-14">
-      <section className="grid gap-10 border-b border-line pb-12 pt-4 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
+      <section className="grid grid-cols-1 gap-10 border-b border-line pb-12 pt-4 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
         <div>
           <p className="eyebrow">A ledger for your binders</p>
           <h1 className="mt-4 max-w-2xl font-display text-[2.6rem] font-medium leading-[1.05] tracking-tight sm:text-[3.6rem]">
@@ -182,7 +182,7 @@ export default function HomePage() {
   return (
     <div className="space-y-14">
       {/* Ledger */}
-      <section className="grid gap-x-14 gap-y-8 lg:grid-cols-[1.7fr_1fr]">
+      <section className="grid grid-cols-1 gap-x-14 gap-y-8 lg:grid-cols-[1.7fr_1fr]">
         <div>
           <p className="eyebrow">Collection value</p>
           <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
@@ -249,7 +249,7 @@ export default function HomePage() {
             All sets →
           </Link>
         </div>
-        <div className="grid border-t border-line sm:grid-cols-2 sm:gap-x-10 xl:grid-cols-3">
+        <div className="grid grid-cols-1 border-t border-line sm:grid-cols-2 sm:gap-x-10 xl:grid-cols-3">
           {inProgress.map((s) => (
             <Link key={s.setId} to={`/sets/${s.setId}`} className="group flex flex-col gap-2 border-b border-line py-4">
               <div className="flex items-center gap-2">
@@ -272,7 +272,7 @@ export default function HomePage() {
       </section>
 
       {/* Showcase */}
-      <section className="grid gap-12 xl:grid-cols-2">
+      <section className="grid grid-cols-1 gap-12 xl:grid-cols-2">
         <Strip title="Most valuable" link="/collection?sort=value">
           {top.map((o) => (
             <MiniCard key={o.card.id} o={o} line={money(o.topPrice)} />

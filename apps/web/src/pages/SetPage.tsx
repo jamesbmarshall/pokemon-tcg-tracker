@@ -139,7 +139,7 @@ export default function SetPage() {
       {setLoading || !set ? (
         <Skeleton className="h-52" />
       ) : (
-        <section className="grid gap-8 border-b border-line pb-8 pt-2 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-end lg:gap-14">
+        <section className="grid grid-cols-1 gap-8 border-b border-line pb-8 pt-2 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-end lg:gap-14">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
             <SetLogo
               src={set.images.logo}
