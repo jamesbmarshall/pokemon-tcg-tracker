@@ -114,14 +114,14 @@ export default function GradedForm({ card, copy, onClose }: Props) {
 
   // Portalled so ancestor transforms/overflow (panels, page animations) can't clip the overlay.
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/65 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-onyx/45 sm:items-center sm:p-4" onMouseDown={onClose}>
       <form
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${uid}-title`}
         onSubmit={submit}
         onMouseDown={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-lg animate-rise flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-ink-2 shadow-2xl sm:rounded-3xl"
+        className="flex max-h-[92vh] w-full max-w-lg animate-rise flex-col overflow-hidden rounded-t-xl border border-line-strong bg-surface shadow-pop sm:rounded-xl"
       >
         <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div>
@@ -197,7 +197,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
                     type="button"
                     onClick={() => pickVariant(v)}
                     aria-pressed={variant === v}
-                    className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${variant === v ? 'border-volt bg-volt/15 text-volt' : 'border-line bg-surface-2 text-muted hover:text-fg'}`}
+                    className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${variant === v ? 'border-accent bg-accent/15 text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg'}`}
                   >
                     {variantLabel(v)}
                   </button>
@@ -208,7 +208,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
 
           <div>
             {!showSubs ? (
-              <button type="button" onClick={() => setShowSubs(true)} className="text-xs font-medium text-muted underline-offset-4 hover:text-volt hover:underline">
+              <button type="button" onClick={() => setShowSubs(true)} className="text-xs font-medium text-muted underline-offset-4 hover:text-accent hover:underline">
                 + Add sub-grades{SUBGRADE_COMPANIES.has(company) ? '' : ' (optional)'}
               </button>
             ) : (
@@ -234,7 +234,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
             )}
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-line bg-surface p-3.5">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-surface p-3.5">
             <input
               type="checkbox"
               checked={counts}
@@ -244,7 +244,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
               }}
               className="peer sr-only"
             />
-            <span aria-hidden className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-surface-3 transition-colors peer-checked:bg-volt peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-volt after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-ink" />
+            <span aria-hidden className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full bg-surface-3 transition-colors peer-checked:bg-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-on-accent" />
             <span>
               <span className="block text-sm font-medium">Counts towards set completion</span>
               <span className="mt-0.5 block text-xs leading-relaxed text-muted">
@@ -285,7 +285,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
               {previews.map((p, i) => (
                 <Thumb key={p.url} url={p.url} onRemove={() => setNewFiles((f) => f.filter((_, j) => j !== i))} />
               ))}
-              <label className="grid h-24 w-[68px] cursor-pointer place-items-center rounded-lg border border-dashed border-line-strong text-faint transition-colors hover:border-volt hover:text-volt focus-within:border-volt">
+              <label className="grid h-24 w-[68px] cursor-pointer place-items-center rounded-lg border border-dashed border-line-strong text-faint transition-colors hover:border-accent hover:text-accent focus-within:border-accent">
                 <ImagePlus size={18} />
                 <span className="sr-only">Add photos</span>
                 <input
@@ -327,7 +327,7 @@ function Thumb({ url, onRemove }: { url: string; onRemove: () => void }) {
         type="button"
         onClick={onRemove}
         aria-label="Remove photo"
-        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-ink/85 text-fg opacity-90 hover:text-loss"
+        className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-onyx/85 text-paper opacity-90 hover:text-loss"
       >
         <X size={11} />
       </button>

@@ -9,6 +9,8 @@ import { persist } from 'zustand/middleware';
 export type Currency = 'GBP' | 'EUR' | 'USD';
 /** Base = numbered cards, Full = every card incl. secret rares, Master = every printing. */
 export type SetMode = 'base' | 'full' | 'master';
+/** 'system' follows the operating system's light/dark preference. */
+export type ThemePref = 'system' | 'light' | 'dark';
 
 interface SettingsState {
   currency: Currency;
@@ -16,6 +18,8 @@ interface SettingsState {
   setView: 'grid' | 'binder';
   setMode: SetMode;
   quickAdd: boolean;
+  /** Per device rather than synced: a phone and a desktop often want different themes. */
+  theme: ThemePref;
   /** Free-form per-page view choices (sort order, filters) keyed by page, so new pages need no schema change. */
   viewPrefs: Record<string, string>;
   setCurrency: (c: Currency) => void;
@@ -23,6 +27,7 @@ interface SettingsState {
   setSetView: (v: 'grid' | 'binder') => void;
   setSetMode: (m: SetMode) => void;
   setQuickAdd: (b: boolean) => void;
+  setTheme: (t: ThemePref) => void;
   setViewPref: (key: string, value: string) => void;
 }
 
@@ -34,12 +39,14 @@ export const useSettings = create<SettingsState>()(
       setView: 'grid',
       setMode: 'master',
       quickAdd: false,
+      theme: 'system',
       viewPrefs: {},
       setCurrency: (currency) => set({ currency }),
       setPocketSize: (pocketSize) => set({ pocketSize }),
       setSetView: (setView) => set({ setView }),
       setSetMode: (setMode) => set({ setMode }),
       setQuickAdd: (quickAdd) => set({ quickAdd }),
+      setTheme: (theme) => set({ theme }),
       setViewPref: (key, value) => set((st) => ({ viewPrefs: { ...st.viewPrefs, [key]: value } })),
     }),
     { name: 'poketracker-settings' },

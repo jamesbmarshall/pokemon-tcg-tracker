@@ -16,11 +16,11 @@ const GradedForm = lazy(() => import('./GradedForm'));
 /** Slab label strip colours, loosely after each grader's own labels. */
 const STRIP: Record<string, string> = {
   PSA: 'bg-[#c8202b] text-white',
-  BGS: 'bg-gradient-to-r from-[#c9ced6] to-[#9aa3ae] text-ink',
+  BGS: 'bg-gradient-to-r from-[#c9ced6] to-[#9aa3ae] text-onyx',
   CGC: 'bg-[#1f4f8f] text-white',
   SGC: 'bg-[#141414] text-white ring-1 ring-inset ring-white/20',
-  TAG: 'bg-[#f2f2f2] text-ink',
-  ACE: 'bg-[#e6b422] text-ink',
+  TAG: 'bg-[#f2f2f2] text-onyx',
+  ACE: 'bg-[#e6b422] text-onyx',
 };
 
 export default function GradedSection({ card }: { card: PokemonCard }) {
@@ -30,11 +30,11 @@ export default function GradedSection({ card }: { card: PokemonCard }) {
   if (readOnly && !slabs.length) return null;
 
   return (
-    <section className="panel overflow-hidden" aria-labelledby="graded-heading">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+    <section className="border-t border-line-strong" aria-labelledby="graded-heading">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-4">
         <div>
           <p className="eyebrow">Graded</p>
-          <h2 id="graded-heading" className="mt-1 font-display text-xl font-semibold">
+          <h2 id="graded-heading" className="mt-1 font-display text-2xl font-medium">
             {slabs.length ? `${slabs.length} slab${slabs.length > 1 ? 's' : ''}` : <span className="text-muted">No graded copies</span>}
           </h2>
         </div>
@@ -52,7 +52,7 @@ export default function GradedSection({ card }: { card: PokemonCard }) {
           ))}
         </ul>
       ) : (
-        <p className="px-5 py-4 text-sm text-muted">Got this card in a slab? Record the grader, grade and cert number, and add photos of the case.</p>
+        <p className="py-4 text-sm text-muted">Got this card in a slab? Record the grader, grade and cert number, and add photos of the case.</p>
       )}
 
       {editing && (
@@ -89,7 +89,7 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
   };
 
   return (
-    <li className="flex gap-4 px-5 py-4">
+    <li className="flex gap-4 py-4">
       <button
         onClick={() => photos.length && setViewer(0)}
         disabled={!photos.length}
@@ -109,13 +109,13 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
             </span>
           </span>
         )}
-        {photos.length > 1 && <span className="absolute bottom-1 right-1 rounded bg-ink/80 px-1 font-mono text-[9px]">{photos.length}</span>}
+        {photos.length > 1 && <span className="absolute bottom-1 right-1 rounded bg-onyx/80 text-paper px-1 font-mono text-[9px]">{photos.length}</span>}
       </button>
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-bold ${STRIP[g.company] ?? 'bg-surface-3 text-fg'}`}>{name}</span>
-          <span className="font-display text-2xl font-bold tabular leading-none">{g.grade === 'Authentic' ? 'Authentic' : g.grade}</span>
+          <span className="font-display text-2xl font-semibold tabular leading-none">{g.grade === 'Authentic' ? 'Authentic' : g.grade}</span>
           {g.label && g.label !== 'Authentic' && <span className="text-sm text-muted">{g.label}</span>}
         </div>
         <p className="mt-1.5 text-xs text-muted">
@@ -127,7 +127,7 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
             <span className="font-mono text-faint">
               Cert <span className="text-fg">{g.certNumber}</span>
             </span>
-            <button onClick={copyCert} className="inline-flex items-center gap-1 text-muted hover:text-volt" aria-label="Copy cert number">
+            <button onClick={copyCert} className="inline-flex items-center gap-1 text-muted hover:text-accent" aria-label="Copy cert number">
               <Copy size={11} /> Copy
             </button>
             {verify && (
@@ -136,7 +136,7 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
                 target="_blank"
                 rel="noreferrer"
                 onClick={verify.deepLink ? undefined : () => void copyCert()}
-                className="inline-flex items-center gap-1 text-muted hover:text-volt"
+                className="inline-flex items-center gap-1 text-muted hover:text-accent"
                 title={verify.deepLink ? `Look up on ${name}` : `Opens ${name}'s lookup; the cert number is copied for pasting`}
               >
                 Verify <ExternalLink size={11} />
@@ -158,7 +158,7 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
               }}
               className="peer sr-only"
             />
-            <span aria-hidden className="relative h-4 w-7 rounded-full bg-surface-3 transition-colors peer-checked:bg-volt peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-volt after:absolute after:left-0.5 after:top-0.5 after:h-3 after:w-3 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-3 peer-checked:after:bg-ink" />
+            <span aria-hidden className="relative h-4 w-7 rounded-full bg-surface-3 transition-colors peer-checked:bg-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:left-0.5 after:top-0.5 after:h-3 after:w-3 after:rounded-full after:bg-fg after:transition-transform peer-checked:after:translate-x-3 peer-checked:after:bg-on-accent" />
             Counts towards set
           </label>
         )}
@@ -207,11 +207,11 @@ function Lightbox({ photos, index, onIndex, onClose, title }: { photos: { id: st
   }, [index, photos.length, onIndex, onClose]);
 
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-black/90 p-4 backdrop-blur" onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-black/90 p-4" onClick={onClose}>
       <button onClick={onClose} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Close">
         <X size={16} />
       </button>
-      <img src={photos[index].url} alt={`${title}, photo ${index + 1}`} className="max-h-[80vh] max-w-full rounded-xl object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <img src={photos[index].url} alt={`${title}, photo ${index + 1}`} className="max-h-[80vh] max-w-full rounded-lg object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
       <p className="flex items-center gap-2 text-xs text-muted">
         <Award size={12} /> {title}
         {photos.length > 1 && <span className="font-mono">· {index + 1}/{photos.length}</span>}
@@ -219,7 +219,7 @@ function Lightbox({ photos, index, onIndex, onClose, title }: { photos: { id: st
       {photos.length > 1 && (
         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
           {photos.map((p, i) => (
-            <button key={p.id} onClick={() => onIndex(i)} aria-label={`Photo ${i + 1}`} className={`h-14 w-10 overflow-hidden rounded ring-2 ${i === index ? 'ring-volt' : 'ring-transparent opacity-60'}`}>
+            <button key={p.id} onClick={() => onIndex(i)} aria-label={`Photo ${i + 1}`} className={`h-14 w-10 overflow-hidden rounded ring-2 ${i === index ? 'ring-accent' : 'ring-transparent opacity-60'}`}>
               <img src={p.url} alt="" className="h-full w-full object-cover" />
             </button>
           ))}

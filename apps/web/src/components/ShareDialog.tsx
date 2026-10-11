@@ -76,7 +76,7 @@ export function ShareRow({ share, showWhat }: { share: Share; showWhat?: boolean
 function Toggle({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="flex cursor-pointer items-start gap-3 rounded-xl px-1 py-1.5">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 h-4 w-4 accent-[var(--color-volt)]" />
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-1 h-4 w-4 accent-[var(--color-accent)]" />
       <span>
         <span className="block text-sm font-medium">{label}</span>
         <span className="block text-xs text-muted">{hint}</span>

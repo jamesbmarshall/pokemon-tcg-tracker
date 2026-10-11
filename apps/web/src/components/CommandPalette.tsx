@@ -65,12 +65,12 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/60 px-3 pt-[12vh] backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-onyx/45 px-3 pt-[12vh]" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search"
-        className="w-full max-w-xl animate-rise overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_40px_120px_-20px_rgb(0_0_0/0.9)]"
+        className="w-full max-w-xl animate-rise overflow-hidden rounded-xl border border-line-strong bg-surface shadow-pop"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-line px-4">
@@ -113,7 +113,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
               data-idx={i}
               onMouseEnter={() => setActive(i)}
               onClick={() => go(it)}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${i === active ? 'bg-surface-3' : ''}`}
+              className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left ${i === active ? 'bg-surface-2' : ''}`}
             >
               {it.kind === 'card' && (
                 <span className="block h-11 w-8 shrink-0 overflow-hidden rounded-[3px]">
@@ -126,7 +126,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 </span>
               )}
               {it.kind === 'action' && (
-                <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-volt">
+                <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-accent">
                   <ArrowRight size={16} />
                 </span>
               )}
@@ -135,7 +135,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                 <span className="block truncate text-xs text-muted">{it.sub}</span>
               </span>
               {it.kind === 'set' && <Layers size={14} className="text-faint" />}
-              {it.kind === 'card' && it.owned && <span className="rounded-full bg-volt/15 px-2 py-0.5 text-[10px] font-semibold text-volt">Owned</span>}
+              {it.kind === 'card' && it.owned && <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">Owned</span>}
               {i === active && <CornerDownLeft size={14} className="text-faint" />}
             </button>
           ))}

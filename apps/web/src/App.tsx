@@ -26,6 +26,7 @@ import PublicSharePage from './pages/PublicSharePage';
 import { AuthShell, InvitePage, LoginPage, ResetPage, SetupPage } from './pages/AuthPages';
 import { useAuth } from './store/authStore';
 import { Logo } from './components/ui';
+import { useThemeSync } from './utils/theme';
 
 // Catalogue queries retry with backoff because upstream TCGdex hiccups are common and transient.
 // Focus refetching is off: the data changes rarely and a refetch would hit the server for nothing.
@@ -114,6 +115,7 @@ function Gate() {
 
 function AppInner() {
   const init = useAuth((s) => s.init);
+  useThemeSync();
   // Guarded so StrictMode's double effect and remounts don't restart an auth check already done.
   useEffect(() => {
     if (useAuth.getState().status === 'loading') void init();

@@ -23,7 +23,7 @@ export function Field({ label, hint, error, ...input }: { label: string; hint?: 
 export function FormError({ error }: { error: string | null | undefined }) {
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-xl border border-loss/30 bg-loss/10 px-3 py-2 text-sm text-loss">
+    <p role="alert" className="rounded-lg border border-loss/30 bg-loss/10 px-3 py-2 text-sm text-loss">
       {error}
     </p>
   );
@@ -60,8 +60,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return createPortal(
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} className={`panel w-full ${wide ? 'max-w-xl' : 'max-w-md'} p-6`} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-onyx/45 p-4" onMouseDown={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={title} className={`w-full rounded-xl border border-line-strong bg-surface shadow-pop ${wide ? 'max-w-xl' : 'max-w-md'} p-6`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="font-display text-lg font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:text-fg" aria-label="Close">
@@ -140,7 +140,7 @@ export function ConfirmDialog({ title, body, action, onConfirm, onClose }: {
 export function StatusPill({ tone, children }: { tone: 'good' | 'warn' | 'bad' | 'muted'; children: ReactNode }) {
   const cls = {
     good: 'border-gain/30 bg-gain/10 text-gain',
-    warn: 'border-volt/30 bg-volt/10 text-volt',
+    warn: 'border-accent/30 bg-accent/10 text-accent',
     bad: 'border-loss/30 bg-loss/10 text-loss',
     muted: 'border-line bg-surface-2 text-muted',
   }[tone];
