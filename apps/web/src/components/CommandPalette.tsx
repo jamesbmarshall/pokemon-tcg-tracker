@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, Package, Search } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, Package, ScanLine, Search } from 'lucide-react';
 import { useSets } from '../api/hooks';
 import { searchCards } from '../api/client';
 import { useDebounced } from '../hooks/useDebounced';
@@ -36,6 +36,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     const needle = q.trim().toLowerCase();
+    if (needle.length === 0) out.push({ kind: 'action', id: 'scan', title: 'Scan a card', sub: 'Use your camera to look one up' });
     if (needle.length >= 1 && sets) {
       for (const s of sets) {
         if (s.name.toLowerCase().includes(needle) || s.ptcgoCode?.toLowerCase() === needle || s.id === needle) {
@@ -56,6 +57,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     onClose();
     if (it.kind === 'card') navigate(`/card/${it.id}`);
     else if (it.kind === 'set') navigate(`/sets/${it.id}`);
+    else if (it.kind === 'action' && it.id === 'scan') navigate('/scan');
     else if (it.kind === 'action' && it.id === 'sealed') navigate('/sealed');
     else navigate(`/search?q=${encodeURIComponent(q.trim())}`);
   };
@@ -105,9 +107,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         </div>
         <div ref={listRef} className="max-h-[55vh] overflow-y-auto p-2">
           {items.length === 0 && (
-            <p className="px-3 py-10 text-center text-sm text-faint">
-              {q.trim().length < 2 ? 'Try “Charizard”, “151” or “Umbreon VMAX”' : cards.isFetching ? 'Searching…' : 'Nothing found'}
-            </p>
+            <p className="px-3 py-10 text-center text-sm text-faint">{cards.isFetching ? 'Searching…' : 'Nothing found'}</p>
           )}
           {items.map((it, i) => (
             <button
@@ -129,7 +129,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
               )}
               {it.kind === 'action' && (
                 <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-2 text-accent">
-                  {it.id === 'sealed' ? <Package size={16} /> : <ArrowRight size={16} />}
+                  {it.id === 'scan' ? <ScanLine size={16} /> : it.id === 'sealed' ? <Package size={16} /> : <ArrowRight size={16} />}
                 </span>
               )}
               <span className="min-w-0 flex-1">
@@ -141,6 +141,9 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
               {i === active && <CornerDownLeft size={14} className="text-faint" />}
             </button>
           ))}
+          {q.trim().length < 2 && (
+            <p className="px-3 py-4 text-center text-xs text-faint">Try “Charizard”, “151” or “Umbreon VMAX”</p>
+          )}
         </div>
       </div>
     </div>
