@@ -172,6 +172,27 @@ describe('GradedSection', () => {
     expect(await screen.findByText(/\+£20\.00/)).toHaveTextContent('+£20.00(+25%)');
   });
 
+  it('searches and links a PriceCharting product when configured', async () => {
+    memory.pricechartingConfigured = true;
+    memory.pcResults = [{ id: 'pc-1', name: 'Charizard', consoleName: 'Pokemon' }];
+    const user = userEvent.setup();
+    renderWithProviders(<GradedSection card={card} />);
+    const dialog = await openForm(user);
+    expect(await within(dialog).findByText('Charizard')).toBeInTheDocument();
+    await user.click(within(dialog).getByText('Charizard'));
+    await user.click(within(dialog).getByRole('button', { name: /^add graded copy$/i }));
+    await waitFor(() => expect(store().graded.size).toBe(1));
+    expect([...store().graded.values()][0].pcProductId).toBe('pc-1');
+  });
+
+  it("shows the PriceCharting price's provenance when it's used instead of the raw market price", async () => {
+    seedCollection({
+      cards: [makeSnapshot({ id: 'sv03-001', prices: { normal: 2, reverseHolofoil: 5 } })],
+      graded: [makeGraded({ id: 'a', cardId: 'sv03-001', grade: '10', pcPrice: 450, pcProductId: 'pc-1', pcUpdatedAt: new Date().toISOString(), valueUsd: undefined })],
+    });
+    renderWithProviders(<GradedSection card={card} />);
+    expect(await screen.findByText(/PriceCharting · PSA 10/)).toBeInTheDocument();
+  });
 
   it('hides itself when read-only with no slabs, and shows slabs without controls', () => {
     useCollectionStore.setState({ readOnly: true, role: 'viewer' });

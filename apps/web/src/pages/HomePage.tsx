@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useSets } from '../api/hooks';
-import { useCollectionStore } from '../store/collectionStore';
+import { getBackend } from '../api/backend';
+import type { MoverCard } from '../api/types';
+import { useCollectionStore, sealedValue } from '../store/collectionStore';
 import { useCollectionStats } from '../hooks/useCollectionStats';
 import { useMoney } from '../hooks/useMoney';
 import ValueChart from '../components/ValueChart';
@@ -120,11 +123,20 @@ export default function HomePage() {
   const isLoaded = useCollectionStore((s) => s.isLoaded);
   const history = useCollectionStore((s) => s.history);
   const wishlist = useCollectionStore((s) => s.wishlist);
+  const sealed = useCollectionStore((s) => s.sealed);
   const cards = useCollectionStore((s) => s.cards);
+  const collectionId = useCollectionStore((s) => s.collectionId);
   const stats = useCollectionStats();
   const money = useMoney();
   const { data: allSets } = useSets();
   const [chart, setChart] = useViewPref<'value' | 'gain'>('home.chart', 'value', ['value', 'gain']);
+  const [moversDays, setMoversDays] = useViewPref<'7' | '30'>('home.moversDays', '7', ['7', '30']);
+  const { data: movers, isLoading: moversLoading } = useQuery({
+    queryKey: ['movers', collectionId, moversDays],
+    queryFn: () => getBackend().movers(collectionId!, Number(moversDays) as 7 | 30),
+    enabled: !!collectionId,
+    staleTime: 5 * 60_000,
+  });
 
   const then = useMemo(() => {
     const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
@@ -154,6 +166,15 @@ export default function HomePage() {
     }
     return t;
   }, [wishlist, cards]);
+  const sealedStats = useMemo(() => {
+    let count = 0;
+    let valueUsd = 0;
+    for (const item of sealed.values()) {
+      if (item.status === 'sealed') count++;
+      valueUsd += sealedValue(item);
+    }
+    return { count, valueUsd };
+  }, [sealed]);
 
   if (!isLoaded) return <Skeleton className="h-80" />;
   if (stats.count === 0) return <Welcome />;
@@ -212,6 +233,11 @@ export default function HomePage() {
             <p className="mt-1.5 font-display text-[1.75rem] font-medium leading-none tabular group-hover:text-accent">{wishlist.size}</p>
             <p className="mt-1.5 text-xs text-muted">{wishlist.size ? `≈ ${money(wishCost, { compact: true })} to buy` : 'Nothing yet'}</p>
           </Link>
+          <Link to="/sealed" className="group border-t border-line py-4">
+            <p className="eyebrow">Sealed</p>
+            <p className="mt-1.5 font-display text-[1.75rem] font-medium leading-none tabular group-hover:text-accent">{sealedStats.count}</p>
+            <p className="mt-1.5 text-xs text-muted">{sealedStats.count ? `≈ ${money(sealedStats.valueUsd, { compact: true })} value` : 'Nothing yet'}</p>
+          </Link>
         </div>
       </section>
 
@@ -259,6 +285,36 @@ export default function HomePage() {
         </Strip>
       </section>
 
+      {/* Biggest movers */}
+      <section>
+        <div className="mb-4 flex items-end justify-between">
+          <h2 className="font-display text-2xl font-medium">Biggest movers</h2>
+          <Segmented
+            size="sm"
+            value={moversDays}
+            onChange={setMoversDays}
+            options={[
+              { value: '7', label: '7 days' },
+              { value: '30', label: '30 days' },
+            ]}
+          />
+        </div>
+        {moversLoading ? (
+          <div className="grid gap-x-10 gap-y-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-14" />
+            ))}
+          </div>
+        ) : movers && (movers.gainers.length > 0 || movers.losers.length > 0) ? (
+          <div className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+            <MoversList title="Rising" items={movers.gainers} money={money} />
+            <MoversList title="Falling" items={movers.losers} money={money} />
+          </div>
+        ) : (
+          <p className="border-y border-line py-8 text-center text-sm text-muted">Check back once there's more price history to compare.</p>
+        )}
+      </section>
+
       {inProgress.some((s) => s.p < 100) && (
         <section className="border-y border-line py-5">
           <p className="eyebrow mb-2">Closest to complete</p>
@@ -299,5 +355,42 @@ function MiniCard({ o, line, sub }: { o: { card: { id: string; name: string; ima
       <p className="truncate font-mono text-[10.5px] text-muted">{line}</p>
       {sub && <p className="truncate text-[10px] text-faint">{sub}</p>}
     </Link>
+  );
+}
+
+function MoversList({ title, items, money }: { title: string; items: MoverCard[]; money: (n: number) => string }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <p className="eyebrow mb-2">{title}</p>
+      <ul className="divide-y divide-line border-y border-line">
+        {items.map((m) => (
+          <li key={`${m.cardId}::${m.variant}`}>
+            <Link to={`/card/${m.cardId}`} className="group flex items-center gap-3 py-2.5">
+              <span className="h-11 w-8 shrink-0 overflow-hidden rounded-[4.5%/3.2%] shadow-card">
+                <CardImage id={m.cardId} src={m.image} name={m.name} setName={m.setName} alt={m.name} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium group-hover:text-accent">{m.name}</span>
+                <span className="block truncate text-xs text-muted">{variantLabel(m.variant)}</span>
+              </span>
+              <MoverDelta changeUsd={m.changeUsd} changePct={m.changePct} money={money} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MoverDelta({ changeUsd, changePct, money }: { changeUsd: number; changePct: number; money: (n: number) => string }) {
+  const up = changeUsd > 0;
+  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 font-mono text-xs font-medium tabular ${up ? 'text-gain' : 'text-loss'}`}>
+      <Icon size={13} />
+      {up ? '+' : '−'}
+      {money(Math.abs(changeUsd))} ({Math.abs(changePct).toFixed(1)}%)
+    </span>
   );
 }

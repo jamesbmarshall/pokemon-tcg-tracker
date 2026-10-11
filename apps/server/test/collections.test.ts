@@ -169,7 +169,7 @@ describe('import / export', () => {
     expect(st.entries.find((e: { cardId: string }) => e.cardId === 'sv1-001').quantity).toBe(3);
 
     const out = (await c.get(`/api/collections/${id}/export`)).json();
-    expect(out).toMatchObject({ app: 'poketracker', version: 4 });
+    expect(out).toMatchObject({ app: 'poketracker', version: 5 });
     expect(out.collection).toHaveLength(2);
     expect(out.graded[0].id).toBe('g9');
   });

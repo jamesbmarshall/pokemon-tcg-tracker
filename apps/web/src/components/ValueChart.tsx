@@ -2,43 +2,60 @@ import { useMemo, useState } from 'react';
 import type { ValuePoint } from '../api/types';
 import { formatDate } from '../utils/format';
 
-interface Props {
-  points: ValuePoint[];
+interface Props<T extends { date: string }> {
+  points: T[];
   format: (usd: number) => string;
   height?: number;
-  /** 'gain' plots market value minus cost for copies with a recorded purchase price. */
+  /** 'gain' plots market value minus cost for copies with a recorded purchase price. Only meaningful for ValuePoint data. */
   metric?: 'value' | 'gain';
+  /** Extracts the plotted value from a point. Defaults to a ValuePoint's valueUsd. */
+  value?: (point: T) => number;
+  /** Message shown when there are fewer than two points to plot. Defaults to the collection-value copy. */
+  emptyMessage?: string;
+  /** Caps how many of the most recent points are plotted. Defaults to 90, matching the original behaviour. */
+  maxPoints?: number;
 }
 
 const gainOf = (p: ValuePoint) => (p.costUsd == null ? undefined : (p.costedValueUsd ?? 0) - p.costUsd);
+const defaultValue = (p: ValuePoint) => p.valueUsd;
 
 const W = 600;
 
-export default function ValueChart({ points, format, height = 160, metric = 'value' }: Props) {
+export default function ValueChart<T extends { date: string } = ValuePoint>({
+  points,
+  format,
+  height = 160,
+  metric = 'value',
+  value,
+  emptyMessage,
+  maxPoints = 90,
+}: Props<T>) {
   const [hover, setHover] = useState<number | null>(null);
   const gain = metric === 'gain';
+  const accessor = value ?? (defaultValue as unknown as (point: T) => number);
   const data = useMemo(
     () =>
       [...points]
-        .filter((p) => !gain || gainOf(p) !== undefined)
+        .filter((p) => !gain || gainOf(p as unknown as ValuePoint) !== undefined)
         .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(-90),
-    [points, gain],
+        .slice(-maxPoints),
+    [points, gain, maxPoints],
   );
 
   if (data.length < 2) {
     return (
       <div className="grid place-items-center rounded-lg border border-dashed border-line text-center text-xs text-faint" style={{ height }}>
         <p className="max-w-60">
-          {gain
-            ? 'Gain and loss is tracked daily from the first day you record what you paid. Check back tomorrow.'
-            : 'Your value history builds up day by day. Come back tomorrow to see the trend line.'}
+          {emptyMessage ??
+            (gain
+              ? 'Gain and loss is tracked daily from the first day you record what you paid. Check back tomorrow.'
+              : 'Your value history builds up day by day. Come back tomorrow to see the trend line.')}
         </p>
       </div>
     );
   }
 
-  const values = data.map((d) => (gain ? gainOf(d)! : d.valueUsd));
+  const values = data.map((d) => (gain ? gainOf(d as unknown as ValuePoint)! : accessor(d)));
   const min = Math.min(...values, ...(gain ? [0] : []));
   const max = Math.max(...values, ...(gain ? [0] : []));
   const pad = (max - min) * 0.15 || Math.abs(max) * 0.1 || 1;

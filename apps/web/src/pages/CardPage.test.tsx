@@ -5,10 +5,11 @@ import CardPage from './CardPage';
 import { renderWithProviders } from '../test/render';
 import { errorResult, loadingResult, queryResult, resetStores, seedCollection } from '../test/ui-helpers';
 import { makeCard, makeEntry, makeGraded, makeSnapshot } from '../test/fixtures';
+import { memory } from '../test/memoryBackend';
 import { useCollectionStore } from '../store/collectionStore';
 import { useToasts } from '../store/toastStore';
 import type { Printing } from '../api/client';
-import type { PokemonCard } from '../api/types';
+import type { PokemonCard, PriceHistorySeries } from '../api/types';
 
 const mocks = vi.hoisted(() => ({ useCard: vi.fn(), useSetCards: vi.fn(), usePrintings: vi.fn() }));
 vi.mock('../api/hooks', () => ({ useCard: mocks.useCard, useSetCards: mocks.useSetCards, usePrintings: mocks.usePrintings }));
@@ -329,4 +330,87 @@ describe('CardPage', () => {
     expect(screen.getByText(/^Paid £1\.00 for 1 of 2/)).toHaveTextContent('−£0.50(−50%)');
   });
 
+  function series(over: Partial<PriceHistorySeries> = {}): PriceHistorySeries {
+    return {
+      variant: 'normal',
+      source: 'tcgplayer',
+      currency: 'USD',
+      points: [
+        { date: '2025-01-01', price: 1 },
+        { date: '2025-01-02', price: 1.5 },
+      ],
+      updatedAt: '2025-01-02T00:00:00.000Z',
+      url: 'https://tcgplayer.example/1',
+      ...over,
+    };
+  }
+
+  describe('price history', () => {
+    it('shows a collapsed sparkline that expands into a chart on click', async () => {
+      memory.priceHistories.set('sv03-002', { cardId: 'sv03-002', series: [series()] });
+      setup();
+      const panel = await screen.findByTestId('price-history-normal');
+      const toggle = within(panel).getByRole('button', { name: 'Show price history' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(panel.querySelector('svg')).toBeInTheDocument();
+      expect(within(panel).queryByText(/Updated/)).not.toBeInTheDocument();
+
+      await userEvent.click(toggle);
+      expect(within(panel).getByRole('button', { name: 'Hide price history' })).toHaveAttribute('aria-expanded', 'true');
+      expect(within(panel).getByText(/Updated/)).toHaveTextContent(/from/);
+      expect(within(panel).getByRole('link', { name: 'TCGplayer' })).toHaveAttribute('href', 'https://tcgplayer.example/1');
+    });
+
+    it('toggles between TCGplayer and Cardmarket series when both exist', async () => {
+      memory.priceHistories.set('sv03-002', {
+        cardId: 'sv03-002',
+        series: [
+          series({ points: [{ date: '2025-01-01', price: 1 }, { date: '2025-01-02', price: 1 }] }),
+          series({ source: 'cardmarket', currency: 'EUR', url: 'https://cardmarket.example/1', points: [{ date: '2025-01-01', price: 9 }, { date: '2025-01-02', price: 9 }] }),
+        ],
+      });
+      setup();
+      const panel = await screen.findByTestId('price-history-normal');
+      await userEvent.click(within(panel).getByRole('button', { name: 'Show price history' }));
+      expect(within(panel).getByRole('radio', { name: 'TCGplayer' })).toHaveAttribute('aria-checked', 'true');
+      // $1 market at the test FX rate (£0.50) is the TCGplayer value shown
+      expect(within(panel).getByText('£0.50')).toBeInTheDocument();
+
+      await userEvent.click(within(panel).getByRole('radio', { name: 'Cardmarket' }));
+      expect(within(panel).getByRole('radio', { name: 'Cardmarket' })).toHaveAttribute('aria-checked', 'true');
+      expect(within(panel).getByRole('link', { name: 'Cardmarket' })).toHaveAttribute('href', 'https://cardmarket.example/1');
+      // €9 → $10 (rates.EUR=0.9) → £5.00 at the test FX rate
+      expect(within(panel).getByText('£5.00')).toBeInTheDocument();
+    });
+
+    it('does not render a price-history block when there is no history for the card', () => {
+      setup();
+      expect(screen.queryByRole('button', { name: 'Show price history' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('manual value override', () => {
+    it('sets a manual value, shows a Manual badge and uses it over the market price', async () => {
+      seedCollection({ entries: [makeEntry({ cardId: 'sv03-002' })], cards: [makeSnapshot({ id: 'sv03-002' })] });
+      setup();
+      expect(screen.queryByText('Manual')).not.toBeInTheDocument();
+      const box = screen.getByRole('textbox', { name: 'Your value per Normal copy' });
+      await userEvent.type(box, '5{Enter}');
+      // Typed in the display currency: £5 at the test FX rate (£0.50/USD) is stored as $10
+      await waitFor(() => expect(useCollectionStore.getState().entries.get('sv03-002::normal')?.valueUsd).toBe(10));
+      expect(toasts().at(-1)?.message).toBe('Your value saved');
+      expect(box).toHaveValue('5.00');
+      expect(screen.getAllByText('£', { exact: true }).length).toBeGreaterThan(0);
+      // Overrides the $1 (£0.50) market price
+      expect(await screen.findByText('£5.00')).toBeInTheDocument();
+      expect(screen.getAllByText('Manual').length).toBeGreaterThan(0);
+
+      await userEvent.clear(box);
+      await userEvent.tab();
+      await waitFor(() => expect(useCollectionStore.getState().entries.get('sv03-002::normal')).not.toHaveProperty('valueUsd'));
+      expect(toasts().at(-1)?.message).toBe('Your value cleared');
+      expect(screen.queryByText('Manual')).not.toBeInTheDocument();
+      expect(screen.getByText(/£0\.50 market/)).toBeInTheDocument();
+    });
+  });
 });
