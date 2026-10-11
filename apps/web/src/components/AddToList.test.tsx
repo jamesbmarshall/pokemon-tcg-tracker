@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AddToList from './AddToList';
 import { renderWithProviders } from '../test/render';
@@ -33,6 +33,45 @@ function seedDecks(decks: CustomList[]) {
 
 beforeEach(async () => {
   await resetStores();
+});
+
+describe('AddToList — mobile picker', () => {
+  it.each([false, true])('keeps the picker inside both viewport edges (compact=%s)', async (compact) => {
+    let viewportWidth = 320;
+    let anchorLeft = 24;
+    let anchorRight = 100;
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockImplementation(() => viewportWidth);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { left: anchorLeft, right: anchorRight, width: this.getAttribute('aria-label') === 'Custom lists' ? 256 : anchorRight - anchorLeft } as DOMRect;
+    });
+    renderWithProviders(<AddToList card={CANDIDATE} compact={compact} />);
+    await userEvent.click(screen.getByRole('button', { name: compact ? /Add Charmeleon to a list/ : /Lists/ }));
+    const picker = screen.getByRole('group', { name: 'Custom lists' });
+    const pickerLeft = () => anchorLeft + parseFloat(picker.style.left);
+    expect(pickerLeft()).toBe(16);
+    expect(pickerLeft() + 256).toBeLessThanOrEqual(viewportWidth - 16);
+
+    // Reposition after a resize/orientation change, including a trigger near the right edge.
+    viewportWidth = 375;
+    anchorLeft = 330;
+    anchorRight = 370;
+    fireEvent(window, new Event('resize'));
+    expect(pickerLeft()).toBe(103);
+    expect(pickerLeft() + 256).toBe(viewportWidth - 16);
+  });
+
+  it('creates a list, adds the card, and lets the user toggle membership', async () => {
+    renderWithProviders(<AddToList card={CANDIDATE} />);
+    await userEvent.click(screen.getByRole('button', { name: /Lists/ }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'New list name' }), 'Fossil binder');
+    await userEvent.click(screen.getByRole('button', { name: 'Create list' }));
+    const checkbox = await screen.findByRole('checkbox', { name: /Fossil binder/ });
+    await waitFor(() => expect(checkbox).toHaveAttribute('aria-checked', 'true'));
+    expect(memory.lists[0].cards).toContain(CANDIDATE.id);
+    await userEvent.click(checkbox);
+    await waitFor(() => expect(checkbox).toHaveAttribute('aria-checked', 'false'));
+    expect(memory.lists[0].cards).not.toContain(CANDIDATE.id);
+  });
 });
 
 describe('AddToList — decks', () => {
