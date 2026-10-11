@@ -270,7 +270,7 @@ export default function Layout() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <nav data-mobile-nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}

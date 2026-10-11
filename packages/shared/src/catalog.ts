@@ -413,11 +413,11 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
 const LIST_FIELDS = 'id localId name image category rarity illustrator types hp stage variants { normal reverse holo firstEdition wPromo }';
 
 /** A card with full text and prices. */
-export async function getCard(cardId: string): Promise<PokemonCard> {
+export async function getCard(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
   const { lang, raw } = splitId(cardId);
   // Best effort: the set list adds release dates, but a card should still load without it.
   await ensureSets(lang).catch(() => undefined);
-  return toCard(await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, undefined, lang), true, lang);
+  return toCard(await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, signal, lang), true, lang);
 }
 
 /** Lightweight cards (no text/prices) for many ids in one round trip. Unknown ids are skipped. */
@@ -602,8 +602,8 @@ export interface Printing {
 }
 
 /** Other printings of a card name across physical sets, newest first. */
-export async function getPrintings(name: string, lang: Lang = 'en'): Promise<Printing[]> {
-  const [sets, raw] = await Promise.all([ensureSets(lang), rest<Brief[]>('/cards', { name: `eq:${name}` }, undefined, lang)]);
+export async function getPrintings(name: string, lang: Lang = 'en', signal?: AbortSignal): Promise<Printing[]> {
+  const [sets, raw] = await Promise.all([ensureSets(lang), rest<Brief[]>('/cards', { name: `eq:${name}` }, signal, lang)]);
   return raw
     .map((c) => ({ ...c, id: withLang(lang, c.id) }))
     .filter((c) => sets.has(setIdFromCardId(c.id)))

@@ -431,6 +431,17 @@ describe('search', () => {
   });
 });
 
+
+it('passes navigation cancellation signals to detail and printings fetches', async () => {
+  const fetch = mockFetch([setsRoute, { match: '/cards/sv03-125', body: detail() }, { match: '/cards?', body: [] }]);
+  const controller = new AbortController();
+  await api.getCard('sv03-125', controller.signal);
+  await api.getPrintings('Pikachu', 'en', controller.signal);
+  const requests = fetch.mock.calls.filter(([url]) => String(url).includes('/cards'));
+  expect(requests).toHaveLength(2);
+  for (const [, init] of requests) expect(init?.signal).toBe(controller.signal);
+});
+
 it('maps TCGdex Normal energy to Basic for deck copy limits', async () => {
   mockFetch([setsRoute, { match: '/cards/sv03-125', body: detail({ category: 'Energy', energyType: 'Normal', stage: undefined, suffix: undefined }) }]);
   expect((await api.getCard('sv03-125')).subtypes).toContain('Basic');

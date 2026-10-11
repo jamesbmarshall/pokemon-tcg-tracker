@@ -8,6 +8,8 @@ import { cardVariants, compareCardNumber, toSnapshot, usdPrices } from '../api/c
 import { costBasis, entryValue, ownedTotal, priceOf, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
 import AddToList from '../components/AddToList';
 import { useFx, useMoney, useRates } from '../hooks/useMoney';
+import { useCardArtworkSize } from '../hooks/useCardArtworkSize';
+import { imageSrc } from '../api/client';
 import { useSwipe } from '../hooks/useSwipe';
 import { Gain, PaidInput } from '../components/Paid';
 import { ManualBadge, ValueInput } from '../components/ValueOverride';
@@ -161,7 +163,7 @@ export default function CardPage() {
   const { cardId = '' } = useParams();
   const navigate = useNavigate();
   const { state } = useLocation();
-  const { data: card, isLoading, error, refetch } = useCard(cardId);
+  const { data: card, isLoading, error, refetch, isPlaceholderData } = useCard(cardId);
   const setId = card?.set.id ?? '';
   const { data: setCards } = useSetCards(setId);
   const owned = useOwned(cardId);
@@ -181,20 +183,22 @@ export default function CardPage() {
   const allEntries = useCollectionStore((s) => s.entries);
   const fromEur = (eur?: number) => (eur == null ? undefined : eur / (rates?.EUR || 0.89));
 
+  const list = useMemo(() => setCards ? [...setCards].sort(compareCardNumber) : [], [setCards]);
   const { prev, next, pos } = useMemo(() => {
-    const list = setCards ? [...setCards].sort(compareCardNumber) : [];
     const i = list.findIndex((c) => c.id === cardId);
     return { prev: i > 0 ? list[i - 1] : undefined, next: i >= 0 && i < list.length - 1 ? list[i + 1] : undefined, pos: i };
-  }, [setCards, cardId]);
+  }, [list, cardId]);
 
   // Keep the local snapshot (and its price) fresh whenever an owned or wishlisted card is viewed
   useEffect(() => {
-    if (card && (owned || wished)) void remember([card]);
-  }, [card, owned, wished, remember]);
+    if (card && !isPlaceholderData && (owned || wished)) void remember([card]);
+  }, [card, isPlaceholderData, owned, wished, remember]);
 
   // `dir` tells the incoming card which side to slide in from.
   const go = (to: PokemonCard | undefined, dir: 1 | -1) => to && navigate(`/card/${to.id}`, { state: { dir } });
   const swipeRef = useSwipe<HTMLDivElement>({ onSwipeLeft: () => go(next, 1), onSwipeRight: () => go(prev, -1) });
+  const artworkRef = useCardArtworkSize();
+
   const slide = (state as { dir?: number } | null)?.dir;
 
   useEffect(() => {
@@ -246,7 +250,11 @@ export default function CardPage() {
   const foilish = /holo|rare|ex|illustration|secret|ultra|gx|vmax|vstar/i.test(card.rarity ?? '') || variants.some(isFoil);
 
   return (
-    <div ref={swipeRef} className="space-y-12">
+    <div ref={swipeRef} className="space-y-5 md:space-y-12">
+      {/* Reuse two DOM images rather than creating detached Image objects on every swipe. */}
+      <div hidden aria-hidden="true">
+        {[prev, next].map((neighbour, i) => <img key={i} src={neighbour?.images.large ? imageSrc(neighbour.images.large) : undefined} alt="" decoding="async" />)}
+      </div>
       <div className="flex items-center justify-between gap-4">
         <Link
           to={`/sets/${card.set.id}`}
@@ -280,12 +288,12 @@ export default function CardPage() {
       </div>
 
       <div className="relative grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
-        <div className="relative mx-auto w-full max-w-[400px] md:sticky md:top-10 md:self-start">
-          <div key={card.id} className={slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : undefined}>
+        <div ref={artworkRef} className="relative mx-auto w-full max-w-[400px] md:sticky md:top-10 md:self-start">
+          <div key={card.id} className={`card-artwork mx-auto ${slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : ''}`}>
             <HoloCard id={card.id} src={card.images.large} name={card.name} number={card.number} setName={card.set.name} types={card.types} foil={foilish} />
           </div>
-          <p className="mt-4 text-center text-xs text-faint pointer-coarse:hidden">Move your pointer over the card</p>
-          {(prev || next) && <p className="mt-4 hidden text-center text-xs text-faint pointer-coarse:block">Swipe left or right to browse the set</p>}
+          <p data-artwork-hint className="mt-4 text-center text-xs text-faint pointer-coarse:hidden">Move your pointer over the card</p>
+          {(prev || next) && <p data-artwork-hint className="mt-4 hidden text-center text-xs text-faint pointer-coarse:block">Swipe left or right to browse the set</p>}
         </div>
 
         <div className="relative min-w-0 space-y-8">

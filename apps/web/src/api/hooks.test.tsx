@@ -84,6 +84,25 @@ describe('useSetCards', () => {
 });
 
 describe('simple queries', () => {
+  it('shows the destination listing card immediately while full details load', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const brief = makeCard({ id: 'sv03-002', name: 'Destination' });
+    client.setQueryData(['setCards', 'sv03'], [brief]);
+    let resolve!: (card: ReturnType<typeof makeCard>) => void;
+    c.getCard.mockReturnValue(new Promise((done) => { resolve = done; }));
+    const { result } = renderHook(() => h.useCard('sv03-002'), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    expect(result.current.data?.name).toBe('Destination');
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isPlaceholderData).toBe(true);
+    // Brief listings must not become cached full responses or suppress the full request.
+    expect(client.getQueryData(['card', 'sv03-002'])).toBeUndefined();
+    resolve(makeCard({ id: 'sv03-002', name: 'Full details' }));
+    await waitFor(() => expect(result.current.data?.name).toBe('Full details'));
+    expect(result.current.isPlaceholderData).toBe(false);
+  });
+
   it('useSet, useCard, usePrintings and useRarities call through', async () => {
     c.getSet.mockResolvedValue(makeSet());
     c.getCard.mockResolvedValue(makeCard());
@@ -92,8 +111,28 @@ describe('simple queries', () => {
     const { result } = renderHook(() => [h.useSet('sv03'), h.useCard('sv03-001'), h.usePrintings('Charmander'), h.useRarities()] as const, { wrapper });
     await waitFor(() => expect(result.current.every((q) => q.isSuccess)).toBe(true));
     expect(c.getSet).toHaveBeenCalledWith('sv03');
-    expect(c.getCard).toHaveBeenCalledWith('sv03-001');
-    expect(c.getPrintings).toHaveBeenCalledWith('Charmander', 'en');
+    expect(c.getCard).toHaveBeenCalledWith('sv03-001', expect.any(AbortSignal));
+    expect(c.getPrintings).toHaveBeenCalledWith('Charmander', 'en', expect.any(AbortSignal));
+  });
+
+  it('cancels obsolete detail and printings requests across repeated navigation', () => {
+    c.getCard.mockImplementation(() => new Promise(() => {}));
+    c.getPrintings.mockImplementation(() => new Promise(() => {}));
+    const { rerender, unmount } = renderHook(({ id }) => [h.useCard(`sv03-${id}`), h.usePrintings(`Name ${id}`)], {
+      wrapper, initialProps: { id: 0 },
+    });
+    for (let id = 1; id <= 50; id++) {
+      const cardSignal = c.getCard.mock.calls.at(-1)![1] as AbortSignal;
+      const printingsSignal = c.getPrintings.mock.calls.at(-1)![2] as AbortSignal;
+      expect(cardSignal.aborted).toBe(false);
+      expect(printingsSignal.aborted).toBe(false);
+      rerender({ id });
+      expect(cardSignal.aborted).toBe(true);
+      expect(printingsSignal.aborted).toBe(true);
+    }
+    unmount();
+    expect(c.getCard.mock.calls.every((args) => args[1].aborted)).toBe(true);
+    expect(c.getPrintings.mock.calls.every((args) => args[2].aborted)).toBe(true);
   });
 
   it('disabled when ids are empty', () => {

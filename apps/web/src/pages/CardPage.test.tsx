@@ -229,6 +229,30 @@ describe('CardPage', () => {
     expect(screen.getByText('Swipe left or right to browse the set')).toBeInTheDocument();
   });
 
+  it('keeps exactly one artwork mounted through repeated navigation', () => {
+    mocks.useCard.mockImplementation((id: string) => queryResult(makeCard({ id, name: id })));
+    renderWithProviders(<CardPage />, { route: '/card/sv03-002', path: '/card/:cardId' });
+    const preloadImages = Array.from(document.querySelectorAll('[hidden] img'));
+    expect(preloadImages).toHaveLength(2);
+    for (let i = 0; i < 100; i++) {
+      const artwork = document.querySelector('.card-artwork')!;
+      const left = i % 2 === 0;
+      fireEvent.touchStart(artwork, { touches: [{ clientX: left ? 300 : 100, clientY: 300 }] });
+      fireEvent.touchEnd(artwork, { touches: [], changedTouches: [{ clientX: left ? 100 : 300, clientY: 300 }] });
+      expect(location()).toBe(left ? '/card/sv03-003' : '/card/sv03-002');
+      expect(document.querySelectorAll('.card-artwork')).toHaveLength(1);
+      expect(document.querySelectorAll('.foil')).toHaveLength(1);
+      expect(Array.from(document.querySelectorAll('[hidden] img'))).toEqual(preloadImages);
+    }
+  });
+
+  it('does not refresh owned snapshots from incomplete listing placeholders', () => {
+    mocks.useCard.mockReturnValue({ ...queryResult(makeCard({ id: 'sv03-001' })), isPlaceholderData: true });
+    const remember = vi.spyOn(useCollectionStore.getState(), 'remember');
+    renderWithProviders(<CardPage />, { route: '/card/sv03-001', path: '/card/:cardId' });
+    expect(remember).not.toHaveBeenCalled();
+  });
+
   it('goes back to the set with a click or Escape, unless a dialog is open', async () => {
     const first = setup();
     const dialog = document.createElement('div');

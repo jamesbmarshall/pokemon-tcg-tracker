@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CardImage from './CardImage';
 
 /** Large card image with pointer-driven 3D tilt and foil sheen. */
@@ -17,7 +17,10 @@ export default function HoloCard({ id, src, name, number, setName, types, foil =
   const [loaded, setLoaded] = useState(false);
   const raf = useRef(0);
 
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
   const move = (e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') return;
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
@@ -47,12 +50,13 @@ export default function HoloCard({ id, src, name, number, setName, types, foil =
   };
 
   return (
-    <div className="[perspective:1200px]">
+    <div className="[perspective:1200px] pointer-coarse:[perspective:none]">
       <div
         ref={ref}
         onPointerMove={move}
         onPointerLeave={leave}
-        className="relative aspect-[63/88] w-full touch-pan-y overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 shadow-object [transform-style:preserve-3d] [transform:rotateX(var(--rx,0))_rotateY(var(--ry,0))]"
+        onPointerCancel={leave}
+        className="relative aspect-[63/88] w-full touch-pan-y overflow-hidden rounded-[4.5%/3.2%] bg-surface-2 shadow-object pointer-coarse:[transform:none] pointer-coarse:[transform-style:flat] [transform-style:preserve-3d] [transform:rotateX(var(--rx,0))_rotateY(var(--ry,0))]"
       >
         {!loaded && <div className="absolute inset-0 animate-pulse bg-surface-2" />}
         <CardImage
@@ -66,10 +70,10 @@ export default function HoloCard({ id, src, name, number, setName, types, foil =
           hires
           loading="eager"
           onLoad={() => setLoaded(true)}
-          className={`transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`transition-opacity duration-150 pointer-coarse:transition-none ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
-        <div className="foil" />
-        <div className="glare" />
+        <div className="foil pointer-coarse:hidden" />
+        <div className="glare pointer-coarse:hidden" />
       </div>
     </div>
   );

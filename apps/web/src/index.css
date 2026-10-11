@@ -282,3 +282,12 @@ html[data-theme='dark'] {
 [data-flash] > a > div:first-child {
   animation: flash 1.6s ease-out both;
 }
+
+
+/* Keep the complete artwork above the mobile tab bar, including in short viewports.
+   JS measures the actual toolbar/hint/tab heights; svh is the first-paint fallback. */
+@media (width < 768px) {
+  .card-artwork {
+    width: min(100%, var(--card-artwork-width, calc((100svh - 18rem - env(safe-area-inset-bottom)) * 63 / 88)));
+  }
+}
