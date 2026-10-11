@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Copy, X } from 'lucide-react';
 import { useSubmit } from './formUtils';
@@ -31,37 +31,50 @@ export function FormError({ error }: { error: string | null | undefined }) {
 
 export function CopyField({ value, label = 'Link' }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
   return (
-    <div className="flex gap-2">
-      <input readOnly value={value} aria-label={label} className="input font-mono !text-xs" onFocus={(e) => e.currentTarget.select()} />
-      <button
-        type="button"
-        className="btn btn-ghost shrink-0"
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(value);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          } catch {
-            /* clipboard blocked: the field is selectable */
-          }
-        }}
-      >
-        {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy'}
-      </button>
+    <div>
+      <div className="flex gap-2">
+        <input ref={input} readOnly value={value} aria-label={label} className="input font-mono !text-xs" onFocus={(e) => e.currentTarget.select()} />
+        <button
+          type="button"
+          className="btn btn-ghost shrink-0"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setCopyError(false);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {
+              input.current?.focus();
+              input.current?.select();
+              setCopyError(true);
+            }
+          }}
+        >
+          {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      {copyError && <p role="status" className="mt-1.5 text-xs text-muted">Could not copy automatically. Select and copy the link above.</p>}
     </div>
   );
 }
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   useEffect(() => {
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = overflow;
+      window.removeEventListener('keydown', onKey);
+    };
   }, [onClose]);
   return createPortal(
     <div className="fixed inset-0 z-[80] grid place-items-center bg-onyx/45 p-4" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} className={`w-full rounded-xl border border-line-strong bg-surface shadow-pop ${wide ? 'max-w-xl' : 'max-w-md'} p-6`} onMouseDown={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className={`max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-surface shadow-pop ${wide ? 'max-w-xl' : 'max-w-md'} p-6`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="font-display text-lg font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:text-fg" aria-label="Close">
