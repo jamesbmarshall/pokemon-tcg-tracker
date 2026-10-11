@@ -56,6 +56,7 @@ describe('SetsPage', () => {
     expect(headings.map((h) => h.textContent)).toEqual(['Scarlet & Violet', 'Base']);
     expect(headings[0].nextElementSibling).toHaveTextContent('2 sets');
     expect(tiles()).toEqual(['/sets/sv03', '/sets/sv02', '/sets/tiny', '/sets/base1']);
+    expect(tile('sv03').parentElement).toHaveClass('grid-cols-1');
   });
 
   it('shows totals, secret counts and progress on tiles', () => {

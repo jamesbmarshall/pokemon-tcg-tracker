@@ -94,7 +94,7 @@ export function ListsPage() {
           {readOnly ? 'Nobody has made a list in this collection.' : 'Start one here, or use the Lists button on any card page.'}
         </EmptyState>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {lists.map((l) => (
             <li key={l.id}>
               <Link to={`/lists/${l.id}`} className="panel group flex gap-4 p-4 transition-colors hover:border-line-strong">
@@ -192,7 +192,7 @@ export function ListPage() {
       </PageHeader>
 
       {items.length ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {items.map((c, i) => (
             <div key={c.id}>
               <CardTile card={c} showSet index={i} />

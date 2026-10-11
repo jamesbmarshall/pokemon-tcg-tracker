@@ -60,6 +60,21 @@ describe('HomePage', () => {
     expect(screen.queryByRole('heading')).not.toBeInTheDocument();
   });
 
+  it('gives every responsive grid section an explicit base grid-cols-1 (regression: narrow-viewport overflow)', () => {
+    // Without a base grid-cols-1, CSS Grid auto-places hero/showcase sections into
+    // implicit content-sized columns on narrow screens instead of stacking, overflowing the
+    // viewport. The lg:/xl: overrides should only apply from those breakpoints up.
+    seedCollection();
+    renderWithProviders(<HomePage />);
+    const grids = Array.from(document.querySelectorAll('.grid')).filter((el) =>
+      /\b(lg|xl):grid-cols-/.test(el.className),
+    );
+    expect(grids.length).toBeGreaterThan(0);
+    for (const grid of grids) {
+      expect(grid.className).toMatch(/\bgrid-cols-1\b/);
+    }
+  });
+
   describe('welcome', () => {
     beforeEach(() => seedCollection());
 

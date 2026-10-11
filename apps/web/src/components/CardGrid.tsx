@@ -20,7 +20,7 @@ export default function CardGrid({
   dimMissing?: boolean;
   showSet?: boolean;
   quickAdd?: boolean;
-  /** Show wishlist and custom-list buttons on each tile. */
+  /** Show a custom-list button on each tile. */
   listActions?: boolean;
 }) {
   const items: GridTile[] = tiles ?? (cards ?? []).map((card) => ({ card }));

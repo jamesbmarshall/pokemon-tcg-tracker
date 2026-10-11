@@ -18,7 +18,7 @@ import { describeAgent, relativeTime } from '../utils/format';
 /** Two-column settings section (heading left, controls right), also used by the Admin page. */
 export function Section({ title, description, children }: { title: string; description?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="grid gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
+    <section className="grid grid-cols-1 gap-4 border-b border-line py-8 md:grid-cols-[260px_1fr]">
       <div>
         <h2 className="font-semibold">{title}</h2>
         {description && <div className="mt-1 text-sm text-muted">{description}</div>}
@@ -88,7 +88,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
       <p className="text-sm text-muted">
         Each code signs you in once if you lose your phone. Keep them somewhere safe, like a password manager. You won't see them again.
       </p>
-      <ul className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-line bg-surface-2 p-4 font-mono text-sm">
+      <ul className="mt-4 grid grid-cols-1 gap-2 rounded-xl border border-line bg-surface-2 p-4 font-mono text-sm sm:grid-cols-2">
         {codes.map((c) => (
           <li key={c}>{c}</li>
         ))}
