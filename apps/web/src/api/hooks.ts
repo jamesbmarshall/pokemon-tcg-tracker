@@ -6,12 +6,12 @@
  * configureForServer() has run.
  */
 import { useEffect } from 'react';
-import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { getCard, getPrintings, getRarities, getSet, getSetCards, getSets, primeSets, searchCards, type SearchFilters } from './client';
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getCard, getPrintings, getRarities, getSet, getSetCards, getSets, primeSets, searchCards, setIdFromCardId, type SearchFilters } from './client';
 import { LANGUAGES, type Lang } from './languages';
 import { useCollectionStore } from '../store/collectionStore';
 import { cardVariants } from './client';
-import type { CardSet } from './types';
+import type { CardSet, PokemonCard } from './types';
 
 const HOUR = 1000 * 60 * 60;
 
@@ -78,7 +78,13 @@ export function useSetCards(setId: string) {
 }
 
 export function useCard(cardId: string) {
-  return useQuery({ queryKey: ['card', cardId], queryFn: () => getCard(cardId), staleTime: HOUR, enabled: !!cardId });
+  const client = useQueryClient();
+  return useQuery<PokemonCard>({
+    queryKey: ['card', cardId], queryFn: ({ signal }) => getCard(cardId, signal), staleTime: HOUR, enabled: !!cardId,
+    // Set listings already contain artwork and numbering. Show the destination immediately
+    // while its full text/prices load, without caching the brief card as a full response.
+    placeholderData: () => client.getQueryData<PokemonCard[]>(['setCards', setIdFromCardId(cardId)])?.find((c) => c.id === cardId),
+  });
 }
 
 export function useSearch(filters: SearchFilters, enabled: boolean) {
@@ -94,7 +100,7 @@ export function useSearch(filters: SearchFilters, enabled: boolean) {
 }
 
 export function usePrintings(name: string, lang: Lang = 'en') {
-  return useQuery({ queryKey: ['printings', name, lang], queryFn: () => getPrintings(name, lang), staleTime: HOUR, enabled: !!name });
+  return useQuery({ queryKey: ['printings', name, lang], queryFn: ({ signal }) => getPrintings(name, lang, signal), staleTime: HOUR, enabled: !!name });
 }
 
 export function useRarities(lang: Lang = 'en') {

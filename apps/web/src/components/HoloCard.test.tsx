@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import HoloCard from './HoloCard';
 import { resetStores } from '../test/ui-helpers';
 
@@ -44,6 +44,34 @@ describe('HoloCard', () => {
     expect(tilt.style.getPropertyValue('--rx')).toBe('0deg');
     expect(tilt.style.getPropertyValue('--ry')).toBe('0deg');
     expect(tilt.style.getPropertyValue('--foil-o')).toBe('0');
+  });
+
+  it('does no tilt or foil work for touch swipes', () => {
+    const { tilt } = renderCard();
+    const request = vi.spyOn(window, 'requestAnimationFrame');
+    const event = new Event('pointermove', { bubbles: true });
+    Object.assign(event, { pointerType: 'touch', clientX: 100, clientY: 0 });
+    fireEvent(tilt, event);
+    expect(tilt.getBoundingClientRect).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('cancels pending frames each time a card unmounts', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let id = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.set(++id, callback);
+      return id;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((frame) => { frames.delete(frame); });
+    for (let i = 0; i < 100; i++) {
+      const { container, unmount } = render(<HoloCard id={`test-${i}`} src="https://img/high.webp" name="Test" />);
+      fireEvent.pointerMove(container.querySelector('img')!.parentElement!, { clientX: 10, clientY: 20 });
+      expect(frames.size).toBe(1);
+      unmount();
+      expect(frames.size).toBe(0);
+    }
+    act(() => { frames.forEach((callback) => callback(0)); });
   });
 
   it('uses a softer sheen for non-foil cards', async () => {
