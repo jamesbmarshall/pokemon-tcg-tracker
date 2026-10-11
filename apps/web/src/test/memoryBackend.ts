@@ -48,6 +48,8 @@ export class MemoryBackend implements Backend {
   priceHistories = new Map<string, CardPriceHistory>();
   /** When set, movers() returns this canned response instead of computing one from state. */
   moversResponse: { gainers: MoverCard[]; losers: MoverCard[] } | null = null;
+  /** Drives status().catalogDegraded, for testing the stale-catalogue banner. */
+  catalogDegraded = false;
   /** The catalogue the "server" hydrates from; swap in a mock to control prices. */
   catalog: (ids: string[]) => Promise<PokemonCard[]> = getCardsByIds;
   /** Controls pcConfigured()/pcAdminStatus(); tests flip this to show/hide PriceCharting UI. */
@@ -408,7 +410,7 @@ export class MemoryBackend implements Backend {
   }
 
   status() {
-    return this.call('status', (): SystemStatus => ({ version: 'test', lastPriceSync: this.lastPriceSync, fxAt: null }));
+    return this.call('status', (): SystemStatus => ({ version: 'test', lastPriceSync: this.lastPriceSync, fxAt: null, catalogDegraded: this.catalogDegraded }));
   }
 
   refreshPrices() {

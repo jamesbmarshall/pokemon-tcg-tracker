@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
 import { Crown, Database, Download, Link2, Lock, Play, Plug, Plus, RefreshCw, Trash2, UserX } from 'lucide-react';
 import { api } from '../api/http';
+import type { ProviderHealth, ProviderHealthReport } from '../api/backend';
 import { isAdmin, useAuth, type Role, type User } from '../store/authStore';
 import { toast } from '../store/toastStore';
 import { PageHeader, Segmented } from '../components/ui';
@@ -424,6 +425,41 @@ function JobsTab({ me }: { me: User }) {
           </div>
         </div>
       )}
+
+      <ProviderHealthPanel />
+    </div>
+  );
+}
+
+/** Breaker state and recent failures for each upstream provider (catalogue + price fallback). */
+function ProviderHealthPanel() {
+  const health = useQuery({ queryKey: ['admin', 'providers'], queryFn: () => api<ProviderHealthReport>('/api/admin/providers'), refetchInterval: 30000 });
+  if (!health.data) return null;
+  const rows: { label: string; h: ProviderHealth & { configured?: boolean } }[] = [
+    { label: 'TCGdex (catalogue & prices)', h: health.data.tcgdex },
+    { label: 'PriceCharting (price fallback)', h: health.data.pricecharting },
+  ];
+  const tone = (state: ProviderHealth['state']): 'good' | 'warn' | 'bad' | 'muted' => (state === 'closed' ? 'good' : state === 'half-open' ? 'warn' : 'bad');
+  const label = (state: ProviderHealth['state']) => (state === 'closed' ? 'Healthy' : state === 'half-open' ? 'Checking' : 'Unreachable');
+  return (
+    <div>
+      <p className="eyebrow mb-2">Provider health</p>
+      <ul className="divide-y divide-line rounded-2xl border border-line">
+        {rows.map(({ label: name, h }) => (
+          <li key={h.name} className="px-4 py-3">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              {name}
+              {h.configured === false ? <StatusPill tone="muted">Not set up</StatusPill> : <StatusPill tone={tone(h.state)}>{label(h.state)}</StatusPill>}
+              {h.staleServedCount > 0 && <StatusPill tone="warn">{h.staleServedCount} stale response{h.staleServedCount === 1 ? '' : 's'} served</StatusPill>}
+            </p>
+            <p className="mt-0.5 text-xs text-faint">
+              {h.lastSuccessAt ? `Last success ${relativeTime(new Date(h.lastSuccessAt).toISOString())}` : 'No successful calls yet'}
+              {h.lastFailureAt && ` · last failure ${relativeTime(new Date(h.lastFailureAt).toISOString())}`}
+            </p>
+            {h.lastError && <p className="mt-1 break-words font-mono text-[11px] text-loss">{h.lastError}</p>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

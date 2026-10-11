@@ -185,6 +185,27 @@ describe('Jobs', () => {
     expect(await screen.findByText('Check for updates')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /run now/i })).not.toBeInTheDocument();
   });
+
+  it('shows provider health, including stale-served counts and an unreachable state', async () => {
+    const user = userEvent.setup();
+    mockApi({
+      'GET /api/admin/users': users,
+      'GET /api/admin/jobs': [job({})],
+      'GET /api/admin/storage': { dbBytes: 0, images: { count: 0, bytes: 0, capBytes: 0 }, backups: 0 },
+      'GET /api/admin/providers': {
+        tcgdex: { name: 'tcgdex', state: 'open', consecutiveFailures: 5, lastSuccessAt: '2025-01-01T00:00:00Z', lastFailureAt: '2025-01-02T00:00:00Z', lastError: 'fetch failed', staleServedCount: 3, openedAt: '2025-01-02T00:00:00Z' },
+        pricecharting: { name: 'pricecharting', state: 'closed', consecutiveFailures: 0, lastSuccessAt: null, lastFailureAt: null, lastError: null, staleServedCount: 0, openedAt: null, configured: false },
+      },
+    });
+    renderWithProviders(<AdminPage />);
+    await user.click(screen.getByRole('radio', { name: 'Jobs' }));
+    expect(await screen.findByText('TCGdex (catalogue & prices)')).toBeInTheDocument();
+    expect(screen.getByText('Unreachable')).toBeInTheDocument();
+    expect(screen.getByText('fetch failed')).toBeInTheDocument();
+    expect(screen.getByText('3 stale responses served')).toBeInTheDocument();
+    expect(screen.getByText('PriceCharting (price fallback)')).toBeInTheDocument();
+    expect(screen.getByText('Not set up')).toBeInTheDocument();
+  });
 });
 
 it('backs up, links downloads and deletes a backup after confirming', async () => {

@@ -90,7 +90,7 @@ async function pcGet(ctx: Ctx, path: string, params: Record<string, string>, ttl
   const qs = new URLSearchParams({ ...params, t: key }).toString();
   // Cache key omits the token so rotating the key doesn't silently serve another account's cache.
   const cacheKey = `PC ${path}?${new URLSearchParams(params).toString()}`;
-  const r = await cachedUpstream(ctx, cacheKey, `${BASE}${path}?${qs}`, {}, ttl);
+  const r = await cachedUpstream(ctx, 'pricecharting', cacheKey, `${BASE}${path}?${qs}`, {}, ttl);
   if (r.status !== 200) throw new HttpError(502, 'PriceCharting request failed', 'upstream');
   try {
     return JSON.parse(r.body.toString('utf8'));
@@ -145,6 +145,22 @@ export function pcGradedPrice(p: PcProduct, company: string, grade: string): num
     if (v != null) return v;
   }
   return undefined;
+}
+
+/**
+ * Best-effort single-card fallback price when TCGdex has no TCGplayer/Cardmarket price at all
+ * for a card. Zero requests when no key is configured. There is no per-card PriceCharting id
+ * mapping (unlike graded slabs and sealed product, which the owner links by hand), so this
+ * searches by name + set and takes the top result — the same best-effort approach the module
+ * comment at the top of this file documents for the API shape itself. Returns undefined on any
+ * failure or when nothing plausible comes back, so a fallback that doesn't pan out never breaks
+ * the price refresh.
+ */
+export async function pcCardFallback(ctx: Ctx, card: { name: string; set: { name: string } }): Promise<number | undefined> {
+  if (!pcConfigured(ctx)) return undefined;
+  const results = await pcSearch(ctx, `${card.name} ${card.set.name}`);
+  if (!results.length) return undefined;
+  return pcSealedPrice(results[0]);
 }
 
 /** Refreshes pc_price for every graded slab linked to a PriceCharting product. Used by the 'prices' job. */

@@ -9,7 +9,7 @@ import ValueChart from './ValueChart';
 import type { PriceHistorySource } from '../api/types';
 
 const HOUR = 1000 * 60 * 60;
-const SOURCE_LABEL: Record<PriceHistorySource, string> = { tcgplayer: 'TCGplayer', cardmarket: 'Cardmarket' };
+const SOURCE_LABEL: Record<PriceHistorySource, string> = { tcgplayer: 'TCGplayer', cardmarket: 'Cardmarket', pricecharting: 'PriceCharting' };
 const RANGES = [
   { value: 30 as const, label: '30d' },
   { value: 90 as const, label: '90d' },

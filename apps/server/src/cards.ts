@@ -3,12 +3,14 @@
  * per card in the cards table and shared by every collection, so pricing work scales with the
  * number of distinct cards, not with users. Value history is computed here from those prices.
  */
-import { configureCatalog, getCardsByIds, toSnapshot } from '@poketracker/shared/catalog';
+import { configureCatalog, toSnapshot } from '@poketracker/shared/catalog';
 import { FALLBACK_RATES, todayKey, valuePoint, type Rates } from '@poketracker/shared/value';
 import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, MoverCard, PokemonCard, PriceHistorySeries, PriceHistorySource, ValuePoint } from '@poketracker/shared/types';
 import { json, type Db } from './db.ts';
 import type { Ctx } from './context.ts';
 import { readSealed } from './sealed.ts';
+import { tcgdexProvider } from './providers/tcgdex.ts';
+import { pcCardFallback, pcConfigured } from './providers/pricecharting.ts';
 
 /** Latest stored FX rates, or built-in fallbacks before the first successful fx job. */
 export function currentRates(db: Db): Rates {
@@ -65,12 +67,13 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
 
 /**
  * Upserts today's market price per card/variant/source, in that source's native currency
- * (TCGplayer USD, Cardmarket EUR). `INSERT OR REPLACE` on the (card, variant, source, date)
- * primary key makes this idempotent: refreshing the same card again today just updates today's
- * row rather than creating a duplicate.
+ * (TCGplayer USD, Cardmarket EUR), plus any PriceCharting fallback prices supplied for variants
+ * TCGdex had no price for. `INSERT OR REPLACE` on the (card, variant, source, date) primary key
+ * makes this idempotent: refreshing the same card again today just updates today's row rather
+ * than creating a duplicate.
  */
-function writePriceHistory(db: Db, cards: PokemonCard[]) {
-  if (!cards.length) return;
+function writePriceHistory(db: Db, cards: PokemonCard[], pcFallbacks: Map<string, { price: number; variants: string[] }>) {
+  if (!cards.length && !pcFallbacks.size) return;
   const date = todayKey();
   db.tx(() => {
     for (const card of cards) {
@@ -93,6 +96,20 @@ function writePriceHistory(db: Db, cards: PokemonCard[]) {
           );
         }
       }
+      const pc = pcFallbacks.get(card.id);
+      if (pc) {
+        for (const variant of pc.variants) {
+          db.run(
+            'INSERT OR REPLACE INTO price_history (card_id, variant, source, date, price, currency) VALUES (?, ?, ?, ?, ?, ?)',
+            card.id,
+            variant,
+            'pricecharting',
+            date,
+            pc.price,
+            'USD',
+          );
+        }
+      }
     }
   });
 }
@@ -101,6 +118,10 @@ function writePriceHistory(db: Db, cards: PokemonCard[]) {
  * Fetches full (priced) snapshots from TCGdex and stores them. Returns how many were refreshed.
  * A failed batch is logged and skipped so the rest still refresh; the call only throws when
  * every batch failed, which points at TCGdex being down rather than a few bad ids.
+ *
+ * When TCGdex has no TCGplayer/Cardmarket price at all for one of a card's variants, and a
+ * PriceCharting key is configured, PriceCharting is tried as a fallback source for just those
+ * variants (manual overrides and TCGdex prices still always win — see usdPrices()).
  */
 export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
   let refreshed = 0;
@@ -108,9 +129,29 @@ export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
   // Saved batch by batch so a long run keeps its progress if a later batch fails.
   for (let i = 0; i < ids.length; i += 40) {
     try {
-      const fresh = await getCardsByIds(ids.slice(i, i + 40));
-      saveSnapshots(ctx.db, fresh.map(toSnapshot));
-      writePriceHistory(ctx.db, fresh);
+      const fresh = await tcgdexProvider.getCardsByIds(ids.slice(i, i + 40));
+      const pcFallbacks = new Map<string, { price: number; variants: string[] }>();
+      const snaps: CardSnapshot[] = [];
+      for (const card of fresh) {
+        const withoutPc = toSnapshot(card);
+        const missing = card.variants.filter((v) => withoutPc.prices[v] == null);
+        let pcPrice: number | undefined;
+        if (missing.length && pcConfigured(ctx)) {
+          try {
+            pcPrice = await pcCardFallback(ctx, card);
+          } catch (err) {
+            ctx.log.warn({ err, cardId: card.id }, 'pricecharting card fallback failed');
+          }
+        }
+        if (pcPrice != null) {
+          pcFallbacks.set(card.id, { price: pcPrice, variants: missing });
+          snaps.push({ ...toSnapshot(card, pcPrice), pricechartingUpdatedAt: new Date().toISOString() });
+        } else {
+          snaps.push(withoutPc);
+        }
+      }
+      saveSnapshots(ctx.db, snaps);
+      writePriceHistory(ctx.db, fresh, pcFallbacks);
       refreshed += fresh.length;
     } catch (err) {
       failed++;
@@ -144,8 +185,8 @@ export function readPriceHistory(db: Db, cardId: string, days: number): CardPric
         source: r.source,
         currency: r.currency,
         points: [],
-        updatedAt: r.source === 'tcgplayer' ? card?.tcgplayerUpdatedAt : card?.cardmarketUpdatedAt,
-        url: r.source === 'tcgplayer' ? card?.tcgplayerUrl : card?.cardmarketUrl,
+        updatedAt: r.source === 'tcgplayer' ? card?.tcgplayerUpdatedAt : r.source === 'cardmarket' ? card?.cardmarketUpdatedAt : card?.pricechartingUpdatedAt,
+        url: r.source === 'tcgplayer' ? card?.tcgplayerUrl : r.source === 'cardmarket' ? card?.cardmarketUrl : undefined,
       };
       series.set(key, s);
     }

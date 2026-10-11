@@ -143,11 +143,13 @@ export interface CardSnapshot {
   /** When each source's prices were last reported upstream, for "updated …" provenance on the card page. */
   tcgplayerUpdatedAt?: string;
   cardmarketUpdatedAt?: string;
+  /** Set when one or more variants' prices came from the PriceCharting fallback, not TCGdex. */
+  pricechartingUpdatedAt?: string;
   syncedAt: string;
 }
 
-/** Source of one price-history series: TCGplayer (USD) or Cardmarket (EUR, its native currency). */
-export type PriceHistorySource = 'tcgplayer' | 'cardmarket';
+/** Source of one price-history series: TCGplayer/Cardmarket from TCGdex, or the PriceCharting fallback. */
+export type PriceHistorySource = 'tcgplayer' | 'cardmarket' | 'pricecharting';
 
 export interface PriceHistoryPoint {
   date: string; // YYYY-MM-DD

@@ -12,7 +12,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { cardVariants, getSetCards, setIdFromCardId } from '@poketracker/shared/catalog';
+import { cardVariants, setIdFromCardId } from '@poketracker/shared/catalog';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { CardNote, CollectionEntry, GradedCopy, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireUser, str, type Ctx } from './context.ts';
@@ -21,6 +21,7 @@ import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
 import { cleanSealed, deleteSealedPhotoFiles, putSealed, readSealed, saveSealedPhoto } from './sealed.ts';
 import { pcGradedPrice, pcProduct } from './providers/pricecharting.ts';
+import { tcgdexProvider } from './providers/tcgdex.ts';
 
 /** Set ids as TCGdex issues them, optionally prefixed with a language (e.g. `sv01`, `ja:SV1a`). */
 const SET_ID = /^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,40}$/;
@@ -763,7 +764,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     setStatLimiter.check(u.id, reply);
     let job = counting.get(setId);
     if (!job) {
-      job = getSetCards(setId)
+      job = tcgdexProvider
+        .getSetCards(setId)
         .then((cards) => cards.reduce((n, c) => n + cardVariants(c).length, 0))
         .finally(() => counting.delete(setId));
       counting.set(setId, job);
@@ -772,6 +774,9 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     try {
       total = await job;
     } catch {
+      // TCGdex is down (or its breaker is open): serve the last count we have rather than a
+      // hard error, even though it is past its normal TTL.
+      if (existing) return { ok: true, masterTotal: existing.master_total, stale: true };
       throw new HttpError(502, 'Could not reach the card catalogue', 'upstream');
     }
     if (total < 1) throw notFound('Unknown set');

@@ -8,6 +8,7 @@ import { Sealer } from '../src/security.ts';
 import { buildApp } from '../src/app.ts';
 import { ensureSetupToken } from '../src/auth.ts';
 import type { Ctx } from '../src/context.ts';
+import { resetProviderHealth } from '../src/providers/resilience.ts';
 
 export const SETUP = 'test-setup-token-123';
 export const PASSWORD = 'correct horse battery';
@@ -20,6 +21,10 @@ export interface TestServer {
 }
 
 export async function startServer(env: Record<string, string> = {}): Promise<TestServer> {
+  // Provider health/breaker state is a module-level singleton (by design: it's shared across
+  // requests in the real app); reset it so one test file's outage simulation can't leave the
+  // breaker open for the next file's server instance.
+  resetProviderHealth();
   const dir = mkdtempSync(join(tmpdir(), 'pt-test-'));
   const config = loadConfig({ DATA_DIR: dir, SETUP_TOKEN: SETUP, JOBS: '0', LOG_LEVEL: 'silent', TCGDEX_BASE: 'http://tcgdex.test/v2', ...env });
   const db = new Db(join(dir, 'poketracker.db'));
