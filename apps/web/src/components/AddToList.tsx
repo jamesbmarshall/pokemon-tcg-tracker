@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Check, ListPlus, Minus, Plus } from 'lucide-react';
 import { checkDeckLegality, type DeckCard } from '@poketracker/shared/decks/legality';
@@ -27,9 +27,10 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
   const legalityOpts = useMemo(() => ({ regulationMarks: deckSettings?.regulationMarks, bannedCardIds: deckSettings?.bannedCardIds }), [deckSettings]);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
-  const [alignLeft, setAlignLeft] = useState(false);
+  const [menuLeft, setMenuLeft] = useState(0);
   const [announcement, setAnnouncement] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   // Serialises stepper clicks per deck: each queued step re-reads the live quantity only once the
   // previous one has fully landed (optimistic update plus backend round-trip), so a burst of rapid
   // clicks lands every increment instead of several of them computing the same "next" from a stale render.
@@ -48,14 +49,22 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
     };
   }, [open]);
 
-  const toggle = () => {
-    if (!open) {
-      // Grid tiles can sit near the left edge of the screen, where a right-aligned menu would be cut off.
-      const r = ref.current?.getBoundingClientRect();
-      setAlignLeft(!!r && r.right < 272);
-    }
-    setOpen((o) => !o);
-  };
+  useLayoutEffect(() => {
+    if (!open) return;
+    const position = () => {
+      const anchor = ref.current?.getBoundingClientRect();
+      const menu = menuRef.current?.getBoundingClientRect();
+      if (!anchor || !menu) return;
+      // Prefer right alignment, but keep the entire picker inside the viewport on either edge.
+      const left = Math.max(16, Math.min(anchor.right - menu.width, document.documentElement.clientWidth - menu.width - 16));
+      setMenuLeft(left - anchor.left);
+    };
+    position();
+    window.addEventListener('resize', position);
+    return () => window.removeEventListener('resize', position);
+  }, [open]);
+
+  const toggle = () => setOpen((o) => !o);
 
   const create = async () => {
     const n = name.trim();
@@ -125,9 +134,11 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
       )}
       {open && (
         <div
+          ref={menuRef}
           role="group"
           aria-label="Custom lists"
-          className={`absolute z-30 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-2 shadow-pop ${alignLeft ? 'left-0' : 'right-0'} ${compact ? 'top-8' : 'top-11'}`}
+          style={{ left: menuLeft }}
+          className={`absolute z-30 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-2 shadow-pop ${compact ? 'top-8' : 'top-11'}`}
         >
           {decks.length > 0 && <p className="eyebrow px-2 pb-1 pt-0.5">Lists</p>}
           {lists.length > 0 ? (
@@ -206,8 +217,8 @@ export default function AddToList({ card, compact = false }: { card: PokemonCard
               void create();
             }}
           >
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="New list" aria-label="New list name" className="input !h-8 flex-1 !text-xs" />
-            <button type="submit" disabled={!name.trim()} className="btn btn-primary !h-8 !w-8 !p-0" aria-label="Create list">
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="New list" aria-label="New list name" className="input !h-8 min-w-0 flex-1 !text-xs" />
+            <button type="submit" disabled={!name.trim()} className="btn btn-primary !h-8 !w-8 shrink-0 !p-0" aria-label="Create list">
               <Plus size={14} />
             </button>
           </form>
