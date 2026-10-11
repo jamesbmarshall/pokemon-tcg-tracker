@@ -40,10 +40,10 @@ export default function CardImage({ id, src, name, number, setName, types, hires
         role="img"
         aria-label={alt || name}
         className={`relative flex h-full w-full flex-col justify-between overflow-hidden p-[8%] text-left [container-type:inline-size] ${className}`}
-        style={{ background: `radial-gradient(120% 70% at 50% 0%, color-mix(in oklab, ${accent} 38%, transparent), transparent 70%), linear-gradient(160deg, #23222d, #121118)` }}
+        style={{ background: `radial-gradient(120% 70% at 50% 0%, color-mix(in oklab, ${accent} 38%, transparent), transparent 70%), linear-gradient(160deg, var(--color-surface-2), var(--color-surface-3))` }}
       >
-        <div className="absolute inset-[5%] rounded-[4%/3%] border border-white/10" />
-        <p className="relative font-display text-[clamp(10px,9cqw,22px)] font-bold leading-tight text-fg/90">{name}</p>
+        <div className="absolute inset-[5%] rounded-[4%/3%] border border-line-strong" />
+        <p className="relative font-display text-[clamp(10px,9cqw,22px)] font-semibold leading-tight text-fg/90">{name}</p>
         <div className="relative space-y-0.5">
           {setName && <p className="truncate text-[clamp(8px,6cqw,13px)] text-muted">{setName}</p>}
           {number && <p className="font-mono text-[clamp(8px,6cqw,13px)] text-faint">#{number}</p>}

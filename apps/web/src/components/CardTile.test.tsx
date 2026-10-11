@@ -25,11 +25,9 @@ describe('CardTile', () => {
     expect(screen.getByText('#1')).toBeInTheDocument();
     const addNormal = screen.getByRole('button', { name: 'Add Normal' });
     expect(addNormal).toHaveTextContent('N');
-    expect(addNormal.parentElement?.parentElement).toHaveClass(
-      'flex-wrap',
-      'pointer-coarse:opacity-100',
-      'pointer-coarse:[&_button]:min-h-9',
-      'pointer-coarse:[&_button]:min-w-8',
+    expect(addNormal.parentElement?.parentElement).toHaveClass('flex-wrap', 'pointer-coarse:opacity-100');
+    expect(addNormal.closest('div[class*="pointer-coarse:flex-wrap"]')).toHaveClass(
+      'pointer-coarse:[&_button]:min-h-9', 'pointer-coarse:[&_button]:min-w-8',
     );
     expect(screen.getByRole('button', { name: 'Add Reverse Holo' })).toHaveTextContent('RH');
     // Highest variant price ($2) in GBP at the test rate

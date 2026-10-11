@@ -103,14 +103,14 @@ describe('CommandPalette', () => {
   it('moves the selection with the arrow keys', async () => {
     const { user } = setup();
     await user.type(input(), 'obs');
-    expect(options()[0].className).toContain('bg-surface-3');
+    expect(options()[0].className).toContain('bg-surface-2');
     await user.keyboard('{ArrowDown}');
-    expect(options()[1].className).toContain('bg-surface-3');
-    expect(options()[0].className).not.toContain('bg-surface-3');
+    expect(options()[1].className).toContain('bg-surface-2');
+    expect(options()[0].className).not.toContain('bg-surface-2');
     await user.keyboard('{ArrowDown}{ArrowDown}'); // clamped at the end
-    expect(options()[1].className).toContain('bg-surface-3');
+    expect(options()[1].className).toContain('bg-surface-2');
     await user.keyboard('{ArrowUp}{ArrowUp}');
-    expect(options()[0].className).toContain('bg-surface-3');
+    expect(options()[0].className).toContain('bg-surface-2');
     await user.keyboard('{ArrowDown}{Enter}');
     expect(screen.getByTestId('location')).toHaveTextContent('/search?q=obs');
   });
@@ -119,7 +119,7 @@ describe('CommandPalette', () => {
     const { user } = setup();
     await user.type(input(), 'obs');
     await user.hover(options()[1]);
-    expect(options()[1].className).toContain('bg-surface-3');
+    expect(options()[1].className).toContain('bg-surface-2');
   });
 
   it('encodes the query in the search action', async () => {

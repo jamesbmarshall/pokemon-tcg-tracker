@@ -33,7 +33,7 @@ function Section({ icon, title, count, children }: { icon: ReactNode; title: str
   return (
     <section className="space-y-4">
       <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
-        <span className="text-volt">{icon}</span>
+        <span className="text-accent">{icon}</span>
         {title}
         {count !== undefined && <span className="font-mono text-sm text-faint">{count}</span>}
       </h2>
@@ -103,7 +103,7 @@ function ShareBody({ data }: { data: PublicShare }) {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="panel px-6 py-10 text-center text-sm text-muted">{children}</p>;
+  return <p className="border-y border-line px-6 py-12 text-center text-sm text-muted">{children}</p>;
 }
 
 function heading(data: PublicShare) {
@@ -142,10 +142,10 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
   return (
     <PublicShareContext.Provider value={{ token }}>
       <div className="min-h-dvh">
-        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-ink/80 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur-md sm:px-6">
           <a href="/" className="flex items-center gap-2">
             <Logo size={26} />
-            <span className="font-display text-lg font-extrabold tracking-tight font-stretch-expanded">
+            <span className="font-display text-lg font-semibold tracking-tight">
               Poké<span className="holo-text">Tracker</span>
             </span>
           </a>
@@ -157,7 +157,7 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <p className="eyebrow mb-2">Shared by {data.share.ownerName}</p>
-              <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
+              <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
               {data.share.scope === 'list' && data.lists[0]?.description && <p className="mt-2 text-sm text-muted">{data.lists[0].description}</p>}
               {data.share.expiresAt && <p className="mt-2 text-xs text-faint">This link works until {formatDate(data.share.expiresAt)}.</p>}
             </div>
@@ -165,13 +165,13 @@ function SharedView({ data, token }: { data: PublicShare; token: string }) {
               <div className="text-right">
                 <p className="eyebrow">{count.toLocaleString('en-GB')} cards</p>
                 {/* With hideValue the server sends no prices, so this would only ever show zero. */}
-                {!data.share.hideValue && <p className="font-display text-2xl font-bold tabular">{money(valueUsd)}</p>}
+                {!data.share.hideValue && <p className="font-display text-2xl font-semibold tabular">{money(valueUsd)}</p>}
               </div>
             )}
           </div>
           {data.share.scope === 'graded' && graded.size > 0 && (
             <p className="flex items-center gap-2 text-sm text-muted">
-              <Award size={15} className="text-volt" /> {graded.size} slab{graded.size === 1 ? '' : 's'}
+              <Award size={15} className="text-accent" /> {graded.size} slab{graded.size === 1 ? '' : 's'}
             </p>
           )}
           <ShareBody data={data} />
