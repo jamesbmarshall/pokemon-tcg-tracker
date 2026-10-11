@@ -25,7 +25,10 @@ export default function SetsPage() {
   const series = get('series');
 
   const progress = useMemo(() => new Map(stats.sets.map((s) => [s.setId, s])), [stats.sets]);
-  const startedHere = useMemo(() => stats.sets.filter((s) => langOf(s.setId) === lang).length, [stats.sets, lang]);
+  const completed = useMemo(() => new Set((sets ?? [])
+    .filter((s) => s.printedTotal > 0 && (progress.get(s.id)?.baseOwned ?? 0) >= s.printedTotal)
+    .map((s) => s.id)), [sets, progress]);
+  const startedHere = useMemo(() => stats.sets.filter((s) => langOf(s.setId) === lang && !completed.has(s.setId)).length, [stats.sets, lang, completed]);
   const allSeries = useMemo(() => Array.from(new Set(sets?.map((s) => s.series))), [sets]);
 
   const grouped = useMemo(() => {
@@ -35,14 +38,14 @@ export default function SetsPage() {
       if (series && s.series !== series) continue;
       if (needle && !s.name.toLowerCase().includes(needle) && s.ptcgoCode?.toLowerCase() !== needle) continue;
       const p = progress.get(s.id);
-      if (filter === 'started' && !p) continue;
-      if (filter === 'complete' && !(p && p.baseOwned >= s.printedTotal)) continue;
+      if (filter === 'started' && (!p || completed.has(s.id))) continue;
+      if (filter === 'complete' && !completed.has(s.id)) continue;
       const arr = out.get(s.series) ?? [];
       arr.push(s);
       out.set(s.series, arr);
     }
     return out;
-  }, [sets, q, series, filter, progress]);
+  }, [sets, q, series, filter, progress, completed]);
 
   return (
     <div className="space-y-8">
@@ -118,7 +121,7 @@ export default function SetsPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {list.map((s) => {
               const p = progress.get(s.id);
-              const done = p && p.baseOwned >= s.printedTotal;
+              const done = completed.has(s.id);
               return (
                 <Link
                   key={s.id}

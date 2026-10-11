@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SetsPage from './SetsPage';
 import { renderWithProviders } from '../test/render';
@@ -107,13 +107,28 @@ describe('SetsPage', () => {
 
   it('filters to started and complete sets', async () => {
     renderPage();
-    await userEvent.click(screen.getByRole('radio', { name: 'Started · 2' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Started · 1' }));
     expect(location()).toBe('/sets?filter=started');
-    expect(tiles()).toEqual(['/sets/sv03', '/sets/tiny']);
+    expect(tiles()).toEqual(['/sets/sv03']);
     await userEvent.click(screen.getByRole('radio', { name: 'Complete' }));
     expect(tiles()).toEqual(['/sets/tiny']);
     await userEvent.click(screen.getByRole('radio', { name: 'All' }));
     expect(location()).toBe('/sets');
+  });
+
+  it('moves a set between tabs when its collection becomes complete or incomplete', async () => {
+    renderPage('/sets?filter=started');
+    expect(tiles()).toEqual(['/sets/sv03']);
+    act(() => seedCollection({
+      entries: [makeEntry({ cardId: 'tiny-1' })],
+      cards: [makeSnapshot({ id: 'tiny-1', printedTotal: 1 })],
+    }));
+    expect(tiles()).toEqual([]);
+    expect(screen.getByRole('radio', { name: 'Started' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('radio', { name: 'Complete' }));
+    expect(tiles()).toEqual(['/sets/tiny']);
+    act(() => seedCollection());
+    expect(tiles()).toEqual([]);
   });
 
   it('reads filters from the URL and explains an empty started list', () => {
@@ -125,12 +140,12 @@ describe('SetsPage', () => {
 
   it('remembers the last filter, but a filter in the URL wins', async () => {
     const first = renderPage();
-    await userEvent.click(screen.getByRole('radio', { name: 'Started · 2' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Started · 1' }));
     first.unmount();
     const second = renderPage();
     expect(screen.getByRole('radio', { name: /Started/ })).toHaveAttribute('aria-checked', 'true');
     expect(location()).toBe('/sets');
-    expect(tiles()).toEqual(['/sets/sv03', '/sets/tiny']);
+    expect(tiles()).toEqual(['/sets/sv03']);
     second.unmount();
     renderPage('/sets?filter=complete');
     expect(screen.getByRole('radio', { name: 'Complete' })).toHaveAttribute('aria-checked', 'true');
