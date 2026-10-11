@@ -241,26 +241,30 @@ describe('custom lists', () => {
 
 describe('set totals', () => {
   it('are counted on the server and ignore whatever the client claims', async () => {
-    const cards = [1, 2, 3].map((n) => ({ id: `sv1-00${n}`, localId: String(n), name: `Card ${n}` }));
-    const fetchMock = vi.fn(async (url: string | URL) =>
+    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}` }));
+    const fetchMock = vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(async (url) =>
       String(url).includes('graphql')
         ? Response.json({ data: { cards } })
-        : Response.json({ id: 'sv1', name: 'Scarlet & Violet', cardCount: { total: 3, official: 3 } }),
+        : Response.json({ id: 'tt9', name: 'Totals Test', cardCount: { total: 3, official: 3 } }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const c = await setupOwner(s.app);
-    const res = await c.put('/api/set-stats/sv1', { masterTotal: 4999 });
+    const res = await c.put('/api/set-stats/tt9', { masterTotal: 4999 });
     expect(res.statusCode).toBe(200);
     const total = res.json().masterTotal;
     expect(total).toBeGreaterThanOrEqual(3);
     expect(total).toBeLessThan(4999);
     const id = await personalId(c);
-    expect((await c.get(`/api/collections/${id}/state`)).json().setStats).toEqual([expect.objectContaining({ setId: 'sv1', masterTotal: total })]);
+    expect((await c.get(`/api/collections/${id}/state`)).json().setStats).toEqual([expect.objectContaining({ setId: 'tt9', masterTotal: total })]);
 
-    // Within the cache window the stored figure is returned without asking TCGdex again.
-    const calls = fetchMock.mock.calls.length;
-    expect((await c.put('/api/set-stats/sv1', { masterTotal: 1 })).json().masterTotal).toBe(total);
-    expect(fetchMock.mock.calls.length).toBe(calls);
+    // Within the cache window the stored figure is returned without asking TCGdex again. Only
+    // this set's requests count: fetch is global, so a background hydrate of sv1 cards left over
+    // from an earlier import test can land in this mock, which made a plain call count flaky.
+    const setCalls = () => fetchMock.mock.calls.filter(([u, init]) => `${String(u)} ${String(init?.body ?? '')}`.includes('tt9')).length;
+    const calls = setCalls();
+    expect(calls).toBeGreaterThan(0);
+    expect((await c.put('/api/set-stats/tt9', { masterTotal: 1 })).json().masterTotal).toBe(total);
+    expect(setCalls()).toBe(calls);
   });
 
   it('rejects malformed set ids', async () => {
