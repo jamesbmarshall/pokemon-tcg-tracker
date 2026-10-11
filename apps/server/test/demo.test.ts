@@ -91,6 +91,14 @@ describe('demo mode on', () => {
     expect(out.statusCode).toBe(200);
   });
 
+  it('limits public demo sign-ins before they can create unlimited sessions', async () => {
+    const c = new Client(s.app);
+    for (let i = 0; i < 20; i++) expect((await c.post('/api/demo/login')).statusCode).toBe(200);
+    const limited = await c.post('/api/demo/login');
+    expect(limited.statusCode).toBe(429);
+    expect(s.ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions')!.n).toBe(20);
+  });
+
   it('nightly reset restores a demo collection that a visitor emptied', async () => {
     const c = new Client(s.app);
     await c.post('/api/demo/login');

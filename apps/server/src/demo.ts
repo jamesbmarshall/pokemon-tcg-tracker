@@ -8,7 +8,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { entryKey, GRADING_COMPANIES } from '@poketracker/shared/value';
 import type { CollectionEntry, GradedCopy, WishlistEntry } from '@poketracker/shared/types';
-import { audit, HttpError, now, type Ctx } from './context.ts';
+import { audit, HttpError, Limiter, now, type Ctx } from './context.ts';
 import { createSession, createUser, toSessionUser } from './auth.ts';
 import { putEntry, putGraded } from './collections.ts';
 import { newId, randomToken } from './security.ts';
@@ -143,8 +143,10 @@ export async function resetDemo(ctx: Ctx): Promise<void> {
  * way in.
  */
 export function demoRoutes(app: FastifyInstance, ctx: Ctx) {
+  const loginLimiter = new Limiter(20, 60_000);
   app.post('/api/demo/login', async (req, reply) => {
     if (!ctx.config.demoMode) throw new HttpError(404, 'Not found', 'not_found');
+    loginLimiter.check(req.ip, reply);
     const row = demoUser(ctx);
     if (!row) throw new HttpError(503, 'The demo is still starting up. Try again in a moment.', 'demo_not_ready');
     const full = ctx.db.get<Parameters<typeof toSessionUser>[0]>('SELECT * FROM users WHERE id = ?', row.id)!;
