@@ -128,3 +128,10 @@ describe('checkDeckLegality', () => {
     expect(result.issues.some((i) => i.code === 'format-illegal')).toBe(false);
   });
 });
+
+it('does not certify a deck when format information is missing', () => {
+  const deck = baseDeck();
+  deck[1] = { card: card({ id: 'unknown', name: 'Unknown', legal: undefined, regulationMark: undefined }), qty: 1 };
+  expect(checkDeckLegality(deck, 'standard')).toMatchObject({ legal: false, issues: [expect.objectContaining({ code: 'format-unknown', cardIds: ['unknown'] })] });
+  expect(checkDeckLegality(deck, 'unlimited').legal).toBe(true);
+});

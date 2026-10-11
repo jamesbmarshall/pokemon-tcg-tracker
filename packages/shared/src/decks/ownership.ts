@@ -64,7 +64,7 @@ export function computeDeckOwnership(
     // Reuses checkDeckLegality's own format-legality rule against a lone card; its other issues
     // (deck size, basic required, ...) are expected here and ignored.
     const legalPrintings =
-      format === 'unlimited' ? printings : printings.filter((p) => checkDeckLegality([{ card: p, qty: 1 }], format, legalityOpts).issues.every((i) => i.code !== 'format-illegal'));
+      format === 'unlimited' ? printings : printings.filter((p) => checkDeckLegality([{ card: p, qty: 1 }], format, legalityOpts).issues.every((i) => i.code !== 'format-illegal' && i.code !== 'format-unknown' && i.code !== 'banned'));
     const owned = legalPrintings.reduce((sum, p) => sum + (ownedQtyByCardId.get(p.id) ?? 0), 0);
     out.push({ name, needed, owned, missing: Math.max(0, needed - owned), deckCardIds });
   }

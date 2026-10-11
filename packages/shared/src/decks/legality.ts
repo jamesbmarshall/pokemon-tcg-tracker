@@ -32,7 +32,7 @@ export interface DeckCard {
 
 export interface LegalityIssue {
   /** Stable machine-readable code, for tests and for the UI to pick an icon/tone. */
-  code: 'deck-size' | 'copy-limit' | 'basic-required' | 'ace-spec-limit' | 'radiant-limit' | 'format-illegal' | 'banned';
+  code: 'deck-size' | 'copy-limit' | 'basic-required' | 'ace-spec-limit' | 'radiant-limit' | 'format-illegal' | 'format-unknown' | 'banned';
   message: string;
   cardIds: string[];
 }
@@ -142,6 +142,10 @@ export function checkDeckLegality(cards: DeckCard[], format: DeckFormat, opts: L
   }
 
   if (format !== 'unlimited') {
+    const unknown = cards.filter((c) => c.qty > 0 && formatAllows(c.card, format, marks) === undefined);
+    if (unknown.length) {
+      issues.push({ code: 'format-unknown', message: `Format legality could not be verified for ${unknown.length} card${unknown.length === 1 ? '' : 's'}.`, cardIds: unknown.map((c) => c.card.id) });
+    }
     const illegal = cards.filter((c) => formatAllows(c.card, format, marks) === false);
     if (illegal.length) {
       issues.push({

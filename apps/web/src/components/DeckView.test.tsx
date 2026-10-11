@@ -10,10 +10,10 @@ import { useCollectionStore } from '../store/collectionStore';
 import { useToasts } from '../store/toastStore';
 import type { CustomList, DeckResolveResult } from '../api/backend';
 
-const POKE = makeSnapshot({ id: 'sv03-001', name: 'Charmander', supertype: 'Pokémon', subtypes: ['Basic'], number: '1' });
-const TRAINER = makeSnapshot({ id: 'sv03-050', name: 'Potion', supertype: 'Trainer', subtypes: ['Item'], number: '50' });
-const ENERGY = makeSnapshot({ id: 'sv03-090', name: 'Fire Energy', supertype: 'Energy', subtypes: ['Basic'], number: '90' });
-const NEWCARD = makeSnapshot({ id: 'sv03-099', name: 'Rare Candy', supertype: 'Trainer', subtypes: ['Item'], number: '99' });
+const POKE = makeSnapshot({ id: 'sv03-001', name: 'Charmander', legal: { standard: true, expanded: true }, supertype: 'Pokémon', subtypes: ['Basic'], number: '1' });
+const TRAINER = makeSnapshot({ id: 'sv03-050', name: 'Potion', legal: { standard: true, expanded: true }, supertype: 'Trainer', subtypes: ['Item'], number: '50' });
+const ENERGY = makeSnapshot({ id: 'sv03-090', name: 'Fire Energy', legal: { standard: true, expanded: true }, supertype: 'Energy', subtypes: ['Basic'], number: '90' });
+const NEWCARD = makeSnapshot({ id: 'sv03-099', name: 'Rare Candy', legal: { standard: true, expanded: true }, supertype: 'Trainer', subtypes: ['Item'], number: '99' });
 
 const deck = (over: Partial<CustomList> = {}): CustomList => {
   const cards = over.cards ?? [POKE.id, TRAINER.id, ENERGY.id];
@@ -81,9 +81,9 @@ describe('DeckView', () => {
   });
 
   it('shows a legal state for a deck built to pass under Unlimited', () => {
-    const basicPoke = makeSnapshot({ id: 'sv03-basic', name: 'Basic Mon', supertype: 'Pokémon', subtypes: ['Basic'] });
-    const trainers = Array.from({ length: 9 }, (_, i) => makeSnapshot({ id: `sv03-t${i}`, name: `Trainer ${i}`, supertype: 'Trainer', subtypes: ['Item'] }));
-    const basicEnergy = makeSnapshot({ id: 'sv03-energy', name: 'Fire Energy', supertype: 'Energy', subtypes: ['Basic'] });
+    const basicPoke = makeSnapshot({ id: 'sv03-basic', name: 'Basic Mon', legal: { standard: true, expanded: true }, supertype: 'Pokémon', subtypes: ['Basic'] });
+    const trainers = Array.from({ length: 9 }, (_, i) => makeSnapshot({ id: `sv03-t${i}`, name: `Trainer ${i}`, legal: { standard: true, expanded: true }, supertype: 'Trainer', subtypes: ['Item'] }));
+    const basicEnergy = makeSnapshot({ id: 'sv03-energy', name: 'Fire Energy', legal: { standard: true, expanded: true }, supertype: 'Energy', subtypes: ['Basic'] });
     const allCards = [basicPoke, ...trainers, basicEnergy];
     const cardQtys: Record<string, number> = { [basicPoke.id]: 4, [basicEnergy.id]: 20 };
     for (const t of trainers) cardQtys[t.id] = 4;

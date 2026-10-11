@@ -48,3 +48,15 @@ describe('computeDeckOwnership', () => {
     expect(result[0]).toMatchObject({ needed: 4, owned: 0, missing: 4 });
   });
 });
+
+it('does not count banned Expanded copies as playable ownership', () => {
+  const printing = card({ id: 'banned', name: 'Banned card' });
+  const result = computeDeckOwnership([{ card: printing, qty: 2 }], 'expanded', new Map([['banned', 4]]), [printing], { bannedCardIds: ['banned'] });
+  expect(result[0]).toMatchObject({ owned: 0, missing: 2 });
+});
+
+it('does not count copies with unknown format legality', () => {
+  const printing = card({ id: 'unknown', name: 'Unknown card', legal: undefined });
+  const result = computeDeckOwnership([{ card: printing, qty: 2 }], 'standard', new Map([['unknown', 4]]), [printing]);
+  expect(result[0]).toMatchObject({ owned: 0, missing: 2 });
+});
