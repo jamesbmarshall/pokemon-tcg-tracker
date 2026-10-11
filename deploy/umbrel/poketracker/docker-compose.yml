@@ -1,0 +1,24 @@
+version: "3.7"
+
+# Umbrel apps are exposed through Umbrel's own "app_proxy" container, which it injects from a
+# base compose file — this file only overrides app_proxy's environment to point it at our
+# service, plus defines the service itself. Pattern taken from an existing single-container
+# Umbrel app (getumbrel/umbrel-apps/syncthing/docker-compose.yml) as of writing.
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: poketracker_server_1
+      APP_PORT: 3000
+
+  server:
+    image: ghcr.io/jamesbmarshall/pokemon-tcg-tracker:latest
+    restart: unless-stopped
+    environment:
+      # Optional: pick the first-run setup token yourself instead of reading it from the logs.
+      - SETUP_TOKEN=
+      - TZ=UTC
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ${APP_DATA_DIR}/data:/data

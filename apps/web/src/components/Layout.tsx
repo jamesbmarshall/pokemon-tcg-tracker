@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, BookOpen, Eye, Heart, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, ScanLine, Search, Settings, Share2, ShieldCheck, UserRound } from 'lucide-react';
+import { AlertTriangle, BookOpen, Eye, Heart, Info, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, ScanLine, Search, Settings, Share2, ShieldCheck, UserRound, X } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
@@ -95,6 +95,22 @@ function CollectionSwitcher({ className = '' }: { className?: string }) {
 const sideLink = ({ isActive }: { isActive: boolean }) =>
   `flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors ${isActive ? 'bg-accent/10 font-semibold text-accent' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg'}`;
 
+/** Dismissible for the tab (not persisted), since a demo server shows it to every new visitor anyway. */
+function DemoBanner() {
+  const { data: status } = useQuery({ queryKey: ['system', 'status'], queryFn: () => getBackend().status(), staleTime: 60_000 });
+  const [dismissed, setDismissed] = useState(false);
+  if (!status?.demoMode || dismissed) return null;
+  return (
+    <div className="flex items-center gap-2.5 bg-accent/10 px-4 py-2 text-xs text-accent lg:pl-[17.5rem]">
+      <Info size={14} className="shrink-0" />
+      <p className="flex-1">You're viewing a demo — changes are disabled and the collection resets nightly.</p>
+      <button onClick={() => setDismissed(true)} className="shrink-0 rounded p-0.5 hover:bg-accent/15" aria-label="Dismiss">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 function AccountLink() {
   const user = useAuth((s) => s.user);
   if (!user) return null;
@@ -144,6 +160,7 @@ export default function Layout() {
 
   return (
     <div className="min-h-dvh lg:pl-64">
+      <DemoBanner />
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-line bg-surface px-4 py-5 lg:flex">
         <Link to="/" className="flex items-center gap-2.5 px-2">

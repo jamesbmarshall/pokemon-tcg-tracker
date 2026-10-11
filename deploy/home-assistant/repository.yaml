@@ -1,0 +1,11 @@
+# PokéTracker Home Assistant add-on repository (required by Supervisor at the repository root)
+#
+# Caveat: this file lives at deploy/home-assistant/repository.yaml inside the pokemon-tcg-tracker
+# monorepo, not at the true root of a git repository. Home Assistant Supervisor requires
+# repository.yaml to be at the root of whatever git repository you add, so this file documents
+# intent and is ready to use as-is — but the main pokemon-tcg-tracker repository URL cannot be
+# added directly in Home Assistant until this folder (or its contents) is published at the root
+# of its own repository. See poketracker/README.md for more.
+name: PokéTracker
+url: "https://github.com/jamesbmarshall/pokemon-tcg-tracker"
+maintainer: "James Marshall"

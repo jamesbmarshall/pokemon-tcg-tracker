@@ -13,6 +13,7 @@ import { ensureSetupToken } from './auth.ts';
 import { initCatalog } from './cards.ts';
 import { jobStatus, runJob, startScheduler } from './jobs.ts';
 import { settleUpdateState } from './updater.ts';
+import { seedDemo } from './demo.ts';
 
 async function main() {
   const config = loadConfig();
@@ -27,6 +28,9 @@ async function main() {
   const ctx: Ctx = { config, db, sealer, log: console as unknown as Ctx['log'], services: {} };
   const app = await buildApp(ctx);
   initCatalog(ctx);
+  // Demo instances seed themselves on first boot (and stay seeded across restarts since
+  // seedDemo is idempotent); this must finish before we start accepting traffic.
+  if (config.demoMode) await seedDemo(ctx);
   settleUpdateState(ctx);
 
   // Stop jobs first so none start a write mid-shutdown, then drain HTTP, then close the DB.
