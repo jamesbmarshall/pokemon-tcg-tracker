@@ -1,51 +1,6 @@
-/**
- * Set completion maths. Three levels, chosen in settings:
- * - base: numbered cards up to the printed total (what the set "officially" contains)
- * - full: every card, including secret rares numbered past the printed total
- * - master: every variant (normal, reverse holo, etc.) of every card
- *
- * At base and full level a card counts as owned if any variant is held. Callers usually pass
- * `holdings`, so graded copies marked "counts towards set" are included.
- */
-import type { CollectionEntry, PokemonCard } from '../api/types';
-import { cardVariants } from '../api/client';
-
-export interface SetProgress {
-  base: { owned: number; total: number };
-  full: { owned: number; total: number };
-  master: { owned: number; total: number };
-}
-
-/** Prefixes identify a numbering series; they do not make a card secret. */
-export function isWithinPrintedTotal(number: string, printedTotal: number): boolean {
-  const match = /^(?:[a-z]+)?(\d+)$/i.exec(number);
-  return !!match && Number(match[1]) >= 1 && Number(match[1]) <= printedTotal;
-}
-
-/** Part of the numbered set (1 to printed total), i.e. not a secret rare. */
-export const isBaseCard = (c: Pick<PokemonCard, 'number' | 'set'>) => isWithinPrintedTotal(c.number, c.set.printedTotal);
-
-/** Base = numbered cards up to printed total; Full = every card; Master = every variant of every card. */
-export function setProgress(cards: PokemonCard[], byCard: Map<string, Record<string, number>>): SetProgress {
-  const p: SetProgress = { base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 }, master: { owned: 0, total: 0 } };
-  for (const c of cards) {
-    const owned = byCard.get(c.id);
-    // Entries are deleted at zero rather than stored, so any key means at least one copy.
-    const has = !!owned && Object.keys(owned).length > 0;
-    const inBase = isBaseCard(c);
-    p.full.total++;
-    if (has) p.full.owned++;
-    if (inBase) {
-      p.base.total++;
-      if (has) p.base.owned++;
-    }
-    for (const v of cardVariants(c)) {
-      p.master.total++;
-      if (owned?.[v]) p.master.owned++;
-    }
-  }
-  return p;
-}
+import type { CollectionEntry } from '../api/types';
+export { setProgress, isBaseCard, isWithinPrintedTotal } from '@poketracker/shared/completion';
+export type { SetProgress } from '@poketracker/shared/completion';
 
 /**
  * Quick per-set summary from the collection alone (no card list needed). `slots` counts distinct

@@ -308,3 +308,38 @@ describe('pricing a newly added card', () => {
     expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/cards/sv2-077'))).toHaveLength(1);
   });
 });
+
+describe('printing reconciliation', () => {
+  it('migrates an unambiguous legacy holding without changing its metadata, and is repeatable', async () => {
+    const c = await setupOwner(s.app);
+    const id = await personalId(c);
+    const metadata = { variant: 'holofoil', quantity: 3, condition: 'LP', notes: 'Birthday gift', paid: { amount: 4, currency: 'GBP' }, valueUsd: 8 };
+    await c.put(`/api/collections/${id}/entries`, { entries: [entry('sv03-016', 3, metadata)] });
+    const printing = { id: 'holofoil_p123', label: 'Cosmos Holo', finish: 'cosmos', size: 'standard', distribution: 'exclusive' as const, status: 'verified' as const, legacyAliases: ['holofoil'] };
+    const snapshot = { ...snap('sv03-016'), variants: ['normal', printing.id], printings: [printing], printingVersion: 1 };
+    await c.put(`/api/collections/${id}/graded/legacy-slab`, { cardId: 'sv03-016', variant: 'holofoil', company: 'PSA', grade: '10', certNumber: '12345', countsTowardSet: true });
+    saveSnapshots(s.ctx.db, [snapshot]);
+    saveSnapshots(s.ctx.db, [snapshot]);
+    const state = (await c.get(`/api/collections/${id}/state`)).json();
+    expect(state.entries).toEqual([expect.objectContaining({ ...metadata, id: 'sv03-016::holofoil_p123', variant: printing.id })]);
+    expect(state.graded).toEqual([expect.objectContaining({ id: 'legacy-slab', variant: printing.id, certNumber: '12345' })]);
+    expect(s.ctx.db.all('SELECT * FROM printing_reassignments')).toHaveLength(2);
+    expect(s.ctx.db.all('SELECT * FROM printing_changes')).toHaveLength(1);
+  });
+
+  it('lets the collector identify an ambiguous entry atomically and refuses destructive merges', async () => {
+    const c = await setupOwner(s.app);
+    const id = await personalId(c);
+    await c.put(`/api/collections/${id}/entries`, { entries: [entry('sv03-016', 2, { variant: 'holofoil', notes: 'Keep this', condition: 'NM', paid: { amount: 7, currency: 'USD' } })] });
+    saveSnapshots(s.ctx.db, [{ ...snap('sv03-016'), printingVersion: 1, variants: ['holofoil_pa', 'holofoil_pb'], printings: [
+      { id: 'holofoil_pa', label: 'Cosmos Holo', finish: 'cosmos', size: 'standard', distribution: 'exclusive', status: 'inferred' },
+      { id: 'holofoil_pb', label: 'Holo · Jumbo', finish: 'holo', size: 'jumbo', distribution: 'unknown', status: 'unverified' },
+    ] }]);
+    expect((await c.post(`/api/collections/${id}/entries/reassign`, { cardId: 'sv03-016', from: 'holofoil', to: 'holofoil_pa' })).statusCode).toBe(200);
+    expect((await c.get(`/api/collections/${id}/state`)).json().entries[0]).toMatchObject({ variant: 'holofoil_pa', quantity: 2, notes: 'Keep this', paid: { amount: 7, currency: 'USD' } });
+    await c.put(`/api/collections/${id}/entries`, { entries: [entry('sv03-016', 1, { variant: 'holofoil' })] });
+    expect((await c.post(`/api/collections/${id}/entries/reassign`, { cardId: 'sv03-016', from: 'holofoil', to: 'holofoil_pa' })).statusCode).toBe(400);
+    expect((await c.get(`/api/collections/${id}/state`)).json().entries).toHaveLength(2);
+    expect((await c.post(`/api/collections/${id}/entries/reassign`, { cardId: 'sv03-016', from: 'holofoil', to: 'madeUpPrinting' })).statusCode).toBe(400);
+  });
+});

@@ -4,6 +4,8 @@
  * ever sees PokemonCard / CardSet / CardSnapshot.
  */
 import type { ApiResponse, CardSet, CardSnapshot, PokemonCard, PriceBlock, PriceSource } from './types';
+import { PRINTING_VERSION, resolvePrintings, type RawPrinting } from './printings';
+export { standardVariants, printingLabel } from './printings';
 import { LEGACY_SET_MAP, SET_CODES } from './legacySets';
 import { fromEnglishCategory, fromEnglishType, splitId, toEnglishCategory, toEnglishType, withLang, type Lang } from './languages';
 
@@ -151,6 +153,7 @@ interface RawCard {
   resistances?: { type: string; value?: string }[];
   retreat?: number;
   variants?: RawVariants;
+  variants_detailed?: (RawPrinting & { pricing?: RawCard['pricing'] })[];
   set?: RawSetBrief;
   pricing?: {
     tcgplayer?: { updated?: string; [variant: string]: unknown };
@@ -345,10 +348,10 @@ function eurPerUsd(): number {
  * nothing for. USD is the base for every stored price; EUR figures are divided by the
  * EUR-per-USD rate.
  */
-export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | 'variants'>, pricechartingPrice?: number): Record<string, number> {
+export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | 'variants'> & Partial<Pick<PokemonCard, 'printings'>>,  pricechartingPrice?: number): Record<string, number> {
   const out: Record<string, number> = {};
   const rate = eurPerUsd();
-  for (const v of new Set([...card.variants, ...Object.keys(card.tcgplayer?.prices ?? {})])) {
+  for (const v of new Set(card.printings?.length ? card.variants : [...card.variants, ...Object.keys(card.tcgplayer?.prices ?? {})])) {
     const t = card.tcgplayer?.prices[v];
     const usd = t?.market ?? t?.mid ?? t?.low;
     if (usd) out[v] = usd;
@@ -356,7 +359,7 @@ export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | '
       const eur = card.cardmarket?.prices[v]?.market;
       // Rounded to cents so converted prices don't show spurious precision.
       if (eur) out[v] = Math.round((eur / rate) * 100) / 100;
-      else if (pricechartingPrice) out[v] = pricechartingPrice;
+      else if (pricechartingPrice && !card.printings?.length) out[v] = pricechartingPrice;
     }
   }
   return out;
@@ -368,6 +371,7 @@ const CATEGORY: Record<string, string> = { Pokemon: 'Pokémon', Trainer: 'Traine
 
 function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard {
   const variants = cardVariants({ id: raw.id, variants: toVariants(raw.variants, raw.rarity) });
+  const printings = resolvePrintings(withLang(lang, raw.id), variants, raw.variants_detailed).filter((p) => !/^swsh(?:9|10|11|12)tg$/.test(setIdFromCardId(raw.id)) || (p.raw?.type !== 'reverse' && p.id !== 'reverseHolofoil'));
   const category = toEnglishCategory(lang, raw.category ?? '');
   const type = (t: string) => toEnglishType(lang, t);
   const isPokemon = category === 'Pokemon';
@@ -402,17 +406,41 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     regulationMark: raw.regulationMark,
     legal: raw.legal,
     images: { small: imageUrl(raw.image, 'low'), large: imageUrl(raw.image, 'high') },
-    variants,
+    variants: printings.map((p) => p.id),
+    printings,
+    printingVersion: PRINTING_VERSION,
     detailed,
   };
   if (detailed) {
+    const standard = printings.filter((p) => p.distribution === 'expansion').map((p) => p.id);
     card.tcgplayer = toTcgplayer(raw.pricing?.tcgplayer);
-    card.cardmarket = toCardmarket(raw.pricing?.cardmarket, variants, raw.name);
+    if (card.tcgplayer) card.tcgplayer.prices = Object.fromEntries(Object.entries(card.tcgplayer.prices).filter(([key]) => standard.includes(key)));
+    card.cardmarket = toCardmarket(raw.pricing?.cardmarket, standard, raw.name);
+    // Detailed records identify the actual product for each printing. Never reuse a base
+    // product's foil quote for an exclusive treatment or an ambiguous legacy key.
+    for (const source of raw.variants_detailed ?? []) {
+      if (!source.pricing) continue;
+      const label = resolvePrintings(withLang(lang, raw.id), variants, [source])[0]?.label;
+      const match = printings.find((p) => p.label === label);
+      if (!match) continue;
+      const tcg = toTcgplayer(source.pricing.tcgplayer);
+      const type = source.type.toLowerCase();
+      const baseKey = type === 'holo' ? 'holofoil' : type === 'reverse' ? 'reverseHolofoil' : type;
+      if (tcg?.prices[baseKey]) {
+        card.tcgplayer ??= { ...tcg, prices: {} };
+        card.tcgplayer.prices[match.id] = tcg.prices[baseKey];
+      }
+      const cm = toCardmarket(source.pricing.cardmarket, [baseKey], raw.name);
+      if (cm?.prices[baseKey]) {
+        card.cardmarket ??= { ...cm, prices: {} };
+        card.cardmarket.prices[match.id] = cm.prices[baseKey];
+      }
+    }
   }
   return card;
 }
 
-const LIST_FIELDS = 'id localId name image category rarity illustrator types hp stage variants { normal reverse holo firstEdition wPromo }';
+const LIST_FIELDS = 'id localId name image category rarity illustrator types hp stage variants_detailed { type subtype size stamp foil } variants { normal reverse holo firstEdition wPromo }';
 
 /** A card with full text and prices. */
 export async function getCard(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
@@ -461,10 +489,10 @@ export async function getSetCards(setId: string): Promise<PokemonCard[]> {
       // Capped at 19 pages (4,750 cards) as a guard against a pagination bug looping forever.
       for (let page = 1; page < 20; page++) {
         // The id filter is a substring match, so results are filtered to this exact set below.
-        const { cards } = await gql<{ cards: RawCard[] }>(
+        const { cards } = await gql<{ cards: (RawCard | null)[] }>(
           `{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: ${per} })${loc(lang)} { ${LIST_FIELDS} } }`,
         );
-        all.push(...cards);
+        all.push(...cards.filter((c): c is RawCard => !!c));
         if (cards.length < per) break;
       }
       return all;
@@ -666,6 +694,9 @@ export function toSnapshot(card: PokemonCard, pricechartingPrice?: number): Card
     image: card.images.small,
     imageLarge: card.images.large,
     variants: cardVariants(card),
+    printings: card.printings,
+    printingVersion: card.printingVersion,
+    pricingComplete: !!card.detailed,
     prices: card.detailed ? usdPrices(card, pricechartingPrice) : {},
     tcgplayerUrl: card.tcgplayer?.url || undefined,
     cardmarketUrl: card.cardmarket?.url,

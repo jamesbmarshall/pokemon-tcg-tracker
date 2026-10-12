@@ -1,3 +1,4 @@
+import { PRINTING_VERSION } from '@poketracker/shared/printings';
 /**
  * Server-side card snapshots and collection reads. Card data (including prices) is stored once
  * per card in the cards table and shared by every collection, so pricing work scales with the
@@ -49,7 +50,27 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
   db.tx(() => {
     for (const next of snaps) {
       const old = prev.get(next.id);
-      const priced = Object.keys(next.prices).length > 0;
+      const signature = (c: CardSnapshot | undefined) => JSON.stringify(c?.printings?.map((p) => ({ id: p.id, label: p.label, distribution: p.distribution, status: p.status, sourceProduct: p.sourceProduct, evidence: p.evidence })).sort((a, b) => a.id.localeCompare(b.id)));
+      if (next.printings?.length && signature(old) !== signature(next)) db.run(
+        'INSERT INTO printing_changes (card_id, previous_data, next_data, printing_version, changed_at) VALUES (?, ?, ?, ?, ?)',
+        next.id, old ? JSON.stringify(old.printings ?? old.variants) : null, JSON.stringify(next.printings), next.printingVersion ?? 0, new Date().toISOString(),
+      );
+      for (const printing of next.printings ?? []) for (const alias of printing.legacyAliases ?? []) {
+        if (alias === printing.id) continue;
+        const rows = db.all<{ collection_id: string }>('SELECT collection_id FROM entries WHERE card_id = ? AND variant = ?', next.id, alias);
+        for (const row of rows) {
+          if (db.get('SELECT 1 FROM entries WHERE collection_id = ? AND card_id = ? AND variant = ?', row.collection_id, next.id, printing.id)) continue;
+          db.run('UPDATE entries SET id = ?, variant = ? WHERE collection_id = ? AND card_id = ? AND variant = ?', `${next.id}::${printing.id}`, printing.id, row.collection_id, next.id, alias);
+          db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', row.collection_id, next.id, alias, printing.id, 'unambiguous catalogue alias', new Date().toISOString());
+        }
+        for (const row of db.all<{ collection_id: string; id: string; data: string }>('SELECT collection_id, id, data FROM graded WHERE card_id = ?', next.id)) {
+          const copy = json<GradedCopy | null>(row.data, null);
+          if (!copy || copy.variant !== alias) continue;
+          db.run('UPDATE graded SET data = ? WHERE collection_id = ? AND id = ?', JSON.stringify({ ...copy, variant: printing.id }), row.collection_id, row.id);
+          db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', row.collection_id, next.id, alias, printing.id, `unambiguous graded alias: ${row.id}`, new Date().toISOString());
+        }
+      }
+      const priced = Object.keys(next.prices).length > 0 || next.pricingComplete || next.printingVersion !== old?.printingVersion;
       const merged = !old || priced
         ? next
         : { ...next, prices: old.prices, tcgplayerUrl: old.tcgplayerUrl, cardmarketUrl: old.cardmarketUrl, tcgplayerUpdatedAt: old.tcgplayerUpdatedAt, cardmarketUpdatedAt: old.cardmarketUpdatedAt };
@@ -86,13 +107,14 @@ function writePriceHistory(db: Db, cards: PokemonCard[], pcFallbacks: Map<string
         for (const [variant, price] of Object.entries(block.prices)) {
           if (price.market == null) continue;
           db.run(
-            'INSERT OR REPLACE INTO price_history (card_id, variant, source, date, price, currency) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT OR REPLACE INTO price_history (card_id, variant, source, date, price, currency, printing_version) VALUES (?, ?, ?, ?, ?, ?, ?)',
             card.id,
             variant,
             source,
             date,
             price.market,
             currency,
+            card.printingVersion ?? 0,
           );
         }
       }
@@ -100,13 +122,14 @@ function writePriceHistory(db: Db, cards: PokemonCard[], pcFallbacks: Map<string
       if (pc) {
         for (const variant of pc.variants) {
           db.run(
-            'INSERT OR REPLACE INTO price_history (card_id, variant, source, date, price, currency) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT OR REPLACE INTO price_history (card_id, variant, source, date, price, currency, printing_version) VALUES (?, ?, ?, ?, ?, ?, ?)',
             card.id,
             variant,
             'pricecharting',
             date,
             pc.price,
             'USD',
+            card.printingVersion ?? 0,
           );
         }
       }
@@ -134,7 +157,7 @@ export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
       const snaps: CardSnapshot[] = [];
       for (const card of fresh) {
         const withoutPc = toSnapshot(card);
-        const missing = card.variants.filter((v) => withoutPc.prices[v] == null);
+        const missing = card.printings?.length ? [] : card.variants.filter((v) => withoutPc.prices[v] == null);
         let pcPrice: number | undefined;
         if (missing.length && pcConfigured(ctx)) {
           try {
@@ -169,8 +192,8 @@ export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
  */
 export function readPriceHistory(db: Db, cardId: string, days: number): CardPriceHistory {
   const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-  const rows = db.all<{ variant: string; source: PriceHistorySource; date: string; price: number; currency: 'USD' | 'EUR' }>(
-    'SELECT variant, source, date, price, currency FROM price_history WHERE card_id = ? AND date >= ? ORDER BY date',
+  const rows = db.all<{ variant: string; source: PriceHistorySource; date: string; price: number; currency: 'USD' | 'EUR'; printing_version: number }>(
+    'SELECT variant, source, date, price, currency, printing_version FROM price_history WHERE card_id = ? AND date >= ? ORDER BY date',
     cardId,
     since,
   );
@@ -186,10 +209,11 @@ export function readPriceHistory(db: Db, cardId: string, days: number): CardPric
         currency: r.currency,
         points: [],
         updatedAt: r.source === 'tcgplayer' ? card?.tcgplayerUpdatedAt : r.source === 'cardmarket' ? card?.cardmarketUpdatedAt : card?.pricechartingUpdatedAt,
-        url: r.source === 'tcgplayer' ? card?.tcgplayerUrl : r.source === 'cardmarket' ? card?.cardmarketUrl : undefined,
+        url: r.source === 'tcgplayer' ? (card?.printings?.find((p) => p.id === r.variant)?.productIds?.tcgplayer ? `https://www.tcgplayer.com/product/${card.printings.find((p) => p.id === r.variant)!.productIds!.tcgplayer}` : card?.tcgplayerUrl) : r.source === 'cardmarket' ? card?.cardmarketUrl : undefined,
       };
       series.set(key, s);
     }
+    if (!r.printing_version) s.legacyAttribution = true;
     s.points.push({ date: r.date, price: r.price });
   }
   return { cardId, series: Array.from(series.values()) };
@@ -289,7 +313,7 @@ export function hydrateMissing(ctx: Ctx, ids: string[]): Promise<number> {
   const waits = new Set<Promise<number>>();
   const missing: string[] = [];
   for (const id of new Set(ids)) {
-    if (Object.keys(known.get(id)?.prices ?? {}).length) continue;
+    if (known.get(id)?.printingVersion === PRINTING_VERSION && Object.keys(known.get(id)?.prices ?? {}).length) continue;
     const running = inFlight.get(id);
     if (running) waits.add(running);
     else missing.push(id);

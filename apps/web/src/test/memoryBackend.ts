@@ -370,6 +370,15 @@ export class MemoryBackend implements Backend {
     });
   }
 
+  reassignEntry(collectionId: string, cardId: string, from: string, to: string) {
+    return this.callIn(collectionId, 'reassignEntry', () => {
+      const entries = this.collection;
+      const old = entries.get(entryKey(cardId, from));
+      if (!old || entries.has(entryKey(cardId, to))) throw new Error('Cannot reassign entry');
+      entries.delete(old.id);
+      entries.set(entryKey(cardId, to), { ...old, id: entryKey(cardId, to), variant: to });
+    });
+  }
   putSetStat(setId: string, masterTotal: number) {
     return this.call('putSetStat', () => void this.setStats.set(setId, { setId, masterTotal, syncedAt: new Date().toISOString() }));
   }

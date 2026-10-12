@@ -254,7 +254,7 @@ describe('getCard', () => {
     ]);
     const card = await api.getCard('base1-4');
     expect(card.variants).toEqual(['holofoil', '1stEditionHolofoil']);
-    expect(Object.keys(card.tcgplayer!.prices).sort()).toEqual(['1stEditionHolofoil', '1stEditionNormal', 'holofoil', 'normal']);
+    expect(Object.keys(card.tcgplayer!.prices).sort()).toEqual(['1stEditionHolofoil', 'holofoil']);
     expect(card.tcgplayer!.url).toBe('');
   });
 

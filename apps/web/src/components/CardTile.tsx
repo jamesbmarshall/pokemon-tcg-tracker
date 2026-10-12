@@ -1,3 +1,4 @@
+import { printingLabel } from '@poketracker/shared/printings';
 import { memo, useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Heart, Minus, Plus } from 'lucide-react';
@@ -46,7 +47,8 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
   const topSlab = slabs[0];
   const hasFoil = variant ? isOwned && isFoil(variant) : !!owned && Object.keys(owned).some(isFoil);
   const price = variant ? s.prices[variant] : Math.max(0, ...s.variants.map((v) => s.prices[v] ?? 0)) || undefined;
-  const label = variant ? variantLabel(variant) : '';
+  const printing = card.printings?.find((p) => p.id === variant);
+  const label = variant ? (printingLabel(card, variant) ?? variantLabel(variant)) : '';
 
   const change = async (variant: string, delta: number) => {
     const before = owned?.[variant] ?? 0;
@@ -137,6 +139,8 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
             {showSet ? `${s.setName} · ` : ''}#{s.number}
             {variant && <span className={isOwned ? 'text-muted' : ''}> · {label}</span>}
           </p>
+          {printing?.distribution === 'exclusive' && <p className="text-[10px] text-muted" title={printing.sourceProduct}>Exclusive printing</p>}
+          {printing?.distribution === 'unknown' && <p className="text-[10px] text-muted">Unverified printing</p>}
         </div>
         {price !== undefined && <span className="shrink-0 font-mono text-[11px] text-muted tabular">{money(price, { compact: true })}</span>}
       </div>
@@ -190,7 +194,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
                         e.preventDefault();
                         if (n) void change(v, -1);
                       }}
-                      title={`${variantLabel(v)} — click to add${n ? ', right-click to remove one' : ''}`}
+                      title={`${printingLabel(card, v) ?? variantLabel(v)} — click to add${n ? ', right-click to remove one' : ''}`}
                       aria-label={`Add ${variantLabel(v)}${n ? ` (have ${n})` : ''}`}
                       className={`h-6 rounded-md border px-1.5 font-mono text-[10px] font-semibold transition-all active:scale-90 ${
                         n

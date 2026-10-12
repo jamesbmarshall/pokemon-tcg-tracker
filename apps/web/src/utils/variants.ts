@@ -26,11 +26,12 @@ const VARIANT_SHORT: Record<string, string> = {
 
 /** Human label for a variant; unknown camelCase names are split into words ("fooBar" -> "Foo Bar"). */
 export function variantLabel(variant: string): string {
+  if (/_p[0-9a-f]+$/.test(variant)) return `${VARIANT_LABELS[variant.split('_p')[0]] ?? 'Unidentified'} printing`;
   return VARIANT_LABELS[variant] ?? variant.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim();
 }
 
 export function variantShort(variant: string): string {
-  return VARIANT_SHORT[variant] ?? variant.slice(0, 2).toUpperCase();
+  return VARIANT_SHORT[variant.split('_p')[0]] ?? variant.slice(0, 2).toUpperCase();
 }
 
 export function isFoil(variant: string) {

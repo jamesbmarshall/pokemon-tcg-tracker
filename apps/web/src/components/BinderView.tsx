@@ -1,3 +1,4 @@
+import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -32,7 +33,7 @@ function Pocket({ slot }: { slot?: BinderSlot }) {
   return (
     <Link
       to={`/card/${slot.card.id}`}
-      title={`${slot.card.name} #${slot.card.number}${slot.variant ? ` · ${variantLabel(slot.variant)}` : ''}`}
+      title={`${slot.card.name} #${slot.card.number}${slot.variant ? ` · ${printingLabel(slot.card, slot.variant) ?? variantLabel(slot.variant)}` : ''}`}
       className="group relative block aspect-[63/88] rounded-[5%/3.6%] bg-black/30 p-[3%] shadow-[inset_0_1px_0_rgb(255_255_255/0.05),inset_0_-8px_14px_rgb(0_0_0/0.35)]"
     >
       {has ? (

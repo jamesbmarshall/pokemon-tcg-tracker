@@ -1,3 +1,4 @@
+import { standardVariants } from '@poketracker/shared/printings';
 import { useMemo } from 'react';
 import { isWithinPrintedTotal } from '../utils/progress';
 import { computeValue, costBasis, entryValue, gradedValue, useCollectionStore, type CostBasis } from '../store/collectionStore';
@@ -89,10 +90,12 @@ export function useCollectionStats() {
         valueUsd: 0,
       };
       s.valueUsd += o.valueUsd;
+      const eligible = new Set(standardVariants(c));
+      const standardHeld = [...held].filter((v) => !c.printings?.length || eligible.has(v));
       // Slabs kept out of the binder add value but don't fill a set slot.
-      if (held.size) {
+      if (standardHeld.length) {
         s.uniqueOwned++;
-        s.slotsOwned += held.size;
+        s.slotsOwned += standardHeld.length;
         if (isWithinPrintedTotal(c.number, c.printedTotal)) s.baseOwned++;
       }
       sets.set(c.setId, s);

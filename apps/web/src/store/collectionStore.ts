@@ -83,6 +83,7 @@ interface CollectionState {
   /** Changes a variant's raw quantity by `delta`, creating or deleting the entry as needed. */
   adjust: (card: CardLike, variant: string, delta: number) => Promise<void>;
   setQuantity: (cardId: string, variant: string, quantity: number) => Promise<void>;
+  reassignEntry: (cardId: string, from: string, to: string) => Promise<boolean>;
   updateEntry: (cardId: string, variant: string, patch: Partial<Pick<CollectionEntry, 'condition' | 'notes' | 'paid' | 'valueUsd'>>) => Promise<void>;
   /** Removes every variant of a card, returning the removed entries for undo (empty if nothing was removed). */
   removeCard: (cardId: string) => Promise<CollectionEntry[]>;
@@ -180,7 +181,7 @@ const newId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto
 
 /** Listing cards (sets, search) carry no prices; never let them wipe a priced snapshot. */
 function merge(prev: CardSnapshot | undefined, next: CardSnapshot): CardSnapshot {
-  if (!prev || Object.keys(next.prices).length) return next;
+  if (!prev || next.pricingComplete || next.printingVersion !== prev.printingVersion || Object.keys(next.prices).length) return next;
   return { ...next, prices: prev.prices, tcgplayerUrl: prev.tcgplayerUrl, cardmarketUrl: prev.cardmarketUrl };
 }
 
@@ -428,6 +429,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         entries.set(key, entry);
         await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, [entry]));
       }
+    },
+
+    reassignEntry: async (cardId, from, to) => {
+      const cid = writable();
+      if (!cid) return false;
+      const old = get().entries.get(entryKey(cardId, from));
+      if (!old || get().entries.has(entryKey(cardId, to))) return false;
+      const entries = new Map(get().entries);
+      entries.delete(old.id);
+      entries.set(entryKey(cardId, to), { ...old, id: entryKey(cardId, to), variant: to });
+      return persist(() => commitEntries(entries), () => getBackend().reassignEntry(cid, cardId, from, to));
     },
 
     updateEntry: async (cardId, variant, patch) => {

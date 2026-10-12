@@ -20,6 +20,7 @@ export function publicBackend(token: string): Backend {
     collections: async () => [],
     state: refuse,
     putEntries: refuse,
+    reassignEntry: refuse,
     deleteEntries: refuse,
     putWishlist: refuse,
     deleteWishlist: refuse,

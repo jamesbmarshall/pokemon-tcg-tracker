@@ -1,3 +1,4 @@
+import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ImagePlus, Search, X } from 'lucide-react';
@@ -24,7 +25,7 @@ interface Props {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export default function GradedForm({ card, copy, onClose }: Props) {
-  const variants = useMemo(() => cardVariants(card), [card]);
+  const variants = useMemo(() => [...new Set([...cardVariants(card), ...(copy ? [copy.variant] : [])])], [card, copy]);
   const byCard = useCollectionStore((s) => s.byCard);
   const saveGraded = useCollectionStore((s) => s.saveGraded);
   const linkGraded = useCollectionStore((s) => s.linkGraded);
@@ -218,7 +219,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
                     aria-pressed={variant === v}
                     className={`h-8 rounded-lg border px-3 text-xs font-medium transition-colors ${variant === v ? 'border-accent bg-accent/15 text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg'}`}
                   >
-                    {variantLabel(v)}
+                    {printingLabel(card, v) ?? variantLabel(v)}
                   </button>
                 ))}
               </div>

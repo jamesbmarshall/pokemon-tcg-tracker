@@ -4,6 +4,24 @@
  */
 export type PriceBlock = { low?: number; mid?: number; high?: number; market?: number; directLow?: number };
 
+/** Printing identity is separate from finish and completion eligibility. */
+export interface CardPrinting {
+  id: string;
+  label: string;
+  finish: string;
+  size: string;
+  stamp?: string;
+  edition?: string;
+  distribution: 'expansion' | 'exclusive' | 'unknown';
+  status: 'verified' | 'inferred' | 'unverified';
+  sourceProduct?: string;
+  evidence?: string;
+  providerId?: string;
+  legacyAliases?: string[];
+  raw?: { type: string; subtype?: string; size?: string; stamp?: string | string[]; foil?: string };
+  productIds?: { tcgplayer?: number; cardmarket?: number };
+}
+
 export interface PokemonCard {
   id: string;
   name: string;
@@ -31,6 +49,8 @@ export interface PokemonCard {
   images: CardImages;
   /** Collectible printings, e.g. normal / reverseHolofoil / holofoil / 1stEditionHolofoil */
   variants: string[];
+  printings?: CardPrinting[];
+  printingVersion?: number;
   /** Whether attacks, text and prices were loaded (search and set listings return lighter cards) */
   detailed?: boolean;
   /** TCGplayer prices per variant, USD */
@@ -142,6 +162,9 @@ export interface CardSnapshot {
   image: string;
   imageLarge: string;
   variants: string[];
+  printings?: CardPrinting[];
+  printingVersion?: number;
+  pricingComplete?: boolean;
   /** Market price per variant, USD */
   prices: Record<string, number>;
   tcgplayerUrl?: string;
@@ -172,6 +195,8 @@ export interface PriceHistorySeries {
   source: PriceHistorySource;
   currency: 'USD' | 'EUR';
   points: PriceHistoryPoint[];
+  /** Historical generic variant quotes cannot be attributed to a physical printing. */
+  legacyAttribution?: boolean;
   updatedAt?: string;
   url?: string;
 }
@@ -220,6 +245,9 @@ export interface SetStat {
   setId: string;
   /** Total collectible variant slots across every card in the set */
   masterTotal: number;
+  allTotal?: number;
+  provisional?: boolean;
+  printingVersion?: number;
   syncedAt: string;
 }
 

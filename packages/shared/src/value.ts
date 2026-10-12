@@ -42,7 +42,7 @@ export function isPaid(v: unknown): v is Paid {
  */
 export function priceOf(card: CardSnapshot | undefined, variant: string) {
   if (!card) return undefined;
-  return card.prices[variant] ?? Object.values(card.prices)[0];
+  return card.prices[variant] ?? (card.printings?.length ? undefined : Object.values(card.prices)[0]);
 }
 
 /** A slab is worth the owner's valuation, else its linked PriceCharting graded price, else the raw market price. */

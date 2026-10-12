@@ -26,7 +26,7 @@ describe('migration 3 (sealed product + shares rebuild)', () => {
 
     // Migration 3 applies cleanly (and migration 4, the price_history rebuild, and migration 5,
     // decks, which was appended after this feature when the two chains were integrated)...
-    expect(db.migrate()).toBe(3);
+    expect(db.migrate()).toBe(MIGRATIONS.length - 2);
 
     // ...and every column of the pre-existing share survived the rebuild verbatim.
     const row = db.get<Record<string, unknown>>('SELECT * FROM shares WHERE id = ?', 's1')!;

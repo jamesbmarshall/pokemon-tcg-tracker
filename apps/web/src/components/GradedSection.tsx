@@ -1,3 +1,4 @@
+import { printingLabel } from '@poketracker/shared/printings';
 import { createPortal } from 'react-dom';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Award, Copy, ExternalLink, ImageIcon, Pencil, Plus, Trash2, X } from 'lucide-react';
@@ -120,7 +121,7 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
           {g.label && g.label !== 'Authentic' && <span className="text-sm text-muted">{g.label}</span>}
         </div>
         <p className="mt-1.5 text-xs text-muted">
-          {variantLabel(g.variant)}
+          {printingLabel(card, g.variant) ?? variantLabel(g.variant)}
           {subs?.length ? <span className="font-mono"> · {subs.map(([k, v]) => `${k[0].toUpperCase()}${v}`).join(' ')}</span> : null}
         </p>
         {g.certNumber && (
