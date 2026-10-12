@@ -1,3 +1,5 @@
+import { PRINTING_VERSION } from '@poketracker/shared/printings';
+import { setProgress } from '@poketracker/shared/completion';
 /**
  * Collections: the card data itself and who may touch it.
  *
@@ -12,7 +14,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { cardVariants, getCardsByIds, getSetCards, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
+import { getCardsByIds, getSetCards, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
 import { buildCodeIndex, setIdsForCode, SUBSET_PREFIXES } from '@poketracker/shared/setCodes';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
@@ -76,7 +78,7 @@ function need(ctx: Ctx, req: FastifyRequest, level: 'read' | 'write' | 'own'): {
 
 // Card ids appear in URL paths (e.g. /wishlist/:cardId), so whitespace, slashes and URL delimiters are banned.
 const CARD_ID = /^[^\s/\\?#]{1,100}$/;
-const VARIANT = /^[A-Za-z0-9]{1,40}$/;
+const VARIANT = /^[A-Za-z0-9_]{1,80}$/;
 const CONDITIONS = new Set(['M', 'NM', 'LP', 'MP', 'HP', 'DMG']);
 // Normalises client timestamps to ISO UTC. Unparseable input falls back to now rather than failing the save.
 const iso = (v: unknown) => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : now());
@@ -231,7 +233,7 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   // Card prices would let a visitor recompute the hidden total, so they go too.
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
   // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
-  const setStats = ctx.db.all<{ set_id: string; master_total: number; synced_at: string }>('SELECT * FROM set_stats').map((s) => ({ setId: s.set_id, masterTotal: s.master_total, syncedAt: s.synced_at }));
+  const setStats = ctx.db.all<{ set_id: string; master_total: number; all_total: number; provisional: number; printing_version: number; synced_at: string }>('SELECT * FROM set_stats WHERE printing_version = ?', PRINTING_VERSION).map((s) => ({ setId: s.set_id, masterTotal: s.master_total, allTotal: s.all_total, provisional: !!s.provisional, printingVersion: s.printing_version, syncedAt: s.synced_at }));
   return { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
 }
 
@@ -543,6 +545,27 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { entries: clean };
   });
 
+  app.post('/api/collections/:id/entries/reassign', async (req) => {
+    const { id } = need(ctx, req, 'write');
+    const body = req.body as { cardId?: unknown; from?: unknown; to?: unknown };
+    const card = cardId(body?.cardId);
+    if (typeof body.from !== 'string' || typeof body.to !== 'string' || !VARIANT.test(body.from) || !VARIANT.test(body.to) || body.from === body.to) throw bad('Invalid printing reassignment');
+    await hydrateMissing(ctx, [card]);
+    const snapshot = readCards(ctx.db, [card]).get(card);
+    if (!snapshot?.printings?.some((p) => p.id === body.to)) throw bad('Choose a known printing');
+    ctx.db.tx(() => {
+      const old = ctx.db.get('SELECT 1 FROM entries WHERE collection_id = ? AND card_id = ? AND variant = ?', id, card, body.from as string);
+      if (!old) {
+        if (snapshot?.printings?.find((p) => p.id === body.to)?.legacyAliases?.includes(body.from as string) && ctx.db.get('SELECT 1 FROM entries WHERE collection_id = ? AND card_id = ? AND variant = ?', id, card, body.to as string)) return;
+        throw notFound('Entry not found');
+      }
+      if (ctx.db.get('SELECT 1 FROM entries WHERE collection_id = ? AND card_id = ? AND variant = ?', id, card, body.to as string)) throw bad('You already own the destination printing. Resolve the duplicate separately to preserve its condition and cost.');
+      ctx.db.run('UPDATE entries SET id = ?, variant = ? WHERE collection_id = ? AND card_id = ? AND variant = ?', entryKey(card, body.to as string), body.to as string, id, card, body.from as string);
+      ctx.db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', id, card, body.from as string, body.to as string, 'collector identification', now());
+    });
+    return { ok: true };
+  });
+
   app.post('/api/collections/:id/entries/delete', async (req) => {
     const { id } = need(ctx, req, 'write');
     const ids = (req.body as { ids?: unknown[] })?.ids;
@@ -817,6 +840,11 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return readPriceHistory(ctx.db, id, days);
   });
 
+  app.get('/api/catalog/printing-review', async (req) => {
+    requireRole(req, 'owner', 'admin');
+    return ctx.db.all('SELECT * FROM printing_changes ORDER BY id DESC LIMIT 500');
+  });
+
   app.post('/api/cards/hydrate', async (req) => {
     requireUser(req);
     const ids = (req.body as { ids?: unknown[] })?.ids;
@@ -883,23 +911,28 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
    * rate-limited, so this can't be turned into a way to hammer TCGdex.
    */
   const setStatLimiter = new Limiter(60, 10 * 60_000);
-  const counting = new Map<string, Promise<number>>();
+  type Totals = { masterTotal: number; allTotal: number; provisional: boolean };
+  const counting = new Map<string, Promise<Totals>>();
   app.put('/api/set-stats/:setId', async (req, reply) => {
     const u = requireUser(req);
     const setId = str((req.params as { setId: string }).setId, 100);
     if (!setId || !SET_ID.test(setId)) throw bad('Invalid set id');
-    const existing = ctx.db.get<{ master_total: number; synced_at: string }>('SELECT master_total, synced_at FROM set_stats WHERE set_id = ?', setId);
-    if (existing && Date.now() - Date.parse(existing.synced_at) < SET_STAT_TTL_MS) return { ok: true, masterTotal: existing.master_total };
+    const existing = ctx.db.get<{ master_total: number; all_total: number; provisional: number; synced_at: string }>('SELECT master_total, all_total, provisional, synced_at FROM set_stats WHERE set_id = ? AND printing_version = ?', setId, PRINTING_VERSION);
+    if (existing && Date.now() - Date.parse(existing.synced_at) < SET_STAT_TTL_MS) return { ok: true, masterTotal: existing.master_total, allTotal: existing.all_total, provisional: !!existing.provisional };
     setStatLimiter.check(u.id, reply);
     let job = counting.get(setId);
     if (!job) {
       job = tcgdexProvider
         .getSetCards(setId)
-        .then((cards) => cards.reduce((n, c) => n + cardVariants(c).length, 0))
+        .then((cards) => {
+          if (!cards.length) throw notFound('Unknown set');
+          const progress = setProgress(cards, new Map());
+          return { masterTotal: progress.master.total, allTotal: progress.all.total, provisional: progress.provisional };
+        })
         .finally(() => counting.delete(setId));
       counting.set(setId, job);
     }
-    let total: number;
+    let total: Totals;
     try {
       total = await job;
     } catch {
@@ -908,9 +941,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       if (existing) return { ok: true, masterTotal: existing.master_total, stale: true };
       throw new HttpError(502, 'Could not reach the card catalogue', 'upstream');
     }
-    if (total < 1) throw notFound('Unknown set');
-    ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, synced_at) VALUES (?, ?, ?)', setId, total, now());
-    return { ok: true, masterTotal: total };
+    ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, all_total, provisional, printing_version, synced_at) VALUES (?, ?, ?, ?, ?, ?)', setId, total.masterTotal, total.allTotal, total.provisional ? 1 : 0, PRINTING_VERSION, now());
+    return { ok: true, ...total };
   });
 
   // ------------------------------------------------------------ deck import and legality settings

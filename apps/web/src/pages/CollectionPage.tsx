@@ -1,3 +1,4 @@
+import { printingLabel } from '@poketracker/shared/printings';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useRememberedParams } from '../hooks/useViewPrefs';
@@ -231,7 +232,7 @@ export default function CollectionPage() {
                       {o.entries.map((e) => (
                         <span
                           key={e.variant}
-                          title={`${variantLabel(e.variant)} · ${e.condition ?? 'NM'}`}
+                          title={`${printingLabel(o.card, e.variant) ?? variantLabel(e.variant)} · ${e.condition ?? 'NM'}`}
                           className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${isFoil(e.variant) ? 'holo-bar text-onyx' : 'bg-accent text-on-accent'}`}
                         >
                           {variantShort(e.variant)}
@@ -241,7 +242,7 @@ export default function CollectionPage() {
                       {o.graded.map((g) => (
                         <span
                           key={g.id}
-                          title={`${variantLabel(g.variant)} · ${g.label ?? 'Graded'}${g.certNumber ? ` · cert ${g.certNumber}` : ''}${g.countsTowardSet ? '' : ' · kept out of set progress'}`}
+                          title={`${printingLabel(o.card, g.variant) ?? variantLabel(g.variant)} · ${g.label ?? 'Graded'}${g.certNumber ? ` · cert ${g.certNumber}` : ''}${g.countsTowardSet ? '' : ' · kept out of set progress'}`}
                           className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${g.countsTowardSet ? 'bg-fg text-canvas' : 'border border-dashed border-fg/60 text-fg'}`}
                         >
                           {formatGrade(g)}

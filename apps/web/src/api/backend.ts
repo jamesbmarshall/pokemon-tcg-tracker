@@ -143,6 +143,7 @@ export interface Backend {
   collections(): Promise<CollectionSummary[]>;
   state(collectionId: string): Promise<CollectionData>;
   putEntries(collectionId: string, entries: CollectionEntry[]): Promise<void>;
+  reassignEntry(collectionId: string, cardId: string, from: string, to: string): Promise<void>;
   deleteEntries(collectionId: string, ids: string[]): Promise<void>;
   putWishlist(collectionId: string, entry: WishlistEntry): Promise<void>;
   deleteWishlist(collectionId: string, cardId: string): Promise<void>;
@@ -209,6 +210,7 @@ export const httpBackend: Backend = {
   collections: () => api('/api/collections'),
   state: (id) => api(`${c(id)}/state`),
   putEntries: async (id, entries) => void (await api(`${c(id)}/entries`, { method: 'PUT', body: { entries } })),
+  reassignEntry: async (id, cardId, from, to) => void (await api(`${c(id)}/entries/reassign`, { method: 'POST', body: { cardId, from, to } })),
   deleteEntries: async (id, ids) => void (await api(`${c(id)}/entries/delete`, { method: 'POST', body: { ids } })),
   putWishlist: async (id, w) => void (await api(`${c(id)}/wishlist/${enc(w.cardId)}`, { method: 'PUT', body: { addedAt: w.addedAt } })),
   deleteWishlist: async (id, cardId) => void (await api(`${c(id)}/wishlist/${enc(cardId)}`, { method: 'DELETE' })),

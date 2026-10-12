@@ -77,7 +77,7 @@ describe('prefixed set numbering', () => {
     }));
     const holdings = new Map(cards.map((c) => [c.id, { holofoil: 1 }]));
     expect(setProgress(cards, holdings)).toEqual({
-      base: { owned: 30, total: 30 }, full: { owned: 30, total: 30 }, master: { owned: 30, total: 30 },
+      base: { owned: 30, total: 30 }, full: { owned: 30, total: 30 }, master: { owned: 30, total: 30 }, all: { owned: 30, total: 30 }, provisional: true,
     });
   });
 });

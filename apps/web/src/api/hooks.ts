@@ -10,7 +10,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@t
 import { getCard, getPrintings, getRarities, getSet, getSetCards, getSets, primeSets, searchCards, setIdFromCardId, type SearchFilters } from './client';
 import { LANGUAGES, type Lang } from './languages';
 import { useCollectionStore } from '../store/collectionStore';
-import { cardVariants } from './client';
+import { standardVariants } from './client';
 import type { CardSet, PokemonCard } from './types';
 
 const HOUR = 1000 * 60 * 60;
@@ -71,7 +71,7 @@ export function useSetCards(setId: string) {
   });
   useEffect(() => {
     if (q.data?.length) {
-      void recordSetStat(setId, q.data.reduce((n, c) => n + cardVariants(c).length, 0));
+      void recordSetStat(setId, q.data.reduce((n, c) => n + standardVariants(c).length, 0));
     }
   }, [q.data, setId, recordSetStat]);
   return q;

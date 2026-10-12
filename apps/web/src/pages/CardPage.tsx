@@ -1,3 +1,4 @@
+import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, ExternalLink, Heart, Minus, Plus, Trash2 } from 'lucide-react';
@@ -31,11 +32,13 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const owned = useOwned(card.id);
   const entry = useCollectionStore((s) => s.entries.get(`${card.id}::${variant}`));
   const adjust = useCollectionStore((s) => s.adjust);
+  const reassignEntry = useCollectionStore((s) => s.reassignEntry);
   const updateEntry = useCollectionStore((s) => s.updateEntry);
   const readOnly = useReadOnly();
   const money = useMoney();
   const { rates } = useFx();
   const n = owned?.[variant] ?? 0;
+  const printing = card.printings?.find((p) => p.id === variant);
   const market = usdPrices(card)[variant];
   const low = card.tcgplayer?.prices[variant]?.low;
   const paidEach = n ? paidUsd(entry?.paid, rates) : undefined;
@@ -45,7 +48,13 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
     <div className="flex flex-wrap items-center gap-3 py-3">
       <span className={`h-8 w-[3px] rounded-full ${n ? (isFoil(variant) ? 'holo-bar' : 'bg-accent') : 'bg-surface-3'}`} />
       <div className="min-w-48 flex-1">
-        <p className="text-sm font-semibold">{variantLabel(variant)}</p>
+        {!readOnly && n > 0 && !card.variants.includes(variant) && <select aria-label={`Identify legacy ${variantLabel(variant)}`} className="input mb-2" value="" onChange={(e) => { if (e.target.value) void reassignEntry(card.id, variant, e.target.value); }}>
+          <option value="">Identify this printing…</option>
+          {card.printings?.map((p) => <option key={p.id} value={p.id} disabled={!!owned?.[p.id]}>{p.label}</option>)}
+        </select>}
+        <p className="text-sm font-semibold">{printingLabel(card, variant) ?? variantLabel(variant)}</p>
+        <p className="text-xs text-muted">{printing?.distribution === 'exclusive' ? `Exclusive printing${printing.sourceProduct ? ` · ${printing.sourceProduct}` : ''} · excluded from Master` : printing?.distribution === 'unknown' ? 'Unverified printing · excluded from Master' : ''}</p>
+        {printing?.productIds?.tcgplayer && <a className="text-xs text-muted hover:text-accent" href={`https://www.tcgplayer.com/product/${printing.productIds.tcgplayer}`} target="_blank" rel="noreferrer">View this printing on TCGplayer</a>}
         <p className="font-mono text-[11px] text-muted tabular">
           {manualValue != null ? (
             <>
@@ -234,7 +243,7 @@ export default function CardPage() {
     );
   }
 
-  const variants = cardVariants(card);
+  const variants = [...new Set([...cardVariants(card), ...Object.keys(owned ?? {}), ...slabs.map((g) => g.variant)])];
   const rawTotal = ownedTotal(owned);
   // Slabs are owned copies whether or not they count towards set completion.
   const total = rawTotal + slabs.length;
@@ -397,6 +406,7 @@ export default function CardPage() {
             </div>
           </section>
 
+          {variants.some((v) => !card.variants.includes(v)) && <p className="text-sm text-muted">Some owned entries use legacy printing labels. They are preserved, but need identification before they count towards completion.</p>}
           <GradedSection card={card} />
 
           <CardNotes key={card.id} cardId={card.id} />
@@ -440,7 +450,7 @@ export default function CardPage() {
                       const lows = [t?.low, fromEur(c?.low)].filter((x): x is number => !!x);
                       return (
                         <tr key={v}>
-                          <td className="py-2.5 pr-4 font-sans">{variantLabel(v)}</td>
+                          <td className="py-2.5 pr-4 font-sans">{printingLabel(card, v) ?? variantLabel(v)}</td>
                           <td className="px-4 py-2.5 text-right font-semibold">{money(t?.market ?? t?.mid)}</td>
                           <td className="px-4 py-2.5 text-right font-semibold">{money(fromEur(c?.market ?? c?.mid))}</td>
                           <td className="py-2.5 pl-4 text-right text-muted">{money(lows.length ? Math.min(...lows) : undefined)}</td>

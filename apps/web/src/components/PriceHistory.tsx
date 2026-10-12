@@ -58,6 +58,7 @@ export default function PriceHistory({ cardId, variant }: { cardId: string; vari
           <Segmented size="sm" value={active.source} onChange={setSource} options={series.map((s) => ({ value: s.source, label: SOURCE_LABEL[s.source] }))} />
         )}
       </div>
+      {active.legacyAttribution && <p className="text-xs text-muted">Includes legacy prices recorded before individual printings were identified.</p>}
       <div id={panelId}>
         <ValueChart
           points={active.points}

@@ -41,7 +41,9 @@ See [Deploy](#deploy) below for Azure and a bare VPS, or [`deploy/nas/README.md`
 - **Sets**: every set in every TCGdex language, grouped by series, with progress bars. Each set page shows three kinds of completion:
   - **Base**: numbered cards up to the printed total.
   - **Full**: base plus the secret rares.
-  - **Master**: every printing, including reverse holos and other variants.
+  - **Master**: standard expansion printings, including applicable reverse holos.
+  - **All printings**: every catalogued printing, including product exclusives, stamps and oversized cards.
+  Exclusive printings remain collectible but do not satisfy Base, Full or Master completion. Unverified treatments appear under All printings; provisional coverage is labelled. See [printing catalogue rules and migration](docs/printings.md).
 - **Fast entry**: each card shows its printings as chips (N, RH, H, 1st…). Click a chip to add a copy and right-click to remove one. Quick add mode adds a − button for touch screens. Anything you remove can be undone.
 - **Binder view**: 9- or 12-pocket pages shown as a two-page spread. Empty pockets show a ghost of the missing card. Arrow keys turn the pages.
 - **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices with a daily price history chart per source, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.

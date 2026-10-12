@@ -347,4 +347,21 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE lists ADD COLUMN format TEXT CHECK (format IS NULL OR format IN ('standard','expanded','unlimited'));
   ALTER TABLE list_cards ADD COLUMN qty INTEGER NOT NULL DEFAULT 1 CHECK (qty BETWEEN 1 AND 60);
   `,
+  /* 6: printing classification changes master totals and provider payload shape. */ `
+  CREATE TABLE printing_changes (
+    id INTEGER PRIMARY KEY, card_id TEXT NOT NULL, previous_data TEXT, next_data TEXT NOT NULL,
+    printing_version INTEGER NOT NULL, changed_at TEXT NOT NULL
+  );
+  CREATE TABLE printing_reassignments (
+    collection_id TEXT NOT NULL, card_id TEXT NOT NULL, from_variant TEXT NOT NULL,
+    to_variant TEXT NOT NULL, reason TEXT NOT NULL, changed_at TEXT NOT NULL
+  );
+  ALTER TABLE price_history ADD COLUMN printing_version INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE set_stats ADD COLUMN all_total INTEGER;
+  ALTER TABLE set_stats ADD COLUMN provisional INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE set_stats ADD COLUMN printing_version INTEGER NOT NULL DEFAULT 0;
+  DELETE FROM set_stats;
+  DELETE FROM http_cache;
+  UPDATE cards SET synced_at = '1970-01-01T00:00:00.000Z';
+  `,
 ];

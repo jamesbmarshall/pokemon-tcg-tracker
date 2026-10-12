@@ -50,7 +50,7 @@ describe('SetPage', () => {
     mocks.useSetCards.mockReturnValue(loadingResult());
     renderPage();
     expect(screen.getByRole('heading', { name: 'Obsidian Flames' })).toBeInTheDocument();
-    expect(screen.getAllByText('…')).toHaveLength(3);
+    expect(screen.getAllByText('…')).toHaveLength(4);
   });
 
   it('shows an error with retry when cards fail to load', async () => {
@@ -85,7 +85,7 @@ describe('SetPage', () => {
     // base 1/2, full 1/3, master 1/5 (2 + 2 + 1 variants)
     expect(screen.getByTitle('Base: numbered cards')).toHaveTextContent('1/2');
     expect(screen.getByTitle('Full: incl. secret rares')).toHaveTextContent('1/3');
-    expect(screen.getByTitle('Master: every variant')).toHaveTextContent('1/5');
+    expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('1/5');
     expect(screen.getByTitle('Full: incl. secret rares')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('radio', { name: 'All 3' })).toHaveAttribute('aria-checked', 'true');
   });
@@ -226,7 +226,7 @@ describe('SetPage', () => {
     });
     renderPage();
     expect(screen.getByTitle('Base: numbered cards')).toHaveTextContent('1/2');
-    expect(screen.getByTitle('Master: every variant')).toHaveTextContent('1/5');
+    expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('1/5');
     // A display-only slab still shows under "Owned"
     await user().click(screen.getByRole('radio', { name: 'Owned' }));
     expect(tileNames()).toEqual(['Charmander', 'Charmeleon']);
@@ -308,7 +308,7 @@ describe('SetPage', () => {
       await u.click(within(reverse).getByRole('button', { name: 'Add Reverse Holo' }));
       expect(await screen.findByRole('link', { name: 'Charmander 001 Reverse Holo, owned ×1' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Charmander 001 Normal, not owned' })).toBeInTheDocument();
-      expect(screen.getByTitle('Master: every variant')).toHaveTextContent('1/5');
+      expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('1/5');
       await u.click(within(reverse).getByRole('button', { name: 'Remove one Reverse Holo' }));
       expect(await screen.findByRole('link', { name: 'Charmander 001 Reverse Holo, not owned' })).toBeInTheDocument();
     });
@@ -331,4 +331,19 @@ describe('SetPage', () => {
       expect(tile).toHaveAttribute('data-flash');
     });
   });
+});
+
+it('keeps exclusive printings collectible in All printings without adding a master gap', async () => {
+  const exclusive = { id: 'holofoil_p123', label: 'Cosmos Holo', finish: 'cosmos', size: 'standard', distribution: 'exclusive' as const, status: 'verified' as const, sourceProduct: 'Tsareena ex Premium Collection' };
+  mocks.useSetCards.mockReturnValue(queryResult([makeCard({ id: 'sv03-016', name: 'Bounsweet', variants: ['normal', 'reverseHolofoil', exclusive.id], printings: [
+    { id: 'normal', label: 'Normal', finish: 'normal', size: 'standard', distribution: 'expansion', status: 'inferred' },
+    { id: 'reverseHolofoil', label: 'Reverse Holo', finish: 'reverse', size: 'standard', distribution: 'expansion', status: 'inferred' }, exclusive,
+  ] })]));
+  useSettings.setState({ setMode: 'master' });
+  renderPage();
+  expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('0/2');
+  expect(screen.getByTitle('All printings: includes extras')).toHaveTextContent('0/3');
+  expect(screen.queryByRole('link', { name: /Cosmos Holo/ })).not.toBeInTheDocument();
+  await user().click(screen.getByTitle('All printings: includes extras'));
+  expect(screen.getByRole('link', { name: /Cosmos Holo/ })).toBeInTheDocument();
 });

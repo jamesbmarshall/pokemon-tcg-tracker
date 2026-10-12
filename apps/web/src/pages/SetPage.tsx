@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { ShareButton } from '../components/ShareDialog';
 import { ArrowUpDown, ChevronLeft, Grid3x3, LayoutGrid, Search, X, Zap } from 'lucide-react';
 import { useSet, useSetCards } from '../api/hooks';
-import { cardVariants, toSnapshot } from '../api/client';
+import { cardVariants, standardVariants, toSnapshot } from '../api/client';
 import { entryValue, gradedValue, useCollectionStore, useReadOnly } from '../store/collectionStore';
 import { SetLogo, SetSymbol } from '../components/SetArt';
 import { useSettings } from '../store/settingsStore';
@@ -62,7 +62,7 @@ export default function SetPage() {
     return usd;
   }, [entries, graded, snapshots, setId]);
 
-  const master = setMode === 'master';
+  const master = setMode === 'master' || setMode === 'all';
   // Base hides secret rares, unless the set has no numbered cards to show at all.
   const baseOnly = setMode === 'base' && progress.base.total > 0;
 
@@ -78,15 +78,17 @@ export default function SetPage() {
     });
     if (sort === 'rarity') list.sort((a, b) => rarityTier(b.rarity) - rarityTier(a.rarity) || a.number.localeCompare(b.number, undefined, { numeric: true }));
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
-    const out = master ? list.flatMap((card) => cardVariants(card).map((variant) => ({ card, variant }))) : list.map((card) => ({ card, variant: undefined as string | undefined }));
+    const out = master ? list.flatMap((card) => (setMode === 'all' ? cardVariants(card) : standardVariants(card)).map((variant) => ({ card, variant }))) : list.map((card) => ({ card, variant: undefined as string | undefined }));
     return out.filter(({ card, variant }) => {
       const held = byCard.get(card.id);
+      const eligible = new Set(standardVariants(card));
+      const hasStandard = !!held && Object.keys(held).some((v) => eligible.has(v) && held[v] > 0);
       // Display-only slabs still mean you own the card, but they don't fill a gap in the set.
-      if (show === 'owned') return variant ? !!held?.[variant] || !!slabs.get(card.id)?.some((g) => g.variant === variant) : !!held || slabs.has(card.id);
-      if (show === 'missing') return variant ? !held?.[variant] : !held;
+      if (show === 'owned') return variant ? !!held?.[variant] || !!slabs.get(card.id)?.some((g) => g.variant === variant) : hasStandard || !!slabs.get(card.id)?.some((g) => eligible.has(g.variant));
+      if (show === 'missing') return variant ? !held?.[variant] : !hasStandard;
       return true;
     });
-  }, [cards, rarity, q, show, sort, byCard, slabs, wishlist, master, baseOnly]);
+  }, [cards, rarity, q, show, sort, byCard, slabs, wishlist, master, baseOnly, setMode]);
 
   // Returning from a card: bring its tile back into view and briefly highlight it.
   const fromCard = (useLocation().state as { fromCard?: string } | null)?.fromCard;
@@ -109,7 +111,8 @@ export default function SetPage() {
   const modes = [
     { key: 'base' as const, label: 'Base', hint: 'Numbered cards', ...progress.base },
     { key: 'full' as const, label: 'Full', hint: 'Incl. secret rares', ...progress.full },
-    { key: 'master' as const, label: 'Master', hint: 'Every variant', ...progress.master },
+    { key: 'master' as const, label: 'Master', hint: 'Standard printings', ...progress.master },
+    { key: 'all' as const, label: 'All printings', hint: 'Includes extras', ...progress.all },
   ];
 
   if (setError || error) {
@@ -135,6 +138,7 @@ export default function SetPage() {
         <ChevronLeft size={16} /> Sets
       </Link>
 
+      {progress.provisional && <p className="text-xs text-muted">Printing coverage is provisional. Unverified extras are collectible under All printings and excluded from Master.</p>}
       {/* Header */}
       {setLoading || !set ? (
         <Skeleton className="h-52" />
@@ -202,7 +206,7 @@ export default function SetPage() {
             value={show}
             onChange={setShow}
             options={[
-              { value: 'all', label: `All ${(master ? progress.master.total : baseOnly ? progress.base.total : cards.length) || ''}` },
+              { value: 'all', label: `All ${(master ? progress[setMode === 'all' ? 'all' : 'master'].total : baseOnly ? progress.base.total : cards.length) || ''}` },
               { value: 'owned', label: 'Owned' },
               { value: 'missing', label: 'Missing', title: master ? 'Variants you don’t have yet' : 'Cards with no copies' },
               { value: 'wishlist', label: 'Wishlist' },
