@@ -106,7 +106,7 @@ export default function SetsPage() {
         </div>
       )}
 
-      {!isLoading && grouped.size === 0 && (
+      {!isLoading && sets && grouped.size === 0 && (
         <p className="border-y border-line py-12 text-center text-sm text-muted">
           {filter === 'started' ? 'You haven’t started any sets yet — open one and tap a card to begin.' : 'No sets match.'}
         </p>

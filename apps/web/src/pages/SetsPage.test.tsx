@@ -43,8 +43,9 @@ describe('SetsPage', () => {
   it('shows an error with retry', async () => {
     const err = errorResult('Offline');
     mocks.useSets.mockReturnValue(err);
-    renderPage();
+    renderPage('/sets?filter=started');
     expect(screen.getByRole('alert')).toHaveTextContent("Couldn't load sets");
+    expect(screen.queryByText(/You haven’t started any sets yet/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(err.refetch).toHaveBeenCalled();
   });
