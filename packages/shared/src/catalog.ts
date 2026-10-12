@@ -218,7 +218,9 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
   let p = setsInFlight.get(lang);
   if (!p) {
     p = gql<{ sets: RawSet[] }>(
-      `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } abbreviation { official } } }`,
+      // Abbreviations are available in REST responses, but not in the GraphQL Set schema.
+      // List results use the static English set-code fallback in toSet().
+      `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } } }`,
     )
       .then(({ sets }) => {
         const list = sets
