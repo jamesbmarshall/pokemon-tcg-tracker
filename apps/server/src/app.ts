@@ -1,3 +1,4 @@
+import { initCatalog } from './cards.ts';
 /**
  * Builds the Fastify instance: security headers, CSRF and session hooks, the API routes and
  * the SPA. Kept separate from index.ts so tests can build a full app against an in-memory
@@ -31,6 +32,7 @@ const hopsTrust = (hops: number) => (_addr: string, i: number) => i < hops;
  * not-found handler only sees requests nothing else claimed.
  */
 export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (method: string, url: string) => void } = {}): Promise<FastifyInstance> {
+  initCatalog(ctx);
   const app = Fastify({
     logger: opts.logger === false ? false : { level: ctx.config.logLevel, redact: ['req.headers.cookie', 'req.headers.authorization'] },
     // A hop count becomes the same function proxy-addr builds internally (trust the nearest n

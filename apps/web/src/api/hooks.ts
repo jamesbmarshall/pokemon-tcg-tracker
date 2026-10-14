@@ -10,7 +10,8 @@ import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@t
 import { getCard, getPrintings, getRarities, getSet, getSetCards, getSets, primeSets, searchCards, setIdFromCardId, type SearchFilters } from './client';
 import { LANGUAGES, type Lang } from './languages';
 import { useCollectionStore } from '../store/collectionStore';
-import { standardVariants } from './client';
+import { setProgress } from '@poketracker/shared/completion';
+import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import type { CardSet, PokemonCard } from './types';
 
 const HOUR = 1000 * 60 * 60;
@@ -71,7 +72,8 @@ export function useSetCards(setId: string) {
   });
   useEffect(() => {
     if (q.data?.length) {
-      void recordSetStat(setId, q.data.reduce((n, c) => n + standardVariants(c).length, 0));
+      const p = setProgress(q.data, new Map());
+      void recordSetStat(setId, p.master.total, { allTotal: p.all.total, provisional: p.provisional, unresolvedTotal: p.unresolved, additionalTotal: p.additional, profile: q.data[0]?.printingProfile, printingVersion: PRINTING_VERSION });
     }
   }, [q.data, setId, recordSetStat]);
   return q;

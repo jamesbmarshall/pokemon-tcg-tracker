@@ -4,6 +4,7 @@
  * ever sees PokemonCard / CardSet / CardSnapshot.
  */
 import type { ApiResponse, CardSet, CardSnapshot, PokemonCard, PriceBlock, PriceSource } from './types';
+import { applyPrintingProfile, buildPrintingProfile, type PrintingProfile } from './printingRules';
 import { PRINTING_VERSION, resolvePrintings, type RawPrinting } from './printings';
 export { standardVariants, printingLabel } from './printings';
 import { LEGACY_SET_MAP, SET_CODES } from './legacySets';
@@ -15,6 +16,13 @@ export const TCGDEX_API = 'https://api.tcgdex.net/v2';
 
 let API = TCGDEX_API;
 let GRAPHQL = `${TCGDEX_API}/graphql`;
+const profiles = new Map<string, PrintingProfile>();
+interface CatalogueStorage {
+  profile: (setId: string) => PrintingProfile | undefined;
+  rawCard: (cardId: string) => RawCard | undefined;
+  saveRawCard: (cardId: string, raw: RawCard) => void;
+}
+let storage: CatalogueStorage | undefined;
 let extraHeaders: () => Record<string, string> = () => ({});
 // Only used to convert Cardmarket (EUR) prices to USD when TCGplayer has none.
 let eurRate: () => number = () => 0.89;
@@ -23,11 +31,13 @@ let eurRate: () => number = () => 0.89;
  * The browser talks to TCGdex through the app server (which caches responses); the server
  * talks to TCGdex directly. `base` is the equivalent of https://api.tcgdex.net/v2.
  */
-export function configureCatalog(opts: { base?: string; headers?: () => Record<string, string>; eurPerUsd?: () => number }) {
+export function configureCatalog(opts: { base?: string; headers?: () => Record<string, string>; eurPerUsd?: () => number; storage?: CatalogueStorage | null }) {
   if (opts.base) {
+    if (API !== opts.base) { profiles.clear(); storage = undefined; }
     API = opts.base.replace(/\/$/, '');
     GRAPHQL = `${API}/graphql`;
   }
+  if ('storage' in opts) storage = opts.storage ?? undefined;
   if (opts.headers) extraHeaders = opts.headers;
   if (opts.eurPerUsd) eurRate = opts.eurPerUsd;
 }
@@ -48,7 +58,7 @@ async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSig
     let res: Response;
     try {
       const headers = { ...extraHeaders(), ...(init.headers as Record<string, string> | undefined) };
-      res = await fetch(url, { ...init, headers, signal });
+      res = await fetch(url, { ...init, headers, signal: signal ?? AbortSignal.timeout(30_000) });
     } catch (err) {
       if (signal?.aborted || attempt >= 3) throw err;
       await backoff(attempt);
@@ -127,7 +137,7 @@ interface RawSet extends RawSetBrief {
   abbreviation?: { official?: string };
 }
 
-interface RawCard {
+export interface RawCard {
   id: string;
   localId: string;
   name: string;
@@ -152,6 +162,7 @@ interface RawCard {
   weaknesses?: { type: string; value?: string }[];
   resistances?: { type: string; value?: string }[];
   retreat?: number;
+  thirdParty?: RawPrinting['thirdParty'];
   variants?: RawVariants;
   variants_detailed?: (RawPrinting & { pricing?: RawCard['pricing'] })[];
   set?: RawSetBrief;
@@ -267,19 +278,18 @@ const VARIANT_ORDER = ['normal', '1stEditionNormal', 'holofoil', '1stEditionHolo
 /**
  * Maps TCGdex's variant flags to the variant keys stored in collections (pokemontcg.io names).
  * A first-edition flag on a card with both normal and holo printings yields both 1st Edition
- * variants. With no flags at all, guess from rarity so every card has at least one variant.
+ * variants. Missing flags do not establish any printing.
  */
-function toVariants(v: RawVariants | undefined, rarity?: string): string[] {
+function toVariants(v: RawVariants | undefined): string[] {
   const out: string[] = [];
   if (v?.normal) out.push('normal');
   if (v?.holo) out.push('holofoil');
   if (v?.firstEdition) {
-    if (v.normal || !v.holo) out.push('1stEditionNormal');
+    if (v.normal) out.push('1stEditionNormal');
     if (v.holo) out.push('1stEditionHolofoil');
   }
   if (v?.reverse) out.push('reverseHolofoil');
   if (v?.wPromo) out.push('wPromo');
-  if (!out.length) out.push(/holo|rare|ultra|secret|illustration/i.test(rarity ?? '') ? 'holofoil' : 'normal');
   return out.sort((a, b) => VARIANT_ORDER.indexOf(a) - VARIANT_ORDER.indexOf(b));
 }
 
@@ -370,8 +380,12 @@ export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | '
 const CATEGORY: Record<string, string> = { Pokemon: 'Pokémon', Trainer: 'Trainer', Energy: 'Energy' };
 
 function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard {
-  const variants = cardVariants({ id: raw.id, variants: toVariants(raw.variants, raw.rarity) });
-  const printings = resolvePrintings(withLang(lang, raw.id), variants, raw.variants_detailed).filter((p) => !/^swsh(?:9|10|11|12)tg$/.test(setIdFromCardId(raw.id)) || (p.raw?.type !== 'reverse' && p.id !== 'reverseHolofoil'));
+  const variants = cardVariants({ id: raw.id, variants: toVariants(raw.variants) });
+  const conflict = raw.variants_detailed?.length && ['normal', 'holo', 'reverse'].some((k) => {
+    const flag = raw.variants?.[k as keyof RawVariants];
+    return typeof flag === 'boolean' && flag !== raw.variants_detailed!.some((p) => typeof p?.type === 'string' && p.type.toLowerCase() === k);
+  });
+  const printings = resolvePrintings(withLang(lang, raw.id), variants, conflict ? raw.variants_detailed?.map((p) => ({ ...p, dataQuality: 'conflict' as const })) : raw.variants_detailed);
   const category = toEnglishCategory(lang, raw.category ?? '');
   const type = (t: string) => toEnglishType(lang, t);
   const isPokemon = category === 'Pokemon';
@@ -409,20 +423,24 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
     variants: printings.map((p) => p.id),
     printings,
     printingVersion: PRINTING_VERSION,
+    printingContext: { setId: withLang(lang, raw.set?.id ?? setIdFromCardId(raw.id)), language: lang, rarity: raw.rarity, category: raw.category, mechanic: raw.suffix ?? '' },
     detailed,
   };
   if (detailed) {
-    const standard = printings.filter((p) => p.distribution === 'expansion').map((p) => p.id);
+    const standard = printings.filter((p) => !p.stamp && !p.edition && p.size === 'standard' && !p.raw?.foil && VARIANT_ORDER.includes(p.id) && (!p.productIds || Object.entries(p.productIds).every(([market, id]) => {
+      const baseId = raw.thirdParty?.[market as keyof NonNullable<RawCard['thirdParty']>] ?? (market === 'cardmarket' ? raw.pricing?.cardmarket?.idProduct : undefined);
+      return baseId != null && id === baseId;
+    }))).map((p) => p.id);
     card.tcgplayer = toTcgplayer(raw.pricing?.tcgplayer);
     if (card.tcgplayer) card.tcgplayer.prices = Object.fromEntries(Object.entries(card.tcgplayer.prices).filter(([key]) => standard.includes(key)));
     card.cardmarket = toCardmarket(raw.pricing?.cardmarket, standard, raw.name);
     // Detailed records identify the actual product for each printing. Never reuse a base
     // product's foil quote for an exclusive treatment or an ambiguous legacy key.
     for (const source of raw.variants_detailed ?? []) {
-      if (!source.pricing) continue;
-      const label = resolvePrintings(withLang(lang, raw.id), variants, [source])[0]?.label;
-      const match = printings.find((p) => p.label === label);
-      if (!match) continue;
+      if (!source?.pricing || typeof source.type !== 'string') continue;
+      const id = resolvePrintings(withLang(lang, raw.id), variants, [source])[0]?.id;
+      const match = printings.find((p) => p.id === id);
+      if (!match || match.dataQuality === 'conflict' || match.dataQuality === 'invalid') continue;
       const tcg = toTcgplayer(source.pricing.tcgplayer);
       const type = source.type.toLowerCase();
       const baseKey = type === 'holo' ? 'holofoil' : type === 'reverse' ? 'reverseHolofoil' : type;
@@ -437,17 +455,17 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
       }
     }
   }
-  return card;
+  return applyPrintingProfile(card, storage?.profile(card.set.id) ?? profiles.get(card.set.id));
 }
 
-const LIST_FIELDS = 'id localId name image category rarity illustrator types hp stage variants_detailed { type subtype size stamp foil } variants { normal reverse holo firstEdition wPromo }';
+const LIST_FIELDS = 'id localId name image category rarity illustrator types hp stage suffix variants_detailed { type subtype size stamp foil } variants { normal reverse holo firstEdition wPromo }';
 
 /** A card with full text and prices. */
 export async function getCard(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
   const { lang, raw } = splitId(cardId);
   // Best effort: the set list adds release dates, but a card should still load without it.
   await ensureSets(lang).catch(() => undefined);
-  return toCard(await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, signal, lang), true, lang);
+  return toCard(await getRawCard(raw, lang, signal), true, lang);
 }
 
 /** Lightweight cards (no text/prices) for many ids in one round trip. Unknown ids are skipped. */
@@ -478,30 +496,51 @@ export async function getCardsByIds(ids: string[]): Promise<PokemonCard[]> {
   return ok;
 }
 
-/** Every card in a set, in number order. */
+/** Full records are cached per card so an interrupted set import can resume. */
+async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal): Promise<RawCard> {
+  const id = withLang(lang, rawId);
+  const cached = storage?.rawCard(id);
+  if (cached) return cached;
+  const raw = await rest<RawCard>(`/cards/${encodeURIComponent(rawId)}`, undefined, signal, lang);
+  if (raw.id !== rawId || !raw.localId || !raw.name) throw new Error('Incomplete card response');
+  storage?.saveRawCard(id, raw);
+  return raw;
+}
+
+/** Lightweight lookup candidates; not a complete printing catalogue. */
+export async function getSetCardsBrief(setId: string): Promise<PokemonCard[]> {
+  const { lang, raw: rawSetId } = splitId(setId);
+  await ensureSets(lang).catch(() => undefined);
+  const found = new Map<string, PokemonCard>();
+  for (let page = 1; page < 20; page++) {
+    const { cards } = await gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`);
+    for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) found.set(c.id, toCard(c, false, lang));
+    if (cards.length < 250) return [...found.values()].sort(compareCardNumber);
+  }
+  throw new Error('Set lookup exceeded the page limit');
+}
+
+/** Every card in a set, with one profile built from a complete import. */
 export async function getSetCards(setId: string): Promise<PokemonCard[]> {
   const { lang, raw: rawSetId } = splitId(setId);
-  const [, raw] = await Promise.all([
-    getSet(setId),
-    (async () => {
-      const all: RawCard[] = [];
-      const per = 250;
-      // Capped at 19 pages (4,750 cards) as a guard against a pagination bug looping forever.
-      for (let page = 1; page < 20; page++) {
-        // The id filter is a substring match, so results are filtered to this exact set below.
-        const { cards } = await gql<{ cards: (RawCard | null)[] }>(
-          `{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: ${per} })${loc(lang)} { ${LIST_FIELDS} } }`,
-        );
-        all.push(...cards.filter((c): c is RawCard => !!c));
-        if (cards.length < per) break;
-      }
-      return all;
-    })(),
-  ]);
-  return raw
-    .filter((c) => setIdFromCardId(c.id) === rawSetId)
-    .map((c) => toCard(c, false, lang))
-    .sort(compareCardNumber);
+  const set = await getSet(setId);
+  const ids = new Set<string>();
+  let exhausted = false;
+  for (let page = 1; page < 20; page++) {
+    const { cards } = await gql<{ cards: (RawCard | null)[] }>(
+      `{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { id } }`,
+    );
+    for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) ids.add(c.id);
+    if (cards.length < 250) { exhausted = true; break; }
+  }
+  if (!exhausted || !ids.size || (set.total > 0 && ids.size !== set.total)) throw new Error('Set import is incomplete; retaining the previous catalogue');
+  const results = await pool([...ids], 6, async (id) => toCard(await getRawCard(id, lang), true, lang));
+  const failed = results.find((r) => r.status === 'rejected');
+  if (failed?.status === 'rejected') throw failed.reason;
+  const cards = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
+  const profile = buildPrintingProfile(setId, cards, true);
+  profiles.set(setId, profile);
+  return cards.map((card) => applyPrintingProfile(card, profile)).sort(compareCardNumber);
 }
 
 // ---------------------------------------------------------------- search
@@ -654,16 +693,9 @@ export async function getRarities(lang: Lang = 'en'): Promise<string[]> {
 
 // ---------------------------------------------------------------- helpers
 
-/** A card's collectible variants, never empty: every card can be owned as at least a normal printing. */
+/** Only API-listed printings; missing data must not invent a Normal card. */
 export function cardVariants(card: Pick<PokemonCard, 'variants'> & Partial<Pick<PokemonCard, 'id'>>): string[] {
-  // Trainer Galleries have no reverse-holo printings. Some upstream Trainer cards
-  // incorrectly carry the reverse flag; apply this to cached snapshots as well.
-  const setId = card.id ? setIdFromCardId(splitId(card.id).raw) : '';
-  if (/^swsh(?:9|10|11|12)tg$/.test(setId)) {
-    const variants = card.variants?.filter((v) => v !== 'reverseHolofoil') ?? [];
-    return variants.length ? variants : ['holofoil'];
-  }
-  return card.variants?.length ? card.variants : ['normal'];
+  return card.variants ?? [];
 }
 
 /** Natural sort for card numbers, so 2 comes before 10 and TG2 before TG10. */
@@ -696,6 +728,9 @@ export function toSnapshot(card: PokemonCard, pricechartingPrice?: number): Card
     variants: cardVariants(card),
     printings: card.printings,
     printingVersion: card.printingVersion,
+    printingContext: card.printingContext,
+    printingProfile: card.printingProfile,
+    printingCoverage: card.printingCoverage,
     pricingComplete: !!card.detailed,
     prices: card.detailed ? usdPrices(card, pricechartingPrice) : {},
     tcgplayerUrl: card.tcgplayer?.url || undefined,

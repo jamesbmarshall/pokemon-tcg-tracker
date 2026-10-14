@@ -1,3 +1,4 @@
+import { printingRoleLabel } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -53,7 +54,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
           {card.printings?.map((p) => <option key={p.id} value={p.id} disabled={!!owned?.[p.id]}>{p.label}</option>)}
         </select>}
         <p className="text-sm font-semibold">{printingLabel(card, variant) ?? variantLabel(variant)}</p>
-        <p className="text-xs text-muted">{printing?.distribution === 'exclusive' ? `Exclusive printing${printing.sourceProduct ? ` · ${printing.sourceProduct}` : ''} · excluded from Master` : printing?.distribution === 'unknown' ? 'Unverified printing · excluded from Master' : ''}</p>
+        <p className="text-xs text-muted" title={printing?.decision?.reason}>{printing ? printingRoleLabel(printing) : ''}</p>
         {printing?.productIds?.tcgplayer && <a className="text-xs text-muted hover:text-accent" href={`https://www.tcgplayer.com/product/${printing.productIds.tcgplayer}`} target="_blank" rel="noreferrer">View this printing on TCGplayer</a>}
         <p className="font-mono text-[11px] text-muted tabular">
           {manualValue != null ? (

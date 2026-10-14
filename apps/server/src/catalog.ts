@@ -1,3 +1,6 @@
+import { catalogSets, getCatalogCard, getCatalogSet, readCatalogCards } from './printingCatalog.ts';
+import { setIdFromCardId } from '@poketracker/shared/catalog';
+import { LANGUAGES } from '@poketracker/shared/languages';
 /**
  * TCGdex catalogue proxy and cache, card image proxy and cache, and FX rates.
  *
@@ -209,6 +212,39 @@ export async function refreshFx(ctx: Ctx) {
 // ---------------------------------------------------------------- routes
 
 export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
+  const imports = new Limiter(120, 60_000);
+  const catalogId = (value: string) => {
+    if (!/^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,100}$/.test(value)) throw bad('Invalid catalogue id');
+    return value;
+  };
+  app.get('/api/catalog/sets/:lang', async (req, reply) => {
+    requireReader(req);
+    imports.check(req.user?.id ?? req.ip, reply);
+    const lang = (req.params as { lang: string }).lang;
+    const supported = LANGUAGES.find((l) => l.code === lang);
+    if (!supported) throw bad('Unsupported language');
+    return catalogSets(ctx, supported.code);
+  });
+  app.get('/api/catalog/set/:setId', async (req, reply) => {
+    requireReader(req);
+    imports.check(req.user?.id ?? req.ip, reply);
+    return getCatalogSet(ctx, catalogId((req.params as { setId: string }).setId));
+  });
+  app.get('/api/catalog/card/:cardId', async (req, reply) => {
+    requireReader(req);
+    imports.check(req.user?.id ?? req.ip, reply);
+    return getCatalogCard(ctx, catalogId((req.params as { cardId: string }).cardId));
+  });
+  app.get('/api/catalog/known', async (req, reply) => {
+    requireReader(req);
+    imports.check(req.user?.id ?? req.ip, reply);
+    const ids = String((req.query as { ids?: string }).ids ?? '').split(',');
+    if (ids.length > 36) throw bad('Too many cards');
+    ids.forEach(catalogId);
+    const wanted = new Set(ids);
+    return [...new Set(ids.map(setIdFromCardId))].flatMap((setId) => (readCatalogCards(ctx.db, setId) ?? []).filter((c) => wanted.has(c.id)));
+  });
+
   // Per user (or per IP for share visitors). Cache hits count too, which keeps the check cheap.
   const upstream = new Limiter(600, 60_000);
   const base = ctx.config.tcgdexBase.replace(/\/$/, '');

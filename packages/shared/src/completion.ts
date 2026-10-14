@@ -8,6 +8,9 @@ export interface SetProgress {
   master: { owned: number; total: number };
   all: { owned: number; total: number };
   provisional: boolean;
+  unresolved: number;
+  additional: number;
+  coverageComplete: boolean;
 }
 
 /** Prefixes identify a numbering series; they do not make a card secret. */
@@ -21,13 +24,17 @@ export const isBaseCard = (c: Pick<PokemonCard, 'number' | 'set'>) => isWithinPr
 
 /** Base = numbered cards up to printed total; Full = every card; Master = standard expansion printings; All = every collectible printing. */
 export function setProgress(cards: PokemonCard[], byCard: Map<string, Record<string, number>>): SetProgress {
-  const p: SetProgress = { base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 }, master: { owned: 0, total: 0 }, all: { owned: 0, total: 0 }, provisional: false };
+  const p: SetProgress = { base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 }, master: { owned: 0, total: 0 }, all: { owned: 0, total: 0 }, provisional: false, unresolved: 0, additional: 0, coverageComplete: true };
   for (const c of cards) {
     const owned = byCard.get(c.id);
     // Entries are deleted at zero rather than stored, so any key means at least one copy.
     const eligible = new Set(standardVariants(c));
-    const has = !!owned && Object.keys(owned).some((v) => (!c.printings?.length || eligible.has(v)) && owned[v] > 0);
+    const has = !!owned && Object.keys(owned).some((v) => eligible.has(v) && owned[v] > 0);
     if (!c.printings?.length || c.printings.some((p) => p.status !== 'verified')) p.provisional = true;
+    p.unresolved += c.printings?.filter((v) => !v.role || v.role === 'unresolved').length ?? 0;
+    if (!c.variants.length) p.unresolved++;
+    p.additional += c.printings?.filter((v) => v.role === 'additional').length ?? 0;
+    if (c.printingCoverage !== 'complete') p.coverageComplete = false;
     const inBase = isBaseCard(c);
     p.full.total++;
     if (has) p.full.owned++;

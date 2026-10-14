@@ -1,4 +1,6 @@
-import { PRINTING_VERSION } from '@poketracker/shared/printings';
+import { classifyPrintings } from '@poketracker/shared/printingRules';
+import { readPrintingProfile } from './printingCatalog.ts';
+import { PRINTING_VERSION, resolvePrintings } from '@poketracker/shared/printings';
 /**
  * Server-side card snapshots and collection reads. Card data (including prices) is stored once
  * per card in the cards table and shared by every collection, so pricing work scales with the
@@ -24,12 +26,20 @@ export function currentRates(db: Db): Rates {
  * it picks up new FX rates without reconfiguring.
  */
 export function initCatalog(ctx: Ctx) {
-  configureCatalog({ base: ctx.config.tcgdexBase, eurPerUsd: () => currentRates(ctx.db).EUR });
+  configureCatalog({ base: ctx.config.tcgdexBase, eurPerUsd: () => currentRates(ctx.db).EUR, storage: {
+    profile: (setId) => readPrintingProfile(ctx.db, setId),
+    rawCard: (cardId) => {
+      const row = ctx.db.get<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM printing_raw_cards WHERE card_id = ?', cardId);
+      return row && Date.now() - row.fetched_at < 6 * 3600_000 ? json(row.data, undefined) : undefined;
+    },
+    saveRawCard: (cardId, raw) => { ctx.db.run('INSERT OR REPLACE INTO printing_raw_cards (card_id, data, fetched_at) VALUES (?, ?, ?)', cardId, JSON.stringify(raw), Date.now()); },
+  } });
 }
 
 /** Reads stored snapshots by id. Missing or corrupt rows are simply absent from the map. */
-export function readCards(db: Db, ids: Iterable<string>): Map<string, CardSnapshot> {
+export function readCards(db: Db, ids: Iterable<string>, classify = true): Map<string, CardSnapshot> {
   const out = new Map<string, CardSnapshot>();
+  const profiles = new Map<string, ReturnType<typeof readPrintingProfile>>();
   const list = Array.from(new Set(ids));
   // Chunked to stay well under SQLite's bound-parameter limit.
   for (let i = 0; i < list.length; i += 500) {
@@ -37,7 +47,20 @@ export function readCards(db: Db, ids: Iterable<string>): Map<string, CardSnapsh
     const rows = db.all<{ data: string }>(`SELECT data FROM cards WHERE id IN (${chunk.map(() => '?').join(',')})`, ...chunk);
     for (const r of rows) {
       const c = json<CardSnapshot | null>(r.data, null);
-      if (c) out.set(c.id, c);
+      if (c) {
+        if (classify && !profiles.has(c.setId)) profiles.set(c.setId, readPrintingProfile(db, c.setId));
+        const profile = profiles.get(c.setId);
+        // Re-evaluate old snapshots without changing identity, prices or holdings.
+        if (classify && (c.printingVersion !== PRINTING_VERSION || (profile && c.printingProfile !== profile.fingerprint))) {
+          const observed = profile?.cards[c.id];
+          const printings = observed?.printings ?? c.printings ?? resolvePrintings(c.id, c.variants);
+          c.printings = classifyPrintings(c.id, printings.map((p) => ({ ...p, dataQuality: p.dataQuality ?? (p.raw ? p.providerId === 'generated' ? 'generated' : 'detailed' : 'flags') })), observed?.context ?? c.printingContext, profile);
+          if (observed) c.variants = c.printings.map((p) => p.id);
+          c.printingProfile = profile?.fingerprint;
+          c.printingCoverage = profile?.complete && observed ? 'complete' : 'partial';
+        }
+        out.set(c.id, c);
+      }
     }
   }
   return out;
@@ -46,11 +69,12 @@ export function readCards(db: Db, ids: Iterable<string>): Map<string, CardSnapsh
 /** Listing cards carry no prices; never let them wipe a priced snapshot. */
 export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
   if (!snaps.length) return;
-  const prev = readCards(db, snaps.map((s) => s.id));
+  const prev = readCards(db, snaps.map((s) => s.id), false);
   db.tx(() => {
-    for (const next of snaps) {
+    for (let next of snaps) {
       const old = prev.get(next.id);
-      const signature = (c: CardSnapshot | undefined) => JSON.stringify(c?.printings?.map((p) => ({ id: p.id, label: p.label, distribution: p.distribution, status: p.status, sourceProduct: p.sourceProduct, evidence: p.evidence })).sort((a, b) => a.id.localeCompare(b.id)));
+      if (old?.printingCoverage === 'complete' && next.printingCoverage !== 'complete' && !next.pricingComplete) next = { ...next, variants: old.variants, printings: old.printings, printingVersion: old.printingVersion, printingContext: old.printingContext, printingProfile: old.printingProfile, printingCoverage: old.printingCoverage };
+      const signature = (c: CardSnapshot | undefined) => JSON.stringify(c?.printings?.map((p) => ({ id: p.id, label: p.label, distribution: p.distribution, status: p.status, sourceProduct: p.sourceProduct, evidence: p.evidence, role: p.role, decision: p.decision })).sort((a, b) => a.id.localeCompare(b.id)));
       if (next.printings?.length && signature(old) !== signature(next)) db.run(
         'INSERT INTO printing_changes (card_id, previous_data, next_data, printing_version, changed_at) VALUES (?, ?, ?, ?, ?)',
         next.id, old ? JSON.stringify(old.printings ?? old.variants) : null, JSON.stringify(next.printings), next.printingVersion ?? 0, new Date().toISOString(),
@@ -70,7 +94,7 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
           db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', row.collection_id, next.id, alias, printing.id, `unambiguous graded alias: ${row.id}`, new Date().toISOString());
         }
       }
-      const priced = Object.keys(next.prices).length > 0 || next.pricingComplete || next.printingVersion !== old?.printingVersion;
+      const priced = Object.keys(next.prices).length > 0 || next.pricingComplete;
       const merged = !old || priced
         ? next
         : { ...next, prices: old.prices, tcgplayerUrl: old.tcgplayerUrl, cardmarketUrl: old.cardmarketUrl, tcgplayerUpdatedAt: old.tcgplayerUpdatedAt, cardmarketUpdatedAt: old.cardmarketUpdatedAt };
@@ -147,6 +171,9 @@ function writePriceHistory(db: Db, cards: PokemonCard[], pcFallbacks: Map<string
  * variants (manual overrides and TCGdex prices still always win — see usdPrices()).
  */
 export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
+  for (const setId of new Set(ids.map((id) => id.slice(0, id.lastIndexOf('-'))))) {
+    if (!readPrintingProfile(ctx.db, setId)) ctx.db.run('INSERT OR IGNORE INTO printing_sync_queue (set_id, release_date, next_at) VALUES (?, ?, 0)', setId, '');
+  }
   let refreshed = 0;
   let failed = 0;
   // Saved batch by batch so a long run keeps its progress if a later batch fails.

@@ -34,7 +34,7 @@ describe('useCollectionStats', () => {
       cards: new Map(
         [
           makeSnapshot({ id: 'sv03-001', number: '1', prices: { normal: 1, reverseHolofoil: 4 } }),
-          makeSnapshot({ id: 'sv03-223', number: '223', prices: { holofoil: 50 } }),
+          makeSnapshot({ id: 'sv03-223', number: '223', variants: ['holofoil'], prices: { holofoil: 50 } }),
           makeSnapshot({ id: 'tiny-1', number: '1', prices: {}, ...tiny }),
           makeSnapshot({ id: 'tiny-2', number: '2', prices: {}, ...tiny }),
         ].map((c) => [c.id, c]),
@@ -56,7 +56,7 @@ describe('useCollectionStats', () => {
   it('counts prefixed cards toward completed gallery sets', () => {
     const cards = Array.from({ length: 30 }, (_, i) => makeSnapshot({
       id: `swsh10tg-${i + 1}`, setId: 'swsh10tg', printedTotal: 30,
-      number: `TG${String(i + 1).padStart(2, '0')}`,
+      number: `TG${String(i + 1).padStart(2, '0')}`, variants: ['holofoil'],
     }));
     const entries = cards.map((c) => makeEntry({ cardId: c.id, setId: c.setId, variant: 'holofoil' }));
     useCollectionStore.setState({
@@ -68,7 +68,7 @@ describe('useCollectionStats', () => {
     expect(result.current.completedSets).toBe(1);
   });
 
-  it('adds slab value to cards and sets, but only counting slabs fill set progress', () => {
+  it('adds slab value to cards and sets, but only eligible counting slabs fill set progress', () => {
     const graded = new Map(
       [
         makeGraded({ id: 'a', cardId: 'sv03-001', variant: 'holofoil', valueUsd: 200, addedAt: '2025-06-01' }),
@@ -89,7 +89,7 @@ describe('useCollectionStats', () => {
     expect(a.graded.map((g) => g.id)).toEqual(['a']);
     const b = result.current.owned.find((o) => o.card.id === 'sv03-002')!;
     expect(b).toMatchObject({ entries: [], quantity: 1, valueUsd: 3 });
-    expect(result.current.sets).toEqual([expect.objectContaining({ setId: 'sv03', uniqueOwned: 1, baseOwned: 1, slotsOwned: 2, valueUsd: 204 })]);
+    expect(result.current.sets).toEqual([expect.objectContaining({ setId: 'sv03', uniqueOwned: 1, baseOwned: 1, slotsOwned: 1, valueUsd: 204 })]);
   });
 
   it('reports cost basis for copies with a price paid, per card and overall', () => {

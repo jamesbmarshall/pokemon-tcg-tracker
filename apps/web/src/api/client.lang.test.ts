@@ -69,7 +69,8 @@ describe('language-aware catalogue', () => {
   it('loads a language set with raw ids in the filter', async () => {
     let query = '';
     mockFetch([
-      { match: '/v2/ja/sets/SV4a', body: jaSets[0] },
+      { match: '/v2/ja/sets/SV4a', body: { ...jaSets[0], cardCount: { official: 3, total: 3 } } },
+      { match: '/v2/ja/cards/SV4a-', reply: ({ url }) => rawCard(url.split('/').at(-1)!, { set: { id: 'SV4a', name: 'Set' } }) },
       {
         match: 'cards(filters',
         reply: (r) => {

@@ -1,3 +1,5 @@
+import { getCatalogSet, readPrintingProfile } from './printingCatalog.ts';
+import { POLICY_VERSION } from '@poketracker/shared/printingRules';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
 /**
@@ -14,7 +16,7 @@ import { setProgress } from '@poketracker/shared/completion';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getCardsByIds, getSetCards, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
+import { getCardsByIds, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
 import { buildCodeIndex, setIdsForCode, SUBSET_PREFIXES } from '@poketracker/shared/setCodes';
 import { entryKey, GRADING_COMPANIES, isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { CardNote, CardSnapshot, CollectionEntry, GradedCopy, PokemonCard, SealedItem, ValuePoint, WishlistEntry } from '@poketracker/shared/types';
@@ -27,7 +29,6 @@ import { newId } from './security.ts';
 import { migrateImport } from './legacy.ts';
 import { cleanSealed, deleteSealedPhotoFiles, putSealed, readSealed, saveSealedPhoto } from './sealed.ts';
 import { pcGradedPrice, pcProduct } from './providers/pricecharting.ts';
-import { tcgdexProvider } from './providers/tcgdex.ts';
 
 /** Set ids as TCGdex issues them, optionally prefixed with a language (e.g. `sv01`, `ja:SV1a`). */
 const SET_ID = /^(?:[a-z-]{2,5}:)?[A-Za-z0-9.-]{1,40}$/;
@@ -233,7 +234,7 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   // Card prices would let a visitor recompute the hidden total, so they go too.
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
   // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
-  const setStats = ctx.db.all<{ set_id: string; master_total: number; all_total: number; provisional: number; printing_version: number; synced_at: string }>('SELECT * FROM set_stats WHERE printing_version = ?', PRINTING_VERSION).map((s) => ({ setId: s.set_id, masterTotal: s.master_total, allTotal: s.all_total, provisional: !!s.provisional, printingVersion: s.printing_version, syncedAt: s.synced_at }));
+  const setStats = ctx.db.all<{ set_id: string; master_total: number; all_total: number; provisional: number; unresolved_total: number; additional_total: number; profile: string; printing_version: number; synced_at: string }>('SELECT s.* FROM set_stats s JOIN printing_catalogues c ON c.set_id = s.set_id AND c.profile IS NOT NULL WHERE s.printing_version = ? AND c.policy_version = ?', PRINTING_VERSION, POLICY_VERSION).map((s) => ({ setId: s.set_id, masterTotal: s.master_total, allTotal: s.all_total, provisional: !!s.provisional, unresolvedTotal: s.unresolved_total, additionalTotal: s.additional_total, profile: s.profile, printingVersion: s.printing_version, syncedAt: s.synced_at }));
   return { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
 }
 
@@ -432,7 +433,8 @@ const scanSetCardsCache = new Map<string, { cards: PokemonCard[]; at: number }>(
 async function scanSetCards(setId: string): Promise<PokemonCard[]> {
   const hit = scanSetCardsCache.get(setId);
   if (hit && Date.now() - hit.at < SCAN_SET_CARDS_TTL_MS) return hit.cards;
-  const cards = await getSetCards(setId).catch(() => [] as PokemonCard[]);
+  const cards = await getSetCardsBrief(setId).catch(() => [] as PokemonCard[]);
+  if (!cards.length) return cards;
   scanSetCardsCache.set(setId, { cards, at: Date.now() });
   return cards;
 }
@@ -911,23 +913,22 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
    * rate-limited, so this can't be turned into a way to hammer TCGdex.
    */
   const setStatLimiter = new Limiter(60, 10 * 60_000);
-  type Totals = { masterTotal: number; allTotal: number; provisional: boolean };
+  type Totals = { masterTotal: number; allTotal: number; provisional: boolean; unresolvedTotal: number; additionalTotal: number; profile?: string };
   const counting = new Map<string, Promise<Totals>>();
   app.put('/api/set-stats/:setId', async (req, reply) => {
     const u = requireUser(req);
     const setId = str((req.params as { setId: string }).setId, 100);
     if (!setId || !SET_ID.test(setId)) throw bad('Invalid set id');
-    const existing = ctx.db.get<{ master_total: number; all_total: number; provisional: number; synced_at: string }>('SELECT master_total, all_total, provisional, synced_at FROM set_stats WHERE set_id = ? AND printing_version = ?', setId, PRINTING_VERSION);
-    if (existing && Date.now() - Date.parse(existing.synced_at) < SET_STAT_TTL_MS) return { ok: true, masterTotal: existing.master_total, allTotal: existing.all_total, provisional: !!existing.provisional };
+    const existing = ctx.db.get<{ master_total: number; all_total: number; provisional: number; unresolved_total: number; additional_total: number; profile: string; synced_at: string }>('SELECT master_total, all_total, provisional, unresolved_total, additional_total, profile, synced_at FROM set_stats WHERE set_id = ? AND printing_version = ?', setId, PRINTING_VERSION);
+    if (existing && readPrintingProfile(ctx.db, setId)?.fingerprint === existing.profile && Date.now() - Date.parse(existing.synced_at) < SET_STAT_TTL_MS) return { ok: true, masterTotal: existing.master_total, allTotal: existing.all_total, provisional: !!existing.provisional, unresolvedTotal: existing.unresolved_total, additionalTotal: existing.additional_total, profile: existing.profile };
     setStatLimiter.check(u.id, reply);
     let job = counting.get(setId);
     if (!job) {
-      job = tcgdexProvider
-        .getSetCards(setId)
+      job = getCatalogSet(ctx, setId)
         .then((cards) => {
           if (!cards.length) throw notFound('Unknown set');
           const progress = setProgress(cards, new Map());
-          return { masterTotal: progress.master.total, allTotal: progress.all.total, provisional: progress.provisional };
+          return { masterTotal: progress.master.total, allTotal: progress.all.total, provisional: progress.provisional, unresolvedTotal: progress.unresolved, additionalTotal: progress.additional, profile: cards[0]?.printingProfile };
         })
         .finally(() => counting.delete(setId));
       counting.set(setId, job);
@@ -941,7 +942,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       if (existing) return { ok: true, masterTotal: existing.master_total, stale: true };
       throw new HttpError(502, 'Could not reach the card catalogue', 'upstream');
     }
-    ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, all_total, provisional, printing_version, synced_at) VALUES (?, ?, ?, ?, ?, ?)', setId, total.masterTotal, total.allTotal, total.provisional ? 1 : 0, PRINTING_VERSION, now());
+    ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, all_total, provisional, unresolved_total, additional_total, profile, printing_version, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', setId, total.masterTotal, total.allTotal, total.provisional ? 1 : 0, total.unresolvedTotal, total.additionalTotal, total.profile ?? null, PRINTING_VERSION, now());
     return { ok: true, ...total };
   });
 

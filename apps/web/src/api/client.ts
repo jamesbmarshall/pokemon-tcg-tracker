@@ -6,15 +6,31 @@
  * PokéTracker server rather than straight to TCGdex. That keeps the CSP tight and lets the
  * server cache upstream responses for every user.
  */
-import { configureCatalog } from '@poketracker/shared/catalog';
+import { getCard as upstreamCard, getSetCards as upstreamSetCards, getSets as upstreamSets, searchCards as upstreamSearch, configureCatalog, type SearchFilters } from '@poketracker/shared/catalog';
 import { currentRates } from '../utils/fx';
 import { api, API_HEADERS } from './http';
-import type { CardSnapshot } from './types';
+import type { CardSet, PokemonCard, CardSnapshot } from './types';
 
 // Runs at import time so any price conversion done by the catalogue uses live rates.
 configureCatalog({ eurPerUsd: () => currentRates().EUR });
 
 export * from '@poketracker/shared/catalog';
+export function getCard(id: string, signal?: AbortSignal): Promise<PokemonCard> {
+  return proxyImages ? api(`/api/catalog/card/${encodeURIComponent(id)}`, { signal }) : upstreamCard(id, signal);
+}
+export function getSetCards(id: string): Promise<PokemonCard[]> {
+  return proxyImages ? api(`/api/catalog/set/${encodeURIComponent(id)}`) : upstreamSetCards(id);
+}
+export function getSets(lang: import('./languages').Lang = 'en'): Promise<CardSet[]> {
+  return proxyImages ? api(`/api/catalog/sets/${lang}`) : upstreamSets(lang);
+}
+export async function searchCards(filters: SearchFilters, page: number, signal?: AbortSignal) {
+  const result = await upstreamSearch(filters, page, signal);
+  if (!proxyImages || !result.data.length) return result;
+  const known = await api<PokemonCard[]>(`/api/catalog/known?ids=${encodeURIComponent(result.data.map((c) => c.id).join(','))}`, { signal });
+  const cards = new Map(known.map((c) => [c.id, c]));
+  return { ...result, data: result.data.map((c) => cards.get(c.id) ?? c) };
+}
 
 /**
  * Resolves a scanned set code + collector number (or number + printed total) to candidate

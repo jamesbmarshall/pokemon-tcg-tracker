@@ -29,8 +29,8 @@ function seedDashboard(history: ValuePoint[] = []) {
     ],
     cards: [
       makeSnapshot(),
-      makeSnapshot({ id: 'sv03-223', name: 'Charizard ex', prices: { holofoil: 20 } }),
-      makeSnapshot({ id: 'base1-4', name: 'Blastoise', setName: 'Base', printedTotal: 102, prices: { holofoil: 10 } }),
+      makeSnapshot({ id: 'sv03-223', name: 'Charizard ex', variants: ['holofoil'], prices: { holofoil: 20 } }),
+      makeSnapshot({ id: 'base1-4', name: 'Blastoise', setName: 'Base', printedTotal: 102, variants: ['holofoil'], prices: { holofoil: 10 } }),
       makeSnapshot({ id: 'tiny-1', name: 'Promo', setName: 'Tiny', printedTotal: 1, prices: {} }),
     ],
     wishlist: [

@@ -1,40 +1,56 @@
 # Printing catalogue
 
-A card belongs to a set. Its printings have independent identities, finishes, sizes, stamps, editions and distribution classifications. `variants` remains the ownership-key list for compatibility; `printings` supplies its meaning. Stable physical keys do not depend on upstream array order or the number of other printings. Raw physical attributes and REST provider/product IDs are retained alongside classifications.
+The [PokeTracker printing standard v1](printing-standard.md) is implemented using TCGdex API payloads only. There are no production card-name or set-ID classification exceptions, external checklists, or manual approval gates.
 
-Base counts one eligible printing per card within the printed total; Full also includes secret rares. Master counts each standard expansion printing. All printings additionally counts exclusive and unverified printings. An exclusive copy adds to inventory and value but cannot substitute for a standard completion slot. Raw and eligible graded holdings use the same shared completion rules. Legacy snapshots without detailed metadata retain provisional behaviour until refreshed.
+## Classification
 
-## Classification and corrections
+`packages/shared/src/printings.ts` preserves physical identity and raw attributes. `printingRules.ts` assigns Core, Parallel, Additional or Unresolved, separately from release origin. Master includes Core and Parallel. All printings includes every API-listed physical printing. Additional copies remain owned and valued, but do not fill Base, Full or Master slots.
 
-`packages/shared/src/printings.ts` resolves upstream detailed records for both GraphQL listings and REST details. `printingRules.ts` contains scoped corrections and historical exceptions. Rules distinguish standard EX set-logo reverse printings, historical editions, gallery gold cards and supported Black Bolt/White Flare finishes from promotions. The Bounsweet/Steenee Cosmos Holos identify the Tsareena ex Premium Collection with supporting evidence. Recognised promotional stamps identify their distribution; unknown treatments remain unverified and are excluded from standard Master totals. Foil finish or rarity alone never proves exclusivity.
+Assignments retain policy version, rule, reason, profile fingerprint, peer counts and product relationships where applicable. Inferred membership never establishes a product origin. Flags-only, generated, malformed or contradictory records remain unresolved. No finish is invented from rarity or prices. Existing legacy snapshots become provisional until the complete set import replaces them.
 
-Status is verified, inferred, or unverified. Inferred standard distribution is provisional; it does not claim a human-verified checklist. No set-wide completeness claim is made merely because its automated audit succeeded. Rules are language-scoped where required. Other-language unknown treatments remain in review rather than inheriting an English product origin.
+The UI labels roles and inferred membership. Master shows assigned-slot counts with Pending when imports or eligibility are incomplete, including zero-slot catalogues. Additional and unresolved printings remain available under All printings. Missing printing data cannot silently create a Normal choice in add forms.
 
-When adding a rule, retain the raw attributes, cite the product/checklist evidence where available, scope it to the appropriate language/set/printing, and add a regression fixture. Increase `PRINTING_VERSION` when classification or identity semantics change. Versioned server set totals are recalculated on demand; snapshot refresh rejects prices from an older printing version. Tracked cards are refreshed by the existing price job. Provider failures retain the previous snapshot and its classification.
+## Automatic lifecycle
 
-## Existing collections
+The server discovers sets in every supported language every six hours and catches up after restarts. Discovery persists a queue independent of collection ownership. Every 15 minutes it processes up to eight due sets, with at most two concurrent full-set imports and six card fetches per import. Newly discovered sets are ordered by release date. Opening an uncached set or card also triggers its import.
 
-Database migration 6 clears outdated set totals and provider responses, marks snapshots stale, and adds printing change/reassignment records. It does not delete collection entries, prices, price history or graded photos. On snapshot refresh, an unambiguous legacy alias is reassigned atomically, preserving all raw-entry metadata and graded IDs/photo links. If a destination raw entry already exists, the old entry stays unresolved; no automatic merge overwrites its condition or cost. Ambiguous raw holdings remain visible on the card page with an identification selector. Graded holdings can be identified individually through Edit. Reassignment history records the old/new keys and reason; repeating refresh does not duplicate holdings.
+Each import validates pagination and card count, fetches every full REST card record, builds the profile from source observations, then publishes the classified catalogue, card snapshots and completion totals in one SQLite transaction. Successful card downloads are saved individually so a failed import can resume. Set and card pages, known search results and collection snapshots share this result; lightweight listings cannot downgrade complete stored classifications.
 
-The identification endpoint requires collection write access, validates the destination against the stored catalogue, and refuses merges. A collector may need to refresh prices before a newly catalogued printing is available to identify.
+Recent sets (released within 90 days) are queued daily; older sets weekly. On-demand catalogues are fresh for six hours. A failed refresh retains the last complete catalogue and retries after an hour. Queues survive restarts. A changed source profile reclassifies every card in that set. Policy and printing versions invalidate cached results. Newly named foil patterns can qualify through the same set-profile rules; an incompatible API schema still needs an adapter update.
 
-The app's normal database backup/update process should be used before rollout. No production database is modified by editing this repository. Historical generic prices retain their original keys and are labelled as legacy attribution; they are not relabelled as a particular physical treatment.
+## Existing collections and prices
 
-## Prices
+Migration 7 adds the catalogue, raw-record, set-list and queue tables, clears obsolete completion totals and marks card snapshots stale. It preserves entries, quantities, conditions, notes, costs, graded IDs, photo links and price history. Reclassification itself does not move holdings. Existing unambiguous identity-alias reconciliation remains available; ambiguous legacy holdings are retained for individual identification without destructive merges.
 
-Detailed printing prices map to the matching physical record. Base product quotes never populate exclusive or ambiguous treatments. Classified snapshots do not borrow another printing's price, and generic ungraded PriceCharting fallback is disabled for classified cards. Missing quotes remain missing; manual valuation remains available. Graded product links are unchanged.
+Prices join to physical identities and API product references, independently of checklist role. A base product quote cannot spill onto an unrelated treatment. Detailed prices remain available for Additional printings. Price-only changes do not alter the profile fingerprint. Historical prices retain their original keys.
 
-## Audit and ongoing review
+No production database is modified by editing this repository. The migration runs through the normal application update/start process.
+
+## Validation and read-only audit
 
 Run with Node 24 or newer:
 
 ```sh
-npm run audit:printings -- --out /tmp/printings.json
-npm run audit:printings -- --lang fr --out /tmp/printings-fr.json
+npm test
+npm run typecheck
+npm run lint
+npm run build
+npm run audit:printings -- sv03 base1 swsh9tg sv10.5b --out /tmp/printings.json
 npm run audit:printings -- --lang all --out /tmp/printings-all.json
-npm run audit:printings -- sv03 swsh9tg --baseline /tmp/previous.json --out /tmp/next.json
+npm run audit:printings -- sv03 --baseline /tmp/previous.json --out /tmp/next.json
 ```
 
-The audit is read-only. It reports each set's standard/all totals, physical records, unverified review items, failures and changes against an optional baseline. Exit status is nonzero if any set fails; a successful fetch is not evidence that its classifications are verified. An English catalogue audit on 2026-10-12 fetched 205 sets without failures; unverified treatments still require evidence-based review. Other languages are supported by the audit but are not thereby certified.
+Tests cover renamed future sets, extra Holo and extra Normal printings, multiple Core finishes, editions, novel parallels, exact peer thresholds, conflicting or missing evidence, complete-import requirements, refreshes, resumable failures, route parity, inventory preservation and migrations.
 
-Regular snapshot refreshes also retain previous/new classifications in `printing_changes`; owners/admins can retrieve the latest 500 changes from `GET /api/catalog/printing-review`. Changes in price alone do not create a classification event. Review new unknown treatments and unexpected completion-total changes rather than silently guessing. Persist audit artifacts outside the app database and use `--baseline` on subsequent runs.
+Live API audit on 2026-10-14:
+
+| Set | Cards | Assigned Master | All printings | Additional | Unresolved |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Obsidian Flames (`sv03`) | 230 | 396 | 454 | 29 | 29 |
+| Base Set (`base1`) | 102 | 232 | 415 | 7 | 176 |
+| Brilliant Stars Trainer Gallery (`swsh9tg`) | 30 | 32 | 32 | 0 | 0 |
+| Black Bolt (`sv10.5b`) | 172 | 376 | 425 | 6 | 43 |
+
+All four imports completed. Charmander and Charmeleon in Obsidian Flames each produced Core Normal, Parallel Reverse Holo and Additional Holo. The unresolved totals, especially historical variants, show the limits of API-only evidence. Assigned totals are policy estimates, not independently verified physical checklists; even zero unresolved records is not proof of real-world completeness.
+
+The audit writes role counts, profiles, source records, unresolved items, import failures and optional baseline differences. Exit status is nonzero for failed imports. Runtime classification changes are retained in `printing_changes`; owners/admins can inspect the latest 500 via `GET /api/catalog/printing-review`.

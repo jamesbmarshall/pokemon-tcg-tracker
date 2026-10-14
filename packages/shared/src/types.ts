@@ -14,12 +14,32 @@ export interface CardPrinting {
   edition?: string;
   distribution: 'expansion' | 'exclusive' | 'unknown';
   status: 'verified' | 'inferred' | 'unverified';
+  /** Checklist membership is independent of historical release origin. */
+  role?: 'core' | 'parallel' | 'additional' | 'unresolved';
+  decision?: {
+    policyVersion: number;
+    rule: string;
+    reason: string;
+    profile?: string;
+    peers?: number;
+    occurrences?: number;
+    products?: string[];
+  };
+  dataQuality?: 'detailed' | 'generated' | 'flags' | 'invalid' | 'conflict';
   sourceProduct?: string;
   evidence?: string;
   providerId?: string;
   legacyAliases?: string[];
   raw?: { type: string; subtype?: string; size?: string; stamp?: string | string[]; foil?: string };
-  productIds?: { tcgplayer?: number; cardmarket?: number };
+  productIds?: { tcgplayer?: number; cardmarket?: number; cardtrader?: number };
+}
+
+export interface PrintingContext {
+  setId: string;
+  language: string;
+  rarity?: string;
+  category?: string;
+  mechanic: string;
 }
 
 export interface PokemonCard {
@@ -51,6 +71,9 @@ export interface PokemonCard {
   variants: string[];
   printings?: CardPrinting[];
   printingVersion?: number;
+  printingContext?: PrintingContext;
+  printingProfile?: string;
+  printingCoverage?: 'complete' | 'partial';
   /** Whether attacks, text and prices were loaded (search and set listings return lighter cards) */
   detailed?: boolean;
   /** TCGplayer prices per variant, USD */
@@ -164,6 +187,9 @@ export interface CardSnapshot {
   variants: string[];
   printings?: CardPrinting[];
   printingVersion?: number;
+  printingContext?: PrintingContext;
+  printingProfile?: string;
+  printingCoverage?: 'complete' | 'partial';
   pricingComplete?: boolean;
   /** Market price per variant, USD */
   prices: Record<string, number>;
@@ -247,6 +273,9 @@ export interface SetStat {
   masterTotal: number;
   allTotal?: number;
   provisional?: boolean;
+  unresolvedTotal?: number;
+  additionalTotal?: number;
+  profile?: string;
   printingVersion?: number;
   syncedAt: string;
 }

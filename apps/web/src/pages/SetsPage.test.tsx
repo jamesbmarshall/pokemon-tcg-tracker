@@ -26,7 +26,7 @@ beforeEach(async () => {
   await resetStores();
   seedCollection({
     entries: [makeEntry(), makeEntry({ cardId: 'sv03-223', variant: 'holofoil' }), makeEntry({ cardId: 'tiny-1' })],
-    cards: [makeSnapshot(), makeSnapshot({ id: 'sv03-223' }), makeSnapshot({ id: 'tiny-1', setId: 'tiny', printedTotal: 1 })],
+    cards: [makeSnapshot(), makeSnapshot({ id: 'sv03-223', variants: ['holofoil'] }), makeSnapshot({ id: 'tiny-1', setId: 'tiny', printedTotal: 1 })],
   });
   mocks.useSets.mockReturnValue(queryResult(SETS));
 });

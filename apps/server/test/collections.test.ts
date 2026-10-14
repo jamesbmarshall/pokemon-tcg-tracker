@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { saveSnapshots } from '../src/cards.ts';
+import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import type { CardSnapshot } from '@poketracker/shared/types';
 import { invite, personalId, setupOwner, startServer, type TestServer } from './helpers.ts';
 
@@ -241,11 +242,11 @@ describe('custom lists', () => {
 
 describe('set totals', () => {
   it('are counted on the server and ignore whatever the client claims', async () => {
-    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}` }));
+    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}`, variants_detailed: [{ type: 'normal' }] }));
     const fetchMock = vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(async (url) =>
       String(url).includes('graphql')
         ? Response.json({ data: { cards } })
-        : Response.json({ id: 'tt9', name: 'Totals Test', cardCount: { total: 3, official: 3 } }),
+        : Response.json(cards.find((c) => String(url).endsWith(`/cards/${c.id}`)) ?? { id: 'tt9', name: 'Totals Test', cardCount: { total: 3, official: 3 } }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const c = await setupOwner(s.app);
@@ -331,7 +332,7 @@ describe('printing reconciliation', () => {
     const c = await setupOwner(s.app);
     const id = await personalId(c);
     await c.put(`/api/collections/${id}/entries`, { entries: [entry('sv03-016', 2, { variant: 'holofoil', notes: 'Keep this', condition: 'NM', paid: { amount: 7, currency: 'USD' } })] });
-    saveSnapshots(s.ctx.db, [{ ...snap('sv03-016'), printingVersion: 1, variants: ['holofoil_pa', 'holofoil_pb'], printings: [
+    saveSnapshots(s.ctx.db, [{ ...snap('sv03-016'), printingVersion: PRINTING_VERSION, variants: ['holofoil_pa', 'holofoil_pb'], printings: [
       { id: 'holofoil_pa', label: 'Cosmos Holo', finish: 'cosmos', size: 'standard', distribution: 'exclusive', status: 'inferred' },
       { id: 'holofoil_pb', label: 'Holo · Jumbo', finish: 'holo', size: 'jumbo', distribution: 'unknown', status: 'unverified' },
     ] }]);

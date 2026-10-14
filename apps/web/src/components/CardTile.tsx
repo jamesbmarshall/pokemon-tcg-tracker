@@ -1,3 +1,4 @@
+import { printingRoleLabel } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { memo, useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -139,8 +140,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
             {showSet ? `${s.setName} · ` : ''}#{s.number}
             {variant && <span className={isOwned ? 'text-muted' : ''}> · {label}</span>}
           </p>
-          {printing?.distribution === 'exclusive' && <p className="text-[10px] text-muted" title={printing.sourceProduct}>Exclusive printing</p>}
-          {printing?.distribution === 'unknown' && <p className="text-[10px] text-muted">Unverified printing</p>}
+          {printing && <p className="text-[10px] text-muted" title={printing.decision?.reason}>{printingRoleLabel(printing)}</p>}
         </div>
         {price !== undefined && <span className="shrink-0 font-mono text-[11px] text-muted tabular">{money(price, { compact: true })}</span>}
       </div>
