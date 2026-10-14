@@ -86,5 +86,5 @@ export function printingLabel(card: Partial<Pick<PokemonCard, 'printings'>>, id:
 }
 
 export function printingRoleLabel(printing: CardPrinting): string {
-  return printing.role === 'core' ? 'Core · inferred' : printing.role === 'parallel' ? 'Parallel · inferred' : printing.role === 'additional' ? 'Additional · excluded from Master' : 'Unresolved · excluded from Master';
+  return printing.role === 'core' || printing.role === 'parallel' ? 'Counts towards Master' : printing.role === 'additional' ? 'Extra · not needed for Master' : 'Not counted towards Master · needs checking';
 }

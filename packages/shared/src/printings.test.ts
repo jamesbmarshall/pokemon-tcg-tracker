@@ -38,6 +38,23 @@ describe('automatic printing policy', () => {
   it('handles an additional Normal symmetrically', () => {
     expect(example('future', 'holo', 'normal').result.printings!.map((p) => p.role)).toEqual(['core', 'parallel', 'additional']);
   });
+  it('counts ordinary holos and reverses when a small rarity group also has product foils', () => {
+    const target = card('small-1', [...pair(1, 'holo'), { type: 'holo', foil: 'cosmos', thirdParty: { cardmarket: 2 } }], 'Rare');
+    const result = applyPrintingProfile(target, buildPrintingProfile('small', [target], true));
+    expect(standardVariants(result)).toEqual(['holofoil', 'reverseHolofoil']);
+    expect(result.printings![2].role).toBe('unresolved');
+    expect(setProgress([result], new Map([[result.id, { [result.printings![2].id]: 1 }]])).master).toEqual({ owned: 0, total: 2 });
+  });
+  it('counts an ordinary listed reverse without requiring marketplace IDs', () => {
+    expect(standardVariants(card('small-1', [{ type: 'normal' }, { type: 'reverse' }]))).toEqual(['normal', 'reverseHolofoil']);
+    const conflicting = card('small-2', [{ type: 'normal', thirdParty: { cardmarket: 1 } }, { type: 'reverse', thirdParty: { cardmarket: 2 } }]);
+    expect(standardVariants(conflicting)).toEqual(['normal']);
+    expect(standardVariants(card('small-3', [{ type: 'normal' }, { type: 'reverse', foil: 'unknown-pattern' }]))).toEqual(['normal']);
+  });
+  it('excludes campaign versions even when their finish differs from the set printing', () => {
+    const result = card('small-1', [{ type: 'holo' }, { type: 'reverse' }, { type: 'normal', stamp: ['pre-release'] }]);
+    expect(result.printings!.map((p) => p.role)).toEqual(['core', 'parallel', 'additional']);
+  });
   it('requires a full import and enough other cards', () => {
     const { target, profile } = example('future', 'normal', 'holo', 9);
     expect(applyPrintingProfile(target, profile).printings!.every((p) => p.role === 'unresolved')).toBe(true);

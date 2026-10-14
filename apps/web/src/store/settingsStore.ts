@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type Currency = 'GBP' | 'EUR' | 'USD';
-/** Base = numbered cards, Full = every card incl. secret rares, Master = every printing. */
+/** Base = numbered cards, Full = every card incl. secret rares, Master = standard set variants; All = every printing. */
 export type SetMode = 'base' | 'full' | 'master' | 'all';
 /** 'system' follows the operating system's light/dark preference. */
 export type ThemePref = 'system' | 'light' | 'dark';

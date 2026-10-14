@@ -111,7 +111,7 @@ export default function SetPage() {
   const modes = [
     { key: 'base' as const, label: 'Base', hint: 'Numbered cards', ...progress.base },
     { key: 'full' as const, label: 'Full', hint: 'Incl. secret rares', ...progress.full },
-    { key: 'master' as const, label: 'Master', hint: 'PokeTracker Core and Parallel printings', ...progress.master },
+    { key: 'master' as const, label: 'Master', hint: 'Every set card and its standard variants, including reverse holos and secret rares. Excludes special-product and promotional versions', ...progress.master },
     { key: 'all' as const, label: 'All printings', hint: 'Includes extras', ...progress.all },
   ];
 
@@ -138,7 +138,6 @@ export default function SetPage() {
         <ChevronLeft size={16} /> Sets
       </Link>
 
-      {progress.provisional && <p className="text-xs text-muted">PokeTracker Master uses inferred checklist membership. {progress.additional} additional and {progress.unresolved} unresolved printings are listed under All printings. {(!progress.coverageComplete || progress.unresolved > 0) && 'Coverage is incomplete; assigned slots are not a complete checklist.'}</p>}
       {/* Header */}
       {setLoading || !set ? (
         <Skeleton className="h-52" />
@@ -175,7 +174,7 @@ export default function SetPage() {
               </div>
             </div>
           </div>
-          <div role="group" aria-label="Completion" className="grid grid-cols-3 border-t border-line">
+          <div role="group" aria-label="Completion" className="grid grid-cols-2 border-t border-line sm:grid-cols-4">
             {modes.map((m) => {
               const active = setMode === m.key;
               const p = m.total ? Math.floor((m.owned / m.total) * 100) : 0;
@@ -189,7 +188,7 @@ export default function SetPage() {
                 >
                   <span className={`absolute inset-x-0 -top-px h-[2px] ${active ? 'bg-accent' : 'bg-transparent'}`} />
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em]">{m.label}</span>
-                  <span className="mt-1 font-display text-[1.9rem] font-medium leading-none tabular">{isLoading ? '–' : m.key === 'master' && (!progress.coverageComplete || progress.unresolved > 0 || !m.total) ? 'Pending' : `${m.key === 'master' && progress.provisional ? '≈' : ''}${p}%`}</span>
+                  <span className="mt-1 font-display text-[1.9rem] font-medium leading-none tabular">{isLoading ? '–' : `${p}%`}</span>
                   <span className="mt-1.5 font-mono text-[10.5px] text-muted tabular">{isLoading ? '…' : `${m.owned}/${m.total}`}</span>
                 </button>
               );
@@ -197,6 +196,15 @@ export default function SetPage() {
           </div>
         </section>
       )}
+
+      <details className="text-xs text-muted">
+        <summary className="w-fit cursor-pointer hover:text-fg">What counts towards Master?</summary>
+        <div className="mt-2 max-w-2xl space-y-2">
+          <p>Every card in the set, including secret rares, plus its standard variants such as reverse holos. These are the cards you collect from the set’s booster packs, whether bought individually, in a booster box or in an Elite Trainer Box.</p>
+          <p>Special-product versions, promotional stamps and jumbo cards are extras. You can track them under All printings without needing them for Master.</p>
+          {!isLoading && (progress.unresolved > 0 || !progress.coverageComplete) && <p>Progress uses the current checklist. {progress.unresolved > 0 ? `${progress.unresolved} ${progress.unresolved === 1 ? 'version still needs' : 'versions still need'} checking under All printings.` : 'Some card data is still being updated.'}</p>}
+        </div>
+      </details>
 
       {/* Toolbar */}
       <div className="sticky top-14 z-20 -mx-4 space-y-3 border-b border-line bg-canvas/95 px-4 py-3 lg:top-0">
@@ -278,7 +286,7 @@ export default function SetPage() {
         <CardSkeletonGrid />
       ) : tiles.length === 0 ? (
         <p className="border-y border-line py-12 text-center text-sm text-muted">
-          {show === 'missing' ? (setMode === 'master' && (progress.unresolved > 0 || !progress.coverageComplete) ? 'All assigned slots are filled. Unresolved printings remain under All printings.' : 'Nothing missing here. Lovely.') : show === 'owned' ? 'You don’t own any cards from this set yet.' : 'No cards match these filters.'}
+          {show === 'missing' ? 'Nothing missing here. Lovely.' : show === 'owned' ? 'You don’t own any cards from this set yet.' : 'No cards match these filters.'}
         </p>
       ) : setView === 'binder' ? (
         <BinderView slots={slots} pocketSize={pocketSize} />

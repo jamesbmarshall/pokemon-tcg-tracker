@@ -1,4 +1,4 @@
-# PokeTracker printing standard v1
+# PokeTracker printing standard v2
 
 Status: implemented in the shared classifier and persistent server import pipeline. See [implementation and audit results](printings.md).
 
@@ -36,7 +36,7 @@ Release origin is a separate field. It remains unknown unless the API supplies s
 
 Additional holdings remain owned and valued but do not substitute for a Core or Parallel slot. Cards without an eligible printing remain visible; unresolved eligibility cannot silently make Base or Full easier to complete. Report eligible, Additional and Unresolved counts alongside coverage, rather than equating a smaller denominator with certainty.
 
-Inferred Master totals must be described as estimates under this standard. When unresolved records could affect completion, show assigned-slot progress and the unresolved count; do not award an unqualified Master-complete state. An unavailable total is not zero, and zero divided by zero is never complete. All-printings completion means completion of the current API catalogue, not proof that every physical variation has been catalogued.
+Master is the standard booster checklist, including secret rares and standard parallel variants; special-product and promotional versions are optional extras. Show progress against the current checklist as a percentage and owned/required counts. Keep catalogue limitations and unchecked-version counts in the collapsed checklist explanation, rather than replacing progress with “Pending” or putting classification jargon above the set header. A zero-slot checklist displays 0%, never complete. All-printings completion means completion of the current API catalogue, not proof that every physical variation has been catalogued.
 
 ## Input and identity rules
 
@@ -59,7 +59,7 @@ Where documented API fields establish the release context of a specific printing
 
 ### R20: Physical and campaign exclusions
 
-An oversized printing is Additional under this policy. A documented campaign stamp on an otherwise comparable printing with an unstamped counterpart is Additional by policy inference. Distinguish edition marks from campaign marks; an edition mark or set logo alone is not an exclusion.
+An oversized printing is Additional under this policy. A documented campaign stamp with a regular-sized, unstamped counterpart in the same edition is Additional, even if its finish differs. Distinguish edition marks from campaign marks; an edition mark or set logo alone is not an exclusion.
 
 A promotional catalogue can have its own Core printings. A campaign label must not cause every regular-sized card in its own identified catalogue to disappear from completion. Where catalogue context is insufficient, leave the affected assignment Unresolved. Absence of a stamp never proves a standard release.
 
@@ -94,9 +94,9 @@ This rule applies symmetrically to an extra Normal or an extra Holo. It does not
 
 ### R50: Unambiguous default and linked parallel
 
-When stronger rules do not resolve the card and the API supplies exactly one ordinary-sized, unstamped Normal or Holo printing without an unfamiliar edition, select it as inferred Core. A named foil can be retained on this sole default; its name alone is not an exclusion. Do not force a choice when multiple candidates remain.
+When stronger rules do not resolve the card, prefer ordinary-sized, unstamped Normal or Holo printings without named foils or unfamiliar editions. If exactly one remains, select it as Core even when extra named foils are also listed. If there are no ordinary candidates, a sole named foil can be the default. Do not force a choice between multiple ordinary candidates.
 
-A listed reverse printing can become inferred Parallel when it has no campaign or incompatible edition attributes and shares a supplied marketplace product reference with a Core printing, with no conflicting references or stronger evidence. A missing reference is not a match.
+An ordinary listed reverse becomes Parallel when it has no campaign or incompatible edition attributes and has no conflicting marketplace references with a Core printing. Missing marketplace references do not prevent this default. A named reverse pattern still requires a shared marketplace reference or support from the set profile.
 
 These are PokeTracker policy defaults. They are not proof of the card's original release. They do not synthesize an absent Normal or Holo if the provider lists only Reverse.
 

@@ -1,6 +1,6 @@
 # Printing catalogue
 
-The [PokeTracker printing standard v1](printing-standard.md) is implemented using TCGdex API payloads only. There are no production card-name or set-ID classification exceptions, external checklists, or manual approval gates.
+The [PokeTracker printing standard v2](printing-standard.md) is implemented using TCGdex API payloads only. There are no production card-name or set-ID classification exceptions, external checklists, or manual approval gates.
 
 ## Classification
 
@@ -8,7 +8,9 @@ The [PokeTracker printing standard v1](printing-standard.md) is implemented usin
 
 Assignments retain policy version, rule, reason, profile fingerprint, peer counts and product relationships where applicable. Inferred membership never establishes a product origin. Flags-only, generated, malformed or contradictory records remain unresolved. No finish is invented from rarity or prices. Existing legacy snapshots become provisional until the complete set import replaces them.
 
-The UI labels roles and inferred membership. Master shows assigned-slot counts with Pending when imports or eligibility are incomplete, including zero-slot catalogues. Additional and unresolved printings remain available under All printings. Missing printing data cannot silently create a Normal choice in add forms.
+Master shows a percentage and owned/required counts for the current checklist. A collapsed “What counts towards Master?” explanation describes standard booster variants, excludes special-product and promotional versions, and discloses missing catalogue data when applicable. Internal role names and inference jargon are not displayed in the page header or printing labels. Additional and unresolved printings remain available under All printings. Missing printing data cannot silently create a Normal choice in add forms.
+
+Policy v2 fixes small rarity groups: a single ordinary Normal/Holo takes precedence over extra named foils, and an ordinary listed reverse needs no marketplace link unless supplied references conflict. Named reverse patterns still need supporting evidence. Campaign alternatives can be excluded even when their finish differs from the unstamped printing. Policy-version invalidation automatically refreshes existing catalogues without changing printing identities or holdings.
 
 ## Automatic lifecycle
 
@@ -42,7 +44,7 @@ npm run audit:printings -- sv03 --baseline /tmp/previous.json --out /tmp/next.js
 
 Tests cover renamed future sets, extra Holo and extra Normal printings, multiple Core finishes, editions, novel parallels, exact peer thresholds, conflicting or missing evidence, complete-import requirements, refreshes, resumable failures, route parity, inventory preservation and migrations.
 
-Live API audit on 2026-10-14:
+Historical policy v1 API audit on 2026-10-14:
 
 | Set | Cards | Assigned Master | All printings | Additional | Unresolved |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -54,3 +56,5 @@ Live API audit on 2026-10-14:
 All four imports completed. Charmander and Charmeleon in Obsidian Flames each produced Core Normal, Parallel Reverse Holo and Additional Holo. The unresolved totals, especially historical variants, show the limits of API-only evidence. Assigned totals are policy estimates, not independently verified physical checklists; even zero unresolved records is not proof of real-world completeness.
 
 The audit writes role counts, profiles, source records, unresolved items, import failures and optional baseline differences. Exit status is nonzero for failed imports. Runtime classification changes are retained in `printing_changes`; owners/admins can inspect the latest 500 via `GET /api/catalog/printing-review`.
+
+Policy v2 read-only audit on 2026-10-14 imported all 230 Obsidian Flames cards successfully: 406 Master slots (230 Core plus 176 Parallel), 454 total printings, 36 Additional and 12 Unresolved. The five ordinary holo/reverse pairs previously missed by the small-cohort fallback now count; Charmander and Charmeleon’s extra holos remain Additional. Unchecked extra treatments remain accessible under All printings.

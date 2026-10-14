@@ -30,7 +30,7 @@ const renderPage = () => renderWithProviders(<SetPage />, { route: '/sets/sv03',
 const tileNames = () => screen.queryAllByRole('link', { name: /owned/ }).map((l) => l.getAttribute('aria-label')!.replace(/ \S+, (owned|not owned).*$/, ''));
 const user = () => userEvent.setup();
 
-it('does not claim Master completion when assigned slots are filled but other printings are unresolved', async () => {
+it('shows checklist progress and keeps data uncertainty in the optional explanation', async () => {
   const card = makeCard({ variants: ['normal', 'holofoil'], printingCoverage: 'complete', printings: [
     { id: 'normal', label: 'Normal', finish: 'normal', size: 'standard', distribution: 'unknown', status: 'inferred', role: 'core' },
     { id: 'holofoil', label: 'Holo', finish: 'holo', size: 'standard', distribution: 'unknown', status: 'unverified', role: 'unresolved' },
@@ -39,12 +39,17 @@ it('does not claim Master completion when assigned slots are filled but other pr
   seedCollection({ entries: [makeEntry()], cards: [makeSnapshot()] });
   useSettings.setState({ setMode: 'master' });
   renderPage();
-  const master = screen.getByTitle('Master: poketracker core and parallel printings');
-  expect(master).toHaveTextContent('Pending');
+  const master = screen.getByRole('button', { name: /^Master/ });
+  expect(master).not.toHaveTextContent('Pending');
+  expect(screen.queryByText(/inferred checklist membership/)).not.toBeInTheDocument();
   expect(master).toHaveTextContent('1/1');
-  expect(master).not.toHaveTextContent('100%');
+  expect(master).toHaveTextContent('100%');
+  const explanation = screen.getByText(/1 version still needs checking/);
+  expect(explanation.closest('details')).not.toHaveAttribute('open');
+  await user().click(screen.getByText('What counts towards Master?'));
+  expect(explanation.closest('details')).toHaveAttribute('open');
   await user().click(screen.getByRole('radio', { name: 'Variants you don’t have yet' }));
-  expect(screen.getByText(/All assigned slots are filled/)).toBeInTheDocument();
+  expect(screen.getByText('Nothing missing here. Lovely.')).toBeInTheDocument();
 });
 
 describe('SetPage', () => {
@@ -102,7 +107,7 @@ describe('SetPage', () => {
     // base 1/2, full 1/3, master 1/5 (2 + 2 + 1 variants)
     expect(screen.getByTitle('Base: numbered cards')).toHaveTextContent('1/2');
     expect(screen.getByTitle('Full: incl. secret rares')).toHaveTextContent('1/3');
-    expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('1/5');
+    expect(screen.getByRole('button', { name: /^Master/ })).toHaveTextContent('1/5');
     expect(screen.getByTitle('Full: incl. secret rares')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('radio', { name: 'All 3' })).toHaveAttribute('aria-checked', 'true');
   });
@@ -243,7 +248,7 @@ describe('SetPage', () => {
     });
     renderPage();
     expect(screen.getByTitle('Base: numbered cards')).toHaveTextContent('1/2');
-    expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('1/5');
+    expect(screen.getByRole('button', { name: /^Master/ })).toHaveTextContent('1/5');
     // A display-only slab still shows under "Owned"
     await user().click(screen.getByRole('radio', { name: 'Owned' }));
     expect(tileNames()).toEqual(['Charmander', 'Charmeleon']);
@@ -325,7 +330,7 @@ describe('SetPage', () => {
       await u.click(within(reverse).getByRole('button', { name: 'Add Reverse Holo' }));
       expect(await screen.findByRole('link', { name: 'Charmander 001 Reverse Holo, owned ×1' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Charmander 001 Normal, not owned' })).toBeInTheDocument();
-      expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('1/5');
+      expect(screen.getByRole('button', { name: /^Master/ })).toHaveTextContent('1/5');
       await u.click(within(reverse).getByRole('button', { name: 'Remove one Reverse Holo' }));
       expect(await screen.findByRole('link', { name: 'Charmander 001 Reverse Holo, not owned' })).toBeInTheDocument();
     });
@@ -358,7 +363,7 @@ it('keeps exclusive printings collectible in All printings without adding a mast
   ] })]));
   useSettings.setState({ setMode: 'master' });
   renderPage();
-  expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('0/2');
+  expect(screen.getByRole('button', { name: /^Master/ })).toHaveTextContent('0/2');
   expect(screen.getByTitle('All printings: includes extras')).toHaveTextContent('0/3');
   expect(screen.queryByRole('link', { name: /Cosmos Holo/ })).not.toBeInTheDocument();
   await user().click(screen.getByTitle('All printings: includes extras'));
