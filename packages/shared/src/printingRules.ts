@@ -1,6 +1,6 @@
 import type { CardPrinting, PokemonCard, PrintingContext } from './types';
 
-export const POLICY_VERSION = 1;
+export const POLICY_VERSION = 2;
 const MIN_PEERS = 10;
 const MARKETS = ['cardmarket', 'tcgplayer', 'cardtrader'] as const;
 // These are API attribute meanings, never per-card or per-set corrections.
@@ -48,7 +48,7 @@ export function buildPrintingProfile(setId: string, cards: PokemonCard[], comple
   return { version: POLICY_VERSION, setId, complete, fingerprint: fingerprint([POLICY_VERSION, complete, signature]), cards: source };
 }
 
-/** Pure v1 policy. TCGdex currently has no printing-level origin field to implement R10. */
+/** TCGdex currently has no printing-level origin field to implement R10. */
 export function classifyPrintings(cardId: string, input: CardPrinting[], context?: PrintingContext, profile?: PrintingProfile): CardPrinting[] {
   const validProfile = profile?.version === POLICY_VERSION && profile.complete && profile.setId === context?.setId ? profile : undefined;
   const target = validProfile?.cards[cardId];
@@ -71,7 +71,7 @@ export function classifyPrintings(cardId: string, input: CardPrinting[], context
     if (!usable(p)) assign(p, 'unresolved', 'R90', 'Detailed printing data is missing, generated or conflicting.');
     else if (token(p.size) === 'jumbo') assign(p, 'additional', 'R20', 'Oversized printings are additional under the PokeTracker standard.');
     else if (campaign(p)) {
-      const counterpart = printings.some((q) => usable(q) && regular(q) && !stampsOf(q).length && kind(q) === kind(p) && token(q.edition) === token(p.edition));
+      const counterpart = printings.some((q) => usable(q) && regular(q) && !stampsOf(q).length && token(q.edition) === token(p.edition));
       assign(p, counterpart ? 'additional' : 'unresolved', counterpart ? 'R20' : 'R90', counterpart ? 'Campaign-marked alternative to an unstamped printing.' : 'Campaign printing requires catalogue release context.');
     }
   }
@@ -91,12 +91,15 @@ export function classifyPrintings(cardId: string, input: CardPrinting[], context
     });
     if (separate.length) assign(p, 'additional', 'R40', 'An uncommon extra printing has a separate product reference from the supported main printing group.', separate);
   }
-  const defaults = printings.filter((p) => usable(p) && regular(p) && !stampsOf(p).length && ['normal', 'holo'].includes(kind(p)) && EDITIONS.has(token(p.edition)) && !['additional', 'unresolved'].includes(roles.get(p.id)?.role ?? ''));
+  const candidates = printings.filter((p) => usable(p) && regular(p) && !stampsOf(p).length && ['normal', 'holo'].includes(kind(p)) && EDITIONS.has(token(p.edition)) && !['additional', 'unresolved'].includes(roles.get(p.id)?.role ?? ''));
+  // An extra named foil must not hide the ordinary printing in a small rarity group.
+  const ordinary = candidates.filter((p) => !token(p.raw?.foil));
+  const defaults = ordinary.length ? ordinary : candidates;
   if (!cores().length && defaults.length === 1 && !roles.has(defaults[0].id)) assign(defaults[0], 'core', 'R50', 'The API lists one eligible ordinary-sized default printing.');
   for (const p of pending()) {
     if (!regular(p) || kind(p) !== 'reverse' || stampsOf(p).length || !EDITIONS.has(token(p.edition))) continue;
-    const linked = cores().find((q) => token(q.edition) === token(p.edition) && MARKETS.some((m) => p.productIds?.[m] != null && q.productIds?.[m] === p.productIds[m]) && !MARKETS.some((m) => p.productIds?.[m] != null && q.productIds?.[m] != null && q.productIds[m] !== p.productIds[m]));
-    if (linked) assign(p, 'parallel', 'R50', 'This parallel shares a supplied product reference with a Core printing.');
+    const linked = cores().find((q) => token(q.edition) === token(p.edition) && (!token(p.raw?.foil) || MARKETS.some((m) => p.productIds?.[m] != null && q.productIds?.[m] === p.productIds[m])) && !MARKETS.some((m) => p.productIds?.[m] != null && q.productIds?.[m] != null && q.productIds[m] !== p.productIds[m]));
+    if (linked) assign(p, 'parallel', 'R50', 'A listed reverse of the ordinary printing, with no conflicting product references.');
   }
   for (const p of pending()) assign(p, 'unresolved', 'R90', 'Insufficient or conflicting evidence for checklist membership.');
   return printings.map((p) => roles.get(p.id)!);

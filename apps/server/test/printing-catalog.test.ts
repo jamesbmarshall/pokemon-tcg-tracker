@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { POLICY_VERSION } from '@poketracker/shared/printingRules';
 import { configureCatalog, type RawCard } from '@poketracker/shared/catalog';
 import { readCards, saveSnapshots } from '../src/cards.ts';
 import { catalogSets, discoverSets, getCatalogSet, readPrintingProfile, syncPrintingCatalogues } from '../src/printingCatalog.ts';
@@ -103,6 +104,6 @@ describe('automatic catalogue lifecycle', () => {
     server.ctx.db.run('UPDATE printing_catalogues SET policy_version = 0');
     expect(readPrintingProfile(server.ctx.db, setId)).toBeUndefined();
     expect(await syncPrintingCatalogues(server.ctx)).toMatchObject({ imported: 1, failed: 0 });
-    expect(readPrintingProfile(server.ctx.db, setId)?.version).toBe(1);
+    expect(readPrintingProfile(server.ctx.db, setId)?.version).toBe(POLICY_VERSION);
   });
 });
