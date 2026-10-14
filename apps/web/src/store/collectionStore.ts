@@ -93,7 +93,7 @@ interface CollectionState {
   /** Saves (or, when blank, deletes) the note for a card. */
   setNote: (cardId: string, text: string) => Promise<void>;
   /** Stores a set's master total; skipped when unchanged so viewing a set doesn't write every time. */
-  recordSetStat: (setId: string, masterTotal: number) => Promise<void>;
+  recordSetStat: (setId: string, masterTotal: number, coverage?: Partial<SetStat>) => Promise<void>;
   /**
    * Refreshes prices. With `force`, owners/admins make the server fetch fresh prices first;
    * everyone else just reloads what the server already has. Returns the number of cards
@@ -181,7 +181,8 @@ const newId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto
 
 /** Listing cards (sets, search) carry no prices; never let them wipe a priced snapshot. */
 function merge(prev: CardSnapshot | undefined, next: CardSnapshot): CardSnapshot {
-  if (!prev || next.pricingComplete || next.printingVersion !== prev.printingVersion || Object.keys(next.prices).length) return next;
+  if (prev?.printingCoverage === 'complete' && next.printingCoverage !== 'complete' && !next.pricingComplete) next = { ...next, variants: prev.variants, printings: prev.printings, printingVersion: prev.printingVersion, printingContext: prev.printingContext, printingProfile: prev.printingProfile, printingCoverage: prev.printingCoverage };
+  if (!prev || next.pricingComplete || Object.keys(next.prices).length) return next;
   return { ...next, prices: prev.prices, tcgplayerUrl: prev.tcgplayerUrl, cardmarketUrl: prev.cardmarketUrl };
 }
 
@@ -502,9 +503,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       return ok;
     },
 
-    recordSetStat: async (setId, masterTotal) => {
-      if (get().setStats.get(setId)?.masterTotal === masterTotal) return;
-      const stat = { setId, masterTotal, syncedAt: new Date().toISOString() };
+    recordSetStat: async (setId, masterTotal, coverage = {}) => {
+      if (get().setStats.get(setId)?.masterTotal === masterTotal && get().setStats.get(setId)?.profile === coverage.profile && get().setStats.get(setId)?.unresolvedTotal === coverage.unresolvedTotal) return;
+      const stat = { ...coverage, setId, masterTotal, syncedAt: new Date().toISOString() };
       // Updated locally even when read-only: the total is catalogue data and helps the progress bars
       // on a shared view, it just isn't saved.
       set((s) => ({ setStats: new Map(s.setStats).set(setId, stat) }));

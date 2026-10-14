@@ -74,7 +74,7 @@ describe('useSetCards', () => {
     c.getSetCards.mockResolvedValue([makeCard({ variants: ['normal', 'reverseHolofoil'] }), makeCard({ id: 'sv03-002', variants: [] })]);
     const { result } = renderHook(() => h.useSetCards('sv03'), { wrapper });
     await waitFor(() => expect(result.current.data).toHaveLength(2));
-    await waitFor(() => expect(store.useCollectionStore.getState().setStats.get('sv03')?.masterTotal).toBe(3));
+    await waitFor(() => expect(store.useCollectionStore.getState().setStats.get('sv03')?.masterTotal).toBe(2));
   });
 
   it('is disabled without a set id', () => {

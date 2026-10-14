@@ -111,7 +111,7 @@ export default function SetPage() {
   const modes = [
     { key: 'base' as const, label: 'Base', hint: 'Numbered cards', ...progress.base },
     { key: 'full' as const, label: 'Full', hint: 'Incl. secret rares', ...progress.full },
-    { key: 'master' as const, label: 'Master', hint: 'Standard printings', ...progress.master },
+    { key: 'master' as const, label: 'Master', hint: 'PokeTracker Core and Parallel printings', ...progress.master },
     { key: 'all' as const, label: 'All printings', hint: 'Includes extras', ...progress.all },
   ];
 
@@ -138,7 +138,7 @@ export default function SetPage() {
         <ChevronLeft size={16} /> Sets
       </Link>
 
-      {progress.provisional && <p className="text-xs text-muted">Printing coverage is provisional. Unverified extras are collectible under All printings and excluded from Master.</p>}
+      {progress.provisional && <p className="text-xs text-muted">PokeTracker Master uses inferred checklist membership. {progress.additional} additional and {progress.unresolved} unresolved printings are listed under All printings. {(!progress.coverageComplete || progress.unresolved > 0) && 'Coverage is incomplete; assigned slots are not a complete checklist.'}</p>}
       {/* Header */}
       {setLoading || !set ? (
         <Skeleton className="h-52" />
@@ -189,7 +189,7 @@ export default function SetPage() {
                 >
                   <span className={`absolute inset-x-0 -top-px h-[2px] ${active ? 'bg-accent' : 'bg-transparent'}`} />
                   <span className="text-[11px] font-semibold uppercase tracking-[0.12em]">{m.label}</span>
-                  <span className="mt-1 font-display text-[1.9rem] font-medium leading-none tabular">{isLoading ? '–' : `${p}%`}</span>
+                  <span className="mt-1 font-display text-[1.9rem] font-medium leading-none tabular">{isLoading ? '–' : m.key === 'master' && (!progress.coverageComplete || progress.unresolved > 0 || !m.total) ? 'Pending' : `${m.key === 'master' && progress.provisional ? '≈' : ''}${p}%`}</span>
                   <span className="mt-1.5 font-mono text-[10.5px] text-muted tabular">{isLoading ? '…' : `${m.owned}/${m.total}`}</span>
                 </button>
               );
@@ -278,7 +278,7 @@ export default function SetPage() {
         <CardSkeletonGrid />
       ) : tiles.length === 0 ? (
         <p className="border-y border-line py-12 text-center text-sm text-muted">
-          {show === 'missing' ? 'Nothing missing here. Lovely.' : show === 'owned' ? 'You don’t own any cards from this set yet.' : 'No cards match these filters.'}
+          {show === 'missing' ? (setMode === 'master' && (progress.unresolved > 0 || !progress.coverageComplete) ? 'All assigned slots are filled. Unresolved printings remain under All printings.' : 'Nothing missing here. Lovely.') : show === 'owned' ? 'You don’t own any cards from this set yet.' : 'No cards match these filters.'}
         </p>
       ) : setView === 'binder' ? (
         <BinderView slots={slots} pocketSize={pocketSize} />

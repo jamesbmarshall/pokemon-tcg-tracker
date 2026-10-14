@@ -1,3 +1,4 @@
+import { discoverSets, syncPrintingCatalogues } from './printingCatalog.ts';
 /**
  * In-process job scheduler. Each job runs on a cron schedule, can be triggered from the admin
  * UI, and is caught up shortly after boot if its last success is older than staleMs, because a
@@ -10,7 +11,7 @@ import { join } from 'node:path';
 import { LANGUAGES } from '@poketracker/shared/languages';
 import type { Ctx } from './context.ts';
 import { readCards, recordValue, refreshCards, trackedCardIds, prunePriceHistory } from './cards.ts';
-import { cachedUpstream, ensureImage, pruneHttpCache, pruneImages, refreshFx, ttlFor } from './catalog.ts';
+import { ensureImage, pruneHttpCache, pruneImages, refreshFx } from './catalog.ts';
 import { deletePhotoFiles } from './collections.ts';
 import { refreshSealedPrices } from './sealed.ts';
 import { refreshGradedPrices } from './providers/pricecharting.ts';
@@ -33,6 +34,7 @@ interface JobDef {
 }
 
 const H = 3600_000;
+const HOUR_QUARTER = H / 4;
 
 export const JOBS: JobDef[] = [
   {
@@ -45,24 +47,24 @@ export const JOBS: JobDef[] = [
   {
     name: 'sets',
     label: 'Set lists',
-    schedule: '30 5 * * *',
-    staleMs: 24 * H,
+    schedule: '30 */6 * * *',
+    staleMs: 6 * H,
     run: async (ctx) => {
-      const base = ctx.config.tcgdexBase.replace(/\/$/, '');
       let ok = 0;
       for (const l of LANGUAGES) {
-        const path = `/${l.code}/sets`;
-        try {
-          // force: a scheduled refresh should hit TCGdex even if the cache is still fresh.
-          await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, {}, ttlFor(path), true);
-          ok++;
-        } catch {
-          /* one language down shouldn't fail the rest */
-        }
+        try { await discoverSets(ctx, l.code); ok++; }
+        catch { /* keep the previous list for this language */ }
       }
       if (!ok) throw new Error('No set lists could be refreshed');
       return { languages: ok };
     },
+  },
+  {
+    name: 'printings',
+    label: 'Printing catalogues',
+    schedule: '*/15 * * * *',
+    staleMs: HOUR_QUARTER,
+    run: (ctx) => syncPrintingCatalogues(ctx),
   },
   {
     name: 'prices',
@@ -322,7 +324,7 @@ export function startScheduler(ctx: Ctx) {
   // read the refreshed card data). 'values' is absent because prices runs it.
   const timer = setTimeout(async () => {
     const rows = new Map(ctx.db.all<JobRow>("SELECT * FROM jobs WHERE last_status = 'ok'").map((r) => [r.name, r]));
-    for (const j of ['fx', 'sets', 'prices', 'update-check', 'images', 'backup', 'cleanup']) {
+    for (const j of ['fx', 'sets', 'printings', 'prices', 'update-check', 'images', 'backup', 'cleanup']) {
       const def = active.find((d) => d.name === j);
       if (!def) continue; // excluded for this mode (e.g. update-check in demo mode)
       const last = rows.get(j)?.last_finished_at;

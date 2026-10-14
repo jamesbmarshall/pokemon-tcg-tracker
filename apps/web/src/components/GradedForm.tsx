@@ -40,7 +40,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const [label, setLabel] = useState(copy?.label ?? defaultLabel(copy?.company ?? 'PSA', copy?.grade ?? '10') ?? '');
   const [labelTouched, setLabelTouched] = useState(!!copy);
   const [cert, setCert] = useState(copy?.certNumber ?? '');
-  const [variant, setVariant] = useState(copy?.variant ?? variants[0] ?? 'normal');
+  const [variant, setVariant] = useState(copy?.variant ?? variants[0] ?? '');
   const [subs, setSubs] = useState<Subgrades>(copy?.subgrades ?? {});
   const [showSubs, setShowSubs] = useState(!!copy?.subgrades && Object.keys(copy.subgrades).length > 0);
   const [value, setValue] = useState(copy?.valueUsd != null ? String(round2(copy.valueUsd * rate)) : '');
@@ -97,6 +97,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!variant) return;
     if (company === 'Other' && !companyName.trim()) return;
     setSaving(true);
     try {
@@ -365,7 +366,8 @@ export default function GradedForm({ card, copy, onClose }: Props) {
           <button type="button" onClick={onClose} className="btn btn-ghost">
             Cancel
           </button>
-          <button type="submit" disabled={saving} className="btn btn-primary">
+          {!variants.length && <p className="text-sm text-muted">Printing details are not available yet.</p>}
+          <button type="submit" disabled={saving || !variant} className="btn btn-primary">
             {copy ? 'Save changes' : 'Add graded copy'}
           </button>
         </footer>

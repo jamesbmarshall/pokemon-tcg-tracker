@@ -43,6 +43,8 @@ await Promise.all(Array.from({ length: 3 }, async () => {
       const previous = baseline?.sets?.[id];
       report.sets[id] = {
         cards: cards.length, expectedCards: expectedTotals.get(id), masterTotal, allTotal,
+        profile: cards[0]?.printingProfile,
+        roles: Object.fromEntries(['core', 'parallel', 'additional', 'unresolved'].map((role) => [role, printings.filter((p) => p.role === role).length])),
         coverage: !cards.length ? 'unavailable' : cards.length < (expectedTotals.get(id) ?? 0) ? 'incomplete' : printings.length > 0 && printings.every((p) => p.status === 'verified') ? 'verified' : 'provisional',
         changed: previous ? JSON.stringify(previous.printings) !== JSON.stringify(printings) : undefined,
         previousMasterTotal: previous?.masterTotal,

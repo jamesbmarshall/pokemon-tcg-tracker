@@ -364,4 +364,25 @@ export const MIGRATIONS: string[] = [
   DELETE FROM http_cache;
   UPDATE cards SET synced_at = '1970-01-01T00:00:00.000Z';
   `,
+  /* 7: automatic, API-only printing policy and resumable set imports. */ `
+  CREATE TABLE printing_catalogues (
+    set_id TEXT PRIMARY KEY, data TEXT NOT NULL, profile TEXT NOT NULL,
+    printing_version INTEGER NOT NULL, policy_version INTEGER NOT NULL, synced_at INTEGER NOT NULL
+  );
+  CREATE TABLE printing_raw_cards (
+    card_id TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at INTEGER NOT NULL
+  );
+  CREATE TABLE printing_sync_queue (
+    set_id TEXT PRIMARY KEY, release_date TEXT NOT NULL, next_at INTEGER NOT NULL,
+    last_error TEXT
+  );
+  CREATE TABLE catalogue_set_lists (
+    language TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at INTEGER NOT NULL
+  );
+  ALTER TABLE set_stats ADD COLUMN unresolved_total INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE set_stats ADD COLUMN additional_total INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE set_stats ADD COLUMN profile TEXT;
+  DELETE FROM set_stats;
+  UPDATE cards SET synced_at = '1970-01-01T00:00:00.000Z';
+  `,
 ];

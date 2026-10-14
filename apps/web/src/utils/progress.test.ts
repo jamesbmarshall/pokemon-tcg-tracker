@@ -16,8 +16,8 @@ describe('setProgress', () => {
     const p = setProgress(cards, new Map());
     expect(p.base).toEqual({ owned: 0, total: 3 });
     expect(p.full).toEqual({ owned: 0, total: 5 });
-    // empty variants fall back to a single "normal" printing
-    expect(p.master).toEqual({ owned: 0, total: 7 });
+    // Missing variants remain unresolved; no Normal printing is manufactured.
+    expect(p.master).toEqual({ owned: 0, total: 6 });
   });
   it('counts secret rares in full/master but not base', () => {
     const p = setProgress(cards, new Map([['sv03-004', { holofoil: 1 }]]));
@@ -35,8 +35,8 @@ describe('setProgress', () => {
       ]),
     );
     expect(p.base.owned).toBe(2);
-    expect(p.full.owned).toBe(3);
-    expect(p.master.owned).toBe(4);
+    expect(p.full.owned).toBe(2);
+    expect(p.master.owned).toBe(3);
   });
   it('ignores an empty variant record', () => {
     expect(setProgress(cards, new Map([['sv03-001', {}]])).full.owned).toBe(0);
@@ -77,7 +77,7 @@ describe('prefixed set numbering', () => {
     }));
     const holdings = new Map(cards.map((c) => [c.id, { holofoil: 1 }]));
     expect(setProgress(cards, holdings)).toEqual({
-      base: { owned: 30, total: 30 }, full: { owned: 30, total: 30 }, master: { owned: 30, total: 30 }, all: { owned: 30, total: 30 }, provisional: true,
+      base: { owned: 30, total: 30 }, full: { owned: 30, total: 30 }, master: { owned: 30, total: 30 }, all: { owned: 30, total: 30 }, provisional: true, unresolved: 0, additional: 0, coverageComplete: false,
     });
   });
 });

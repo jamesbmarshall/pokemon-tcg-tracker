@@ -26,8 +26,8 @@ describe('pure helpers', () => {
     expect(list.sort(api.compareCardNumber).map((c) => c.number)).toEqual(['1', '2', '10', 'TG1']);
   });
 
-  it('cardVariants defaults to normal', () => {
-    expect(api.cardVariants({ variants: [] })).toEqual(['normal']);
+  it('cardVariants does not invent a missing finish', () => {
+    expect(api.cardVariants({ variants: [] })).toEqual([]);
     expect(api.cardVariants({ variants: ['holofoil'] })).toEqual(['holofoil']);
   });
 
@@ -287,11 +287,11 @@ describe('variant mapping', () => {
   it.each([
     [{ normal: true, reverse: true }, 'Common', ['normal', 'reverseHolofoil']],
     [{ firstEdition: true, normal: true }, 'Common', ['normal', '1stEditionNormal']],
-    [{ firstEdition: true }, 'Common', ['1stEditionNormal']],
+    [{ firstEdition: true }, 'Common', []],
     [{ wPromo: true, holo: true }, 'Common', ['holofoil', 'wPromo']],
-    [undefined, 'Rare Holo', ['holofoil']],
-    [{}, 'Special illustration rare', ['holofoil']],
-    [{}, 'Common', ['normal']],
+    [undefined, 'Rare Holo', []],
+    [{}, 'Special illustration rare', []],
+    [{}, 'Common', []],
   ])('%o (%s) → %o', async (v, rarity, expected) => {
     expect(await variantsOf(v, rarity)).toEqual(expected);
   });
@@ -324,7 +324,8 @@ describe('getSetCards', () => {
   it('pages through GraphQL, keeps only exact set matches and sorts by number', async () => {
     const page1 = Array.from({ length: 250 }, (_, i) => rawCard(`sv03-${String(i + 1).padStart(3, '0')}`));
     const fetch = mockFetch([
-      { match: '/sets/sv03', body: rawSets[0] },
+      { match: '/sets/sv03', body: { ...rawSets[0], cardCount: { official: 197, total: 251 } } },
+      { match: '/cards/sv03-', reply: ({ url }) => rawCard(url.split('/').at(-1)!) },
       {
         match: 'cards(filters',
         reply: ({ query }) => ({ data: { cards: query!.includes('page: 1,') ? [...page1].reverse() : [rawCard('sv03-251'), rawCard('sv03.5-001')] } }),
@@ -335,7 +336,7 @@ describe('getSetCards', () => {
     expect(cards[0].id).toBe('sv03-001');
     expect(cards.at(-1)!.id).toBe('sv03-251');
     expect(cards[0].set.printedTotal).toBe(197);
-    expect(cards[0].detailed).toBe(false);
+    expect(cards[0].detailed).toBe(true);
     expect(cards[0].tcgplayer).toBeUndefined();
     expect(fetch.mock.calls.filter(([, i]) => String(i?.body).includes('cards(filters'))).toHaveLength(2);
   });

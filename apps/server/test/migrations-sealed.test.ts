@@ -2,6 +2,32 @@ import { describe, expect, it } from 'vitest';
 import { Db } from '../src/db.ts';
 import { MIGRATIONS } from '../src/migrations.ts';
 
+it('migration 7 retains inventory, graded photos and price history while invalidating totals', () => {
+  const db = new Db(':memory:');
+  try {
+    db.exec('CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+    for (let i = 0; i < 6; i++) {
+      db.exec(MIGRATIONS[i]);
+      db.run('INSERT INTO schema_migrations VALUES (?, ?)', i + 1, '2026-10-14');
+    }
+    db.run("INSERT INTO users (id, username, display_name, password_hash, role, created_at, updated_at) VALUES ('u', 'ash', 'Ash', 'x', 'owner', 'today', 'today')");
+    db.run("INSERT INTO collections (id, name, kind, owner_id, created_at) VALUES ('c', 'Collection', 'personal', 'u', 'today')");
+    db.run("INSERT INTO entries (collection_id, id, card_id, set_id, variant, quantity, condition, notes, paid, added_at) VALUES ('c', 'x-1::holofoil', 'x-1', 'x', 'holofoil', 3, 'LP', 'Gift', '{\"amount\":7}', 'today')");
+    db.run("INSERT INTO graded (collection_id, id, card_id, data) VALUES ('c', 'g', 'x-1', '{\"variant\":\"holofoil\",\"certNumber\":\"123\"}')");
+    db.run("INSERT INTO graded_photos (id, collection_id, graded_id, side, mime, size, added_at) VALUES ('photo', 'c', 'g', 'front', 'image/jpeg', 100, 'today')");
+    db.run("INSERT INTO price_history (card_id, variant, source, date, price, currency) VALUES ('x-1', 'holofoil', 'cardmarket', 'today', 5, 'EUR')");
+    db.run("INSERT INTO cards (id, set_id, data, priced, synced_at) VALUES ('x-1', 'x', '{\"prices\":{\"holofoil\":5}}', 1, 'today')");
+    db.run("INSERT INTO set_stats (set_id, master_total, synced_at) VALUES ('x', 10, 'today')");
+    const preserved = ['entries', 'graded', 'graded_photos', 'price_history'];
+    const before = preserved.map((table) => db.all(`SELECT * FROM ${table}`));
+    expect(db.migrate()).toBe(1);
+    expect(preserved.map((table) => db.all(`SELECT * FROM ${table}`))).toEqual(before);
+    expect(db.get('SELECT data, synced_at FROM cards')).toMatchObject({ data: '{"prices":{"holofoil":5}}', synced_at: '1970-01-01T00:00:00.000Z' });
+    expect(db.all('SELECT * FROM set_stats')).toEqual([]);
+    expect(db.migrate()).toBe(0);
+  } finally { db.close(); }
+});
+
 describe('migration 3 (sealed product + shares rebuild)', () => {
   it('rebuilds shares to allow the sealed scope while preserving every existing row and its foreign keys', () => {
     const db = new Db(':memory:');

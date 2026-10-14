@@ -15,6 +15,8 @@ export interface SetSummary {
   uniqueOwned: number;
   slotsOwned: number;
   masterTotal?: number;
+  provisional?: boolean;
+  unresolvedTotal?: number;
   valueUsd: number;
 }
 
@@ -87,11 +89,13 @@ export function useCollectionStats() {
         uniqueOwned: 0,
         slotsOwned: 0,
         masterTotal: setStats.get(c.setId)?.masterTotal,
+        provisional: setStats.get(c.setId)?.provisional,
+        unresolvedTotal: setStats.get(c.setId)?.unresolvedTotal,
         valueUsd: 0,
       };
       s.valueUsd += o.valueUsd;
       const eligible = new Set(standardVariants(c));
-      const standardHeld = [...held].filter((v) => !c.printings?.length || eligible.has(v));
+      const standardHeld = [...held].filter((v) => eligible.has(v));
       // Slabs kept out of the binder add value but don't fill a set slot.
       if (standardHeld.length) {
         s.uniqueOwned++;

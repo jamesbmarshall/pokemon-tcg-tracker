@@ -101,11 +101,13 @@ export default function WishlistPage() {
                 <button
                   onClick={async () => {
                     const v = best?.[0] ?? card.variants[0];
+                    if (!v) return;
                     await adjust(card, v, 1);
                     await toggleWishlist(card);
                     toast(`Got it! ${card.name} moved to your collection`, { tone: 'success' });
                   }}
                   className="btn btn-primary !h-8 flex-1 !rounded-lg !px-2 !text-xs"
+                  disabled={!card.variants.length}
                 >
                   <Check size={13} /> Got it
                 </button>

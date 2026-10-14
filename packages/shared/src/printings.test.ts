@@ -1,86 +1,139 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getCard, getSetCards, toSnapshot } from './catalog';
-import { resolvePrintings, standardVariants } from './printings';
+import { configureCatalog, getCard, getSetCards, toSnapshot } from './catalog';
+import { resolvePrintings, standardVariants, type RawPrinting } from './printings';
+import { applyPrintingProfile, buildPrintingProfile } from './printingRules';
 import { setProgress } from './completion';
-import { priceOf } from './value';
 import type { PokemonCard } from './types';
 
-afterEach(() => vi.unstubAllGlobals());
-const raw = [
-  { type: 'normal', size: 'standard' },
-  { type: 'holo', size: 'standard', foil: 'cosmos' },
-  { type: 'reverse', size: 'standard' },
-];
-function card(id = 'sv03-016'): PokemonCard {
-  const printings = resolvePrintings(id, ['normal', 'holofoil', 'reverseHolofoil'], raw);
-  return { id, name: 'Bounsweet', number: '016', supertype: 'Pokémon', variants: printings.map((p) => p.id), printings,
-    images: { small: '', large: '' }, set: { id: 'sv03', name: 'Obsidian Flames', series: 'Scarlet & Violet', printedTotal: 197, total: 230, releaseDate: '', updatedAt: '', images: { symbol: '', logo: '' } } };
+afterEach(() => { vi.unstubAllGlobals(); configureCatalog({ base: 'https://api.tcgdex.net/v2', storage: null }); });
+function card(id: string, raw: RawPrinting[], rarity = 'Common'): PokemonCard {
+  const setId = id.slice(0, id.lastIndexOf('-'));
+  const printings = resolvePrintings(id, [], raw);
+  return { id, name: 'Any card', number: id.split('-').at(-1)!, supertype: 'Pokémon', rarity,
+    variants: printings.map((p) => p.id), printings, printingVersion: 2,
+    printingContext: { setId, language: id.includes(':') ? id.split(':')[0] : 'en', rarity, category: 'Pokemon', mechanic: '' },
+    images: { small: '', large: '' }, set: { id: setId, name: 'Any set', series: '', printedTotal: 100, total: 12, releaseDate: '', updatedAt: '', images: { symbol: '', logo: '' } } };
+}
+const pair = (id: number, base = 'normal'): RawPrinting[] => [base, 'reverse'].map((type) => ({ type, thirdParty: { cardmarket: id } }));
+function example(set = 'sv03', base = 'normal', extra = 'holo', count = 11) {
+  const target = card(`${set}-026`, [...pair(725106, base), { type: extra, thirdParty: { cardmarket: 727116 } }]);
+  const peers = Array.from({ length: count }, (_, i) => card(`${set}-peer${i}`, pair(i + 1, base)));
+  const profile = buildPrintingProfile(set, [...peers, target], true);
+  return { target, peers, profile, result: applyPrintingProfile(target, profile) };
 }
 
-describe('physical printing classification', () => {
-  it.each(['sv03-016', 'sv03-017'])('keeps %s Cosmos Holo collectible outside standard completion', (id) => {
-    const c = card(id);
-    const exclusive = c.printings![1];
-    expect(exclusive).toMatchObject({ label: 'Cosmos Holo', distribution: 'exclusive', status: 'verified', sourceProduct: 'Tsareena ex Premium Collection', legacyAliases: ['holofoil'] });
-    expect(standardVariants(c)).toEqual(['normal', 'reverseHolofoil']);
-    const p = setProgress([c], new Map([[id, { [exclusive.id]: 1 }]]));
-    expect(p.base).toEqual({ owned: 0, total: 1 });
-    expect(p.full.owned).toBe(0);
-    expect(p.master).toEqual({ owned: 0, total: 2 });
-    expect(p.all).toEqual({ owned: 1, total: 3 });
+describe('automatic printing policy', () => {
+  it.each(['sv03', 'future-unseen-set', 'fr:future-set'])('classifies the Charmander-shaped payload without names or set exceptions: %s', (set) => {
+    const { result } = example(set);
+    expect(result.printings!.map((p) => p.role)).toEqual(['core', 'parallel', 'additional']);
+    expect(result.printings![2]).toMatchObject({ id: 'holofoil', distribution: 'unknown', status: 'inferred', decision: { rule: 'R40' } });
+    expect(result.printings![2].sourceProduct).toBeUndefined();
+    expect(standardVariants(result)).toEqual(['normal', 'reverseHolofoil']);
+    const extraOnly = setProgress([result], new Map([[result.id, { holofoil: 1 }]]));
+    expect(extraOnly.master).toEqual({ owned: 0, total: 2 });
+    expect(extraOnly.base.owned).toBe(0);
+    expect(extraOnly.all).toEqual({ owned: 1, total: 3 });
+    expect(extraOnly.additional).toBe(1);
   });
-  it('normalises upstream enum casing without losing the source attributes', () => {
-    const [printing] = resolvePrintings('fr:sv03-016', [], [{ type: 'Normal', size: 'Standard' }]);
-    expect(printing).toMatchObject({ id: 'normal', distribution: 'expansion', raw: { type: 'Normal', size: 'Standard' } });
+  it('handles an additional Normal symmetrically', () => {
+    expect(example('future', 'holo', 'normal').result.printings!.map((p) => p.role)).toEqual(['core', 'parallel', 'additional']);
   });
-  it('does not apply English product corrections to another language', () => {
-    expect(card('fr:sv03-016').printings![1]).toMatchObject({ distribution: 'unknown', status: 'unverified' });
+  it('requires a full import and enough other cards', () => {
+    const { target, profile } = example('future', 'normal', 'holo', 9);
+    expect(applyPrintingProfile(target, profile).printings!.every((p) => p.role === 'unresolved')).toBe(true);
+    const valid = example();
+    expect(applyPrintingProfile(valid.target, { ...valid.profile, complete: false }).printings![2].role).toBe('unresolved');
   });
-  it('keeps printing IDs stable when providers add, reorder or rename records', () => {
-    const initial = resolvePrintings('sv03-016', [], raw);
-    const changed = resolvePrintings('sv03-016', [], [...raw, { type: 'holo', size: 'jumbo' }].reverse());
-    for (const p of initial) expect(changed.find((q) => q.label === p.label)?.id).toBe(p.id);
-    expect(changed.find((p) => p.label === 'Cosmos Holo')?.legacyAliases).toEqual([]);
+  it.each(['missing', 'shared', 'cross-market', 'contradictory'])('does not infer an additional printing from %s product evidence', (mode) => {
+    const { target, peers } = example();
+    const extra = target.printings![2];
+    extra.productIds = mode === 'missing' ? undefined : mode === 'shared' ? { cardmarket: 725106 } : mode === 'cross-market' ? { tcgplayer: 727116 } : { cardmarket: 727116, tcgplayer: 9 };
+    if (mode === 'contradictory') target.printings![0].productIds!.tcgplayer = 9;
+    const result = applyPrintingProfile(target, buildPrintingProfile('sv03', [...peers, target], true));
+    expect(result.printings![2].role).toBe('unresolved');
   });
-  it('does not collapse finishes, stamps or sizes, including new upstream types', () => {
-    const printings = resolvePrintings('future-001', [], [...raw, { type: 'holo', foil: 'new-treatment', size: 'standard' }, { type: 'holo', foil: 'cosmos', size: 'jumbo' }, { type: 'normal', stamp: ['retailer'] }, { type: 'future-treatment' }]);
-    expect(new Set(printings.map((p) => p.id)).size).toBe(7);
-    expect(printings.filter((p) => p.status === 'unverified')).toHaveLength(5);
-    expect(printings.every((p) => /^[A-Za-z0-9_]{1,80}$/.test(p.id))).toBe(true);
+  it('supports genuinely recurring multiple Core finishes and new parallels', () => {
+    const records: RawPrinting[] = [{ type: 'normal' }, { type: 'holo', foil: 'future-foil' }, { type: 'reverse', foil: 'new-ball' }];
+    const cards = Array.from({ length: 12 }, (_, i) => card(`unseen-${i}`, records));
+    const result = applyPrintingProfile(cards[0], buildPrintingProfile('unseen', cards, true));
+    expect(result.printings!.map((p) => p.role)).toEqual(['core', 'core', 'parallel']);
   });
-  it('recognises standard historical and gallery treatments', () => {
-    expect(resolvePrintings('ex16-001', [], [{ type: 'normal', stamp: ['set-logo'] }])[0].distribution).toBe('expansion');
-    expect(resolvePrintings('base3-1', [], [{ type: 'holo', foil: 'galaxy', stamp: ['1st-edition'] }])[0].distribution).toBe('expansion');
-    expect(resolvePrintings('swsh12tg-TG30', [], [{ type: 'holo', foil: 'gold' }])[0].distribution).toBe('expansion');
-    expect(resolvePrintings('swsh10tg-TG29', [], [{ type: 'holo', stamp: [] }, { type: 'holo', foil: 'gold' }, { type: 'reverse' }])).toHaveLength(1);
-    expect(resolvePrintings('sv10.5b-001', [], [{ type: 'reverse', foil: 'masterball' }])[0].distribution).toBe('expansion');
+  it('handles editions without a historical set whitelist', () => {
+    const records = [{ type: 'holo', foil: 'galaxy', stamp: ['1st-edition'] }, { type: 'holo', foil: 'galaxy', subtype: 'unlimited' }];
+    const cards = Array.from({ length: 12 }, (_, i) => card(`history-${i}`, records, 'Rare Holo'));
+    expect(applyPrintingProfile(cards[0], buildPrintingProfile('history', cards, true)).printings!.map((p) => p.role)).toEqual(['core', 'core']);
   });
-  it('keeps legacy snapshots provisional and avoids price substitution for classified cards', () => {
-    const c = card();
-    const snapshot = toSnapshot(c);
-    snapshot.prices = { normal: 0.1, reverseHolofoil: 0.2 };
-    expect(priceOf(snapshot, c.printings![1].id)).toBeUndefined();
-    expect(setProgress([{ ...c, printings: undefined }], new Map()).provisional).toBe(true);
+  it('does not use a different rarity or language as peers', () => {
+    const { target, peers } = example();
+    for (const c of peers) c.printingContext!.rarity = 'Rare';
+    expect(applyPrintingProfile(target, buildPrintingProfile('sv03', [...peers, target], true)).printings![2].role).toBe('unresolved');
+  });
+  it('separates oversized and campaign printings without excluding sole promotional cards', () => {
+    const ordinary = card('x-1', [{ type: 'normal' }, { type: 'normal', size: 'jumbo' }, { type: 'normal', stamp: ['gamestop'] }]);
+    expect(ordinary.printings!.map((p) => p.role)).toEqual(['core', 'additional', 'additional']);
+    expect(card('promo-1', [{ type: 'holo', foil: 'cosmos' }]).printings![0].role).toBe('core');
+    expect(card('promo-2', [{ type: 'holo', stamp: ['pokemon-center'] }]).printings![0].role).toBe('unresolved');
+  });
+  it('keeps coarse and malformed data unresolved without creating finishes', () => {
+    expect(resolvePrintings('x-1', [])).toEqual([]);
+    expect(resolvePrintings('x-1', ['holofoil'])[0].role).toBe('unresolved');
+    expect(resolvePrintings('x-1', [], [{ type: 'normal', variantId: 'generated' }])[0].role).toBe('unresolved');
+    expect(resolvePrintings('x-1', [], [{ type: 'normal', size: 12 } as unknown as RawPrinting])[0].role).toBe('unresolved');
+    expect(resolvePrintings('x-1', [], [{ type: 'normal', stamp: 12 } as unknown as RawPrinting])[0].role).toBe('unresolved');
+    const nullable = { type: 'Normal', size: null, foil: null, subtype: null, stamp: null } as unknown as RawPrinting;
+    expect(resolvePrintings('x-1', [], [nullable])[0]).toMatchObject({ id: 'normal', role: 'core', raw: { type: 'Normal' } });
+  });
+  it('merges duplicate references and refuses contradictory duplicate records', () => {
+    expect(resolvePrintings('x-1', [], [{ type: 'normal', thirdParty: { cardmarket: 1 } }, { type: 'normal', thirdParty: { tcgplayer: 2 } }])[0]).toMatchObject({ role: 'core', productIds: { cardmarket: 1, tcgplayer: 2 } });
+    expect(resolvePrintings('x-1', [], [{ type: 'normal', thirdParty: { cardmarket: 1 } }, { type: 'normal', thirdParty: { cardmarket: 2 } }])[0]).toMatchObject({ role: 'unresolved', dataQuality: 'conflict' });
+  });
+  it('uses the exact minimum peer and 80 percent boundaries', () => {
+    const { target, peers } = example('threshold', 'normal', 'holo', 10);
+    for (const c of peers.slice(8)) c.printings = resolvePrintings(c.id, [], [{ type: 'holo' }]);
+    let profile = buildPrintingProfile('threshold', [target, ...peers], true);
+    expect(applyPrintingProfile(target, profile).printings!.map((p) => p.role)).toEqual(['core', 'parallel', 'additional']);
+    peers[7].printings = resolvePrintings(peers[7].id, [], [{ type: 'holo' }]);
+    profile = buildPrintingProfile('threshold', [target, ...peers], true);
+    expect(applyPrintingProfile(target, profile).printings!.every((p) => p.role === 'unresolved')).toBe(true);
+  });
+  it('keeps identity and profile stable when order, names and prices change', () => {
+    const { target, peers, profile } = example();
+    target.name = 'Renamed';
+    target.tcgplayer = { url: '', updatedAt: '', prices: { normal: { market: 999 } } };
+    target.printings!.reverse();
+    expect(buildPrintingProfile('sv03', [target, ...peers.reverse()], true).fingerprint).toBe(profile.fingerprint);
+    const before = resolvePrintings('x-1', [], [{ type: 'holo', foil: 'cosmos' }])[0];
+    const after = resolvePrintings('x-1', [], [{ type: 'holo', size: 'jumbo' }, { type: 'holo', foil: 'cosmos' }]);
+    expect(after.find((p) => p.raw?.foil === 'cosmos')!.id).toBe(before.id);
   });
 });
 
-describe('catalogue printing parity and pricing', () => {
-  it('uses the same IDs and eligibility in set listings and details, with separate product prices', async () => {
-    const source = {
-      id: 'sv03-016', localId: '016', name: 'Bounsweet', rarity: 'Common', variants: { normal: true, holo: true, reverse: true },
-      variants_detailed: raw.map((p) => ({ ...p, pricing: p.type === 'holo'
-        ? { cardmarket: { trend: 5 } }
-        : { tcgplayer: { normal: { marketPrice: 0.1 }, 'reverse-holofoil': { marketPrice: 0.2 } } } })),
-      pricing: { cardmarket: { trend: 0.1, 'trend-holo': 0.2 } },
-    };
-    vi.stubGlobal('fetch', vi.fn(async (url, init?: RequestInit) => Response.json(init?.method === 'POST'
-      ? { data: { cards: [null, source, null] } } : String(url).includes('/cards/') ? source : { id: 'sv03', name: 'Obsidian Flames', cardCount: { official: 197, total: 230 } })));
-    const [brief] = await getSetCards('sv03');
-    const detailed = await getCard('sv03-016');
-    expect(brief.variants).toEqual(detailed.variants);
-    expect(standardVariants(brief)).toEqual(standardVariants(detailed));
-    expect(detailed.cardmarket?.prices[detailed.printings![1].id]?.market).toBe(5);
-    expect(detailed.cardmarket?.prices.holofoil).toBeUndefined();
-    expect(detailed.tcgplayer?.prices.reverseHolofoil.market).toBe(0.2);
+describe('catalogue imports', () => {
+  it('hydrates listing data and uses the same profile and physical prices on card details', async () => {
+    const rawCards = Array.from({ length: 12 }, (_, i) => ({ id: `api-${i}`, localId: String(i), name: 'Any card', category: 'Pokemon', rarity: 'Common', variants_detailed: pair(100 + i) }));
+    const target = rawCards[0];
+    target.variants_detailed.push({ type: 'holo', thirdParty: { cardmarket: 999 } });
+    const pricing = target.variants_detailed.map((p) => ({ ...p, pricing: { cardmarket: { idProduct: p.thirdParty!.cardmarket, trend: p.type === 'holo' ? 10 : 1, 'trend-holo': 2 } } }));
+    vi.stubGlobal('fetch', vi.fn(async (url, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ data: { sets: [], cards: rawCards.map(({ id }) => ({ id })) } });
+      if (String(url).includes('/sets/')) return Response.json({ id: 'api', name: 'Set', cardCount: { official: 12, total: 12 } });
+      const c = rawCards.find((c) => String(url).endsWith(`/cards/${c.id}`))!;
+      return Response.json(c.id === target.id ? { ...c, variants_detailed: pricing } : c);
+    }));
+    const cards = await getSetCards('api');
+    const detail = await getCard(target.id);
+    expect(detail.printings).toEqual(cards[0].printings);
+    expect(standardVariants(detail)).toEqual(['normal', 'reverseHolofoil']);
+    expect(detail.cardmarket!.prices).toMatchObject({ normal: { market: 1 }, reverseHolofoil: { market: 2 }, holofoil: { market: 10 } });
+    expect(toSnapshot(detail).printingProfile).toBe(cards[0].printingProfile);
+  });
+  it('refuses a partial set instead of publishing a smaller denominator', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, init?: RequestInit) => Response.json(init?.method === 'POST' ? { data: { cards: [{ id: 'partial-1' }] } } : { id: 'partial', cardCount: { total: 2 } })));
+    await expect(getSetCards('partial')).rejects.toThrow('incomplete');
+  });
+  it('does not invent a rarity-based finish or trust conflicting flags', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url, init?: RequestInit) => Response.json(init?.method === 'POST' ? { data: { sets: [] } } : { id: String(url).split('/').at(-1), localId: '1', name: 'X', rarity: 'Rare Holo', ...(String(url).endsWith('conflict-1') ? { variants: { normal: false }, variants_detailed: [{ type: 'normal' }] } : {}) })));
+    expect((await getCard('empty-1')).variants).toEqual([]);
+    expect((await getCard('conflict-1')).printings![0]).toMatchObject({ dataQuality: 'conflict', role: 'unresolved' });
   });
 });

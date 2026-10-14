@@ -30,6 +30,23 @@ const renderPage = () => renderWithProviders(<SetPage />, { route: '/sets/sv03',
 const tileNames = () => screen.queryAllByRole('link', { name: /owned/ }).map((l) => l.getAttribute('aria-label')!.replace(/ \S+, (owned|not owned).*$/, ''));
 const user = () => userEvent.setup();
 
+it('does not claim Master completion when assigned slots are filled but other printings are unresolved', async () => {
+  const card = makeCard({ variants: ['normal', 'holofoil'], printingCoverage: 'complete', printings: [
+    { id: 'normal', label: 'Normal', finish: 'normal', size: 'standard', distribution: 'unknown', status: 'inferred', role: 'core' },
+    { id: 'holofoil', label: 'Holo', finish: 'holo', size: 'standard', distribution: 'unknown', status: 'unverified', role: 'unresolved' },
+  ] });
+  mocks.useSetCards.mockReturnValue(queryResult([card]));
+  seedCollection({ entries: [makeEntry()], cards: [makeSnapshot()] });
+  useSettings.setState({ setMode: 'master' });
+  renderPage();
+  const master = screen.getByTitle('Master: poketracker core and parallel printings');
+  expect(master).toHaveTextContent('Pending');
+  expect(master).toHaveTextContent('1/1');
+  expect(master).not.toHaveTextContent('100%');
+  await user().click(screen.getByRole('radio', { name: 'Variants you don’t have yet' }));
+  expect(screen.getByText(/All assigned slots are filled/)).toBeInTheDocument();
+});
+
 describe('SetPage', () => {
   it('requests the set from the route param', () => {
     renderPage();
@@ -85,7 +102,7 @@ describe('SetPage', () => {
     // base 1/2, full 1/3, master 1/5 (2 + 2 + 1 variants)
     expect(screen.getByTitle('Base: numbered cards')).toHaveTextContent('1/2');
     expect(screen.getByTitle('Full: incl. secret rares')).toHaveTextContent('1/3');
-    expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('1/5');
+    expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('1/5');
     expect(screen.getByTitle('Full: incl. secret rares')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('radio', { name: 'All 3' })).toHaveAttribute('aria-checked', 'true');
   });
@@ -150,7 +167,7 @@ describe('SetPage', () => {
 
   it('falls back to every card in Base mode when the set has no numbered cards', () => {
     useSettings.setState({ setMode: 'base' });
-    mocks.useSetCards.mockReturnValue(queryResult([CARDS[2]]));
+    mocks.useSetCards.mockReturnValue(queryResult([{ ...CARDS[2], printingCoverage: 'complete' }]));
     renderPage();
     expect(tileNames()).toEqual(['Charizard ex']);
   });
@@ -226,7 +243,7 @@ describe('SetPage', () => {
     });
     renderPage();
     expect(screen.getByTitle('Base: numbered cards')).toHaveTextContent('1/2');
-    expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('1/5');
+    expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('1/5');
     // A display-only slab still shows under "Owned"
     await user().click(screen.getByRole('radio', { name: 'Owned' }));
     expect(tileNames()).toEqual(['Charmander', 'Charmeleon']);
@@ -292,7 +309,7 @@ describe('SetPage', () => {
     });
 
     it('says nothing is missing when the master set is complete', async () => {
-      mocks.useSetCards.mockReturnValue(queryResult([CARDS[2]]));
+      mocks.useSetCards.mockReturnValue(queryResult([{ ...CARDS[2], printingCoverage: 'complete' }]));
       seedCollection({ entries: [makeEntry({ cardId: 'sv03-223', variant: 'holofoil' })], cards: [makeSnapshot({ id: 'sv03-223' })] });
       renderPage();
       await user().click(screen.getByRole('radio', { name: 'Variants you don’t have yet' }));
@@ -308,7 +325,7 @@ describe('SetPage', () => {
       await u.click(within(reverse).getByRole('button', { name: 'Add Reverse Holo' }));
       expect(await screen.findByRole('link', { name: 'Charmander 001 Reverse Holo, owned ×1' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Charmander 001 Normal, not owned' })).toBeInTheDocument();
-      expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('1/5');
+      expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('1/5');
       await u.click(within(reverse).getByRole('button', { name: 'Remove one Reverse Holo' }));
       expect(await screen.findByRole('link', { name: 'Charmander 001 Reverse Holo, not owned' })).toBeInTheDocument();
     });
@@ -334,14 +351,14 @@ describe('SetPage', () => {
 });
 
 it('keeps exclusive printings collectible in All printings without adding a master gap', async () => {
-  const exclusive = { id: 'holofoil_p123', label: 'Cosmos Holo', finish: 'cosmos', size: 'standard', distribution: 'exclusive' as const, status: 'verified' as const, sourceProduct: 'Tsareena ex Premium Collection' };
+  const exclusive = { id: 'holofoil_p123', label: 'Cosmos Holo', finish: 'cosmos', size: 'standard', role: 'additional' as const, distribution: 'unknown' as const, status: 'verified' as const, sourceProduct: 'Tsareena ex Premium Collection' };
   mocks.useSetCards.mockReturnValue(queryResult([makeCard({ id: 'sv03-016', name: 'Bounsweet', variants: ['normal', 'reverseHolofoil', exclusive.id], printings: [
-    { id: 'normal', label: 'Normal', finish: 'normal', size: 'standard', distribution: 'expansion', status: 'inferred' },
-    { id: 'reverseHolofoil', label: 'Reverse Holo', finish: 'reverse', size: 'standard', distribution: 'expansion', status: 'inferred' }, exclusive,
+    { id: 'normal', label: 'Normal', finish: 'normal', size: 'standard', role: 'core', distribution: 'unknown', status: 'inferred' },
+    { id: 'reverseHolofoil', label: 'Reverse Holo', finish: 'reverse', size: 'standard', role: 'parallel', distribution: 'unknown', status: 'inferred' }, exclusive,
   ] })]));
   useSettings.setState({ setMode: 'master' });
   renderPage();
-  expect(screen.getByTitle('Master: standard printings')).toHaveTextContent('0/2');
+  expect(screen.getByTitle('Master: poketracker core and parallel printings')).toHaveTextContent('0/2');
   expect(screen.getByTitle('All printings: includes extras')).toHaveTextContent('0/3');
   expect(screen.queryByRole('link', { name: /Cosmos Holo/ })).not.toBeInTheDocument();
   await user().click(screen.getByTitle('All printings: includes extras'));
