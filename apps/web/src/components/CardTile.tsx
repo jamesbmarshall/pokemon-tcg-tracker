@@ -1,7 +1,7 @@
 import { printingRoleLabel } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { memo, useMemo, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Heart, Minus, Plus } from 'lucide-react';
 import type { CardSnapshot, PokemonCard } from '../api/types';
 import { toSnapshot } from '../api/client';
@@ -39,6 +39,8 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
   const toggleWishlist = useCollectionStore((st) => st.toggleWishlist);
   const readOnly = useReadOnly();
   const shared = usePublicShare();
+  const location = useLocation();
+  const navigationState = location.pathname === '/search' ? { searchResults: `${location.pathname}${location.search}${location.hash}` } : undefined;
   const money = useMoney();
 
   const qty = variant ? (owned?.[variant] ?? 0) : ownedTotal(owned);
@@ -70,6 +72,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
       <div className="relative transition-transform duration-300 group-hover:-translate-y-1">
         <CardLink
           to={shared ? undefined : `/card/${s.id}`}
+          state={navigationState}
           className="block focus-visible:outline-offset-4"
           label={`${s.name} ${s.number}${variant ? ` ${label}` : ''}, ${isOwned ? `owned ×${total}` : 'not owned'}${topSlab ? `, graded ${formatGrade(topSlab)}` : ''}`}
         >
@@ -132,7 +135,7 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
           {shared ? (
             <p className={`truncate text-[13px] font-medium leading-tight ${dimMissing && !isOwned ? 'text-muted' : ''}`}>{s.name}</p>
           ) : (
-            <Link to={`/card/${s.id}`} className={`block truncate text-[13px] font-medium leading-tight hover:text-accent ${dimMissing && !isOwned ? 'text-muted' : ''}`}>
+            <Link to={`/card/${s.id}`} state={navigationState} className={`block truncate text-[13px] font-medium leading-tight hover:text-accent ${dimMissing && !isOwned ? 'text-muted' : ''}`}>
               {s.name}
             </Link>
           )}
@@ -233,10 +236,10 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
 }
 
 /** The tile's image link; a plain block on public share pages, which have no card page to go to. */
-function CardLink({ to, label, className, children }: { to?: string; label: string; className: string; children: ReactNode }) {
+function CardLink({ to, state, label, className, children }: { to?: string; state?: { searchResults: string }; label: string; className: string; children: ReactNode }) {
   if (!to) return <div role="img" aria-label={label} className={className}>{children}</div>;
   return (
-    <Link to={to} className={className} aria-label={label}>
+    <Link to={to} state={state} className={className} aria-label={label}>
       {children}
     </Link>
   );

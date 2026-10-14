@@ -142,7 +142,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   );
 }
 
-function OtherPrintings({ card }: { card: PokemonCard }) {
+function OtherPrintings({ card, searchResults }: { card: PokemonCard; searchResults?: string }) {
   const { data } = usePrintings(card.name, langOf(card.id));
   const byCard = useCollectionStore((s) => s.byCard);
   const slabbed = useCollectionStore((s) => s.gradedByCard);
@@ -156,7 +156,7 @@ function OtherPrintings({ card }: { card: PokemonCard }) {
       </h2>
       <div className="scroll-x -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
         {others.map((c) => (
-          <Link key={c.id} to={`/card/${c.id}`} className="group w-[112px] shrink-0 snap-start">
+          <Link key={c.id} to={`/card/${c.id}`} state={searchResults ? { searchResults } : undefined} className="group w-[112px] shrink-0 snap-start">
             <div className={`aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] shadow-card ring-1 transition group-hover:-translate-y-1 group-hover:shadow-card-lift ${byCard.has(c.id) || slabbed.has(c.id) ? 'ring-accent/60' : 'ring-line'}`}>
               <CardImage id={c.id} src={c.image} name={c.name} number={c.number} setName={c.setName} />
             </div>
@@ -173,6 +173,7 @@ export default function CardPage() {
   const { cardId = '' } = useParams();
   const navigate = useNavigate();
   const { state } = useLocation();
+  const searchResults = (state as { searchResults?: string } | null)?.searchResults;
   const { data: card, isLoading, error, refetch, isPlaceholderData } = useCard(cardId);
   const setId = card?.set.id ?? '';
   const { data: setCards } = useSetCards(setId);
@@ -205,7 +206,7 @@ export default function CardPage() {
   }, [card, isPlaceholderData, owned, wished, remember]);
 
   // `dir` tells the incoming card which side to slide in from.
-  const go = (to: PokemonCard | undefined, dir: 1 | -1) => to && navigate(`/card/${to.id}`, { state: { dir } });
+  const go = (to: PokemonCard | undefined, dir: 1 | -1) => to && navigate(`/card/${to.id}`, { state: { dir, searchResults } });
   const swipeRef = useSwipe<HTMLDivElement>({ onSwipeLeft: () => go(next, 1), onSwipeRight: () => go(prev, -1) });
   const artworkRef = useCardArtworkSize();
 
@@ -214,13 +215,13 @@ export default function CardPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest('input,textarea,select')) return;
-      if (e.key === 'ArrowLeft' && prev) navigate(`/card/${prev.id}`, { state: { dir: -1 } });
-      if (e.key === 'ArrowRight' && next) navigate(`/card/${next.id}`, { state: { dir: 1 } });
-      if (e.key === 'Escape' && setId && !document.querySelector('[role="dialog"]')) navigate(`/sets/${setId}`, { state: { fromCard: cardId } });
+      if (e.key === 'ArrowLeft' && prev) navigate(`/card/${prev.id}`, { state: { dir: -1, searchResults } });
+      if (e.key === 'ArrowRight' && next) navigate(`/card/${next.id}`, { state: { dir: 1, searchResults } });
+      if (e.key === 'Escape' && setId && !document.querySelector('[role="dialog"]')) navigate(searchResults ?? `/sets/${setId}`, { state: { fromCard: cardId } });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [prev, next, navigate, setId, cardId]);
+  }, [prev, next, navigate, setId, cardId, searchResults]);
 
   if (isLoading) {
     return (
@@ -237,8 +238,8 @@ export default function CardPage() {
   if (error || !card) {
     return (
       <ErrorState title="Couldn't load this card" error={error} onRetry={() => refetch()}>
-        <Link to="/sets" className="btn btn-ghost">
-          Browse sets
+        <Link to={searchResults ?? '/sets'} className="btn btn-ghost">
+          {searchResults ? 'Back to search results' : 'Browse sets'}
         </Link>
       </ErrorState>
     );
@@ -265,23 +266,30 @@ export default function CardPage() {
       <div hidden aria-hidden="true">
         {[prev, next].map((neighbour, i) => <img key={i} src={neighbour?.images.large ? imageSrc(neighbour.images.large) : undefined} alt="" decoding="async" />)}
       </div>
-      <div className="flex items-center justify-between gap-4">
-        <Link
-          to={`/sets/${card.set.id}`}
-          state={{ fromCard: card.id }}
-          title="Back to set (Esc)"
-          className="group inline-flex min-w-0 items-center gap-2.5 rounded-md py-1.5 pr-3 text-sm transition hover:text-fg focus-visible:outline-offset-2"
-        >
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-muted transition group-hover:-translate-x-0.5 group-hover:text-accent">
-            <ChevronLeft size={16} />
-          </span>
-          <SetSymbol src={card.set.images.symbol} className="h-5 w-5 shrink-0 object-contain" />
-          <span className="flex min-w-0 flex-col leading-tight">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-faint">Back to set</span>
-            <span className="truncate font-medium text-fg">{card.set.name}</span>
-          </span>
-          <LanguageBadge id={card.id} />
-        </Link>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+          {searchResults && (
+            <Link to={searchResults} title="Back to search results (Esc)" className="inline-flex items-center gap-2 py-1.5 text-sm font-medium hover:text-accent">
+              <ChevronLeft size={16} /> Back to search results
+            </Link>
+          )}
+          <Link
+            to={`/sets/${card.set.id}`}
+            state={{ fromCard: card.id }}
+            title={searchResults ? 'View set' : 'Back to set (Esc)'}
+            className="group inline-flex min-w-0 items-center gap-2.5 rounded-md py-1.5 pr-3 text-sm transition hover:text-fg focus-visible:outline-offset-2"
+          >
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-muted transition group-hover:-translate-x-0.5 group-hover:text-accent">
+              {searchResults ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </span>
+            <SetSymbol src={card.set.images.symbol} className="h-5 w-5 shrink-0 object-contain" />
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-faint">{searchResults ? 'View set' : 'Back to set'}</span>
+              <span className="truncate font-medium text-fg">{card.set.name}</span>
+            </span>
+            <LanguageBadge id={card.id} />
+          </Link>
+        </div>
         <div className="flex items-center gap-1">
           <button disabled={!prev} onClick={() => go(prev, -1)} className="btn btn-ghost !h-9 !w-9 !p-0" aria-label="Previous card">
             <ChevronLeft size={16} />
@@ -537,7 +545,7 @@ export default function CardPage() {
         </div>
       </div>
 
-      <OtherPrintings card={card} />
+      <OtherPrintings card={card} searchResults={searchResults} />
     </div>
   );
 }
