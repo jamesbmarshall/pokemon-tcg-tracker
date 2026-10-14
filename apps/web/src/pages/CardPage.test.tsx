@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { type InitialEntry, useLocation } from 'react-router-dom';
+import CardTile from '../components/CardTile';
 import CardPage from './CardPage';
 import { renderWithProviders } from '../test/render';
 import { errorResult, loadingResult, queryResult, resetStores, seedCollection } from '../test/ui-helpers';
@@ -16,7 +18,7 @@ vi.mock('../api/hooks', () => ({ useCard: mocks.useCard, useSetCards: mocks.useS
 
 const SET_CARDS = [makeCard({ id: 'sv03-003' }), makeCard({ id: 'sv03-001' }), makeCard({ id: 'sv03-002' })];
 
-function setup(card: PokemonCard = makeCard({ id: 'sv03-002' }), route = `/card/${card.id}`) {
+function setup(card: PokemonCard = makeCard({ id: 'sv03-002' }), route: InitialEntry = `/card/${card.id}`) {
   mocks.useCard.mockReturnValue(queryResult(card));
   return renderWithProviders(<CardPage />, { route, path: '/card/:cardId' });
 }
@@ -90,6 +92,46 @@ describe('CardPage', () => {
     expect(screen.getByText('Weakness').parentElement).toHaveTextContent('×2');
     expect(screen.getByText('Resistance').parentElement).toHaveTextContent('—');
     expect(screen.getByText('It is very hot.')).toBeInTheDocument();
+  });
+
+  it.each(['Charmander', 'Charmander 001, not owned'])('returns to the filtered search after opening the %s link', async (name) => {
+    const searchResults = '/search?q=Charmander&types=Fire&sort=oldest&langs=en';
+    mocks.useCard.mockReturnValue(queryResult(makeCard()));
+    function SearchOrCard() {
+      return useLocation().pathname === '/search' ? <CardTile card={makeCard()} /> : <CardPage />;
+    }
+    renderWithProviders(<SearchOrCard />, { route: searchResults });
+    await userEvent.click(screen.getByRole('link', { name }));
+    expect(location()).toBe('/card/sv03-001');
+    expect(screen.getByRole('link', { name: 'Back to search results' })).toHaveAttribute('href', searchResults);
+    expect(screen.getByRole('link', { name: /View set.*Obsidian Flames/ })).toHaveAttribute('href', '/sets/sv03');
+    await userEvent.click(screen.getByRole('link', { name: 'Back to search results' }));
+    expect(location()).toBe(searchResults);
+  });
+
+  it('keeps the search return link through buttons, arrow keys, swipes and other printings', async () => {
+    const searchResults = '/search?q=Charmander&rarity=Common';
+    mocks.usePrintings.mockReturnValue(queryResult([{ id: 'base1-46', name: 'Charmander', number: '46', image: '', setName: 'Base', releaseDate: '1999-01-09' }]));
+    setup(makeCard({ id: 'sv03-002' }), { pathname: '/card/sv03-002', state: { searchResults } });
+    const expectSearchLink = () => expect(screen.getByRole('link', { name: 'Back to search results' })).toHaveAttribute('href', searchResults);
+    await userEvent.click(screen.getByRole('button', { name: 'Next card' }));
+    expectSearchLink();
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' });
+    expectSearchLink();
+    const artwork = document.querySelector('.card-artwork')!;
+    fireEvent.touchStart(artwork, { touches: [{ clientX: 300, clientY: 300 }] });
+    fireEvent.touchEnd(artwork, { touches: [], changedTouches: [{ clientX: 100, clientY: 300 }] });
+    expectSearchLink();
+    await userEvent.click(screen.getByRole('link', { name: /Base.*1999/ }));
+    expectSearchLink();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.getAllByTestId('location')[0]).toHaveTextContent(searchResults);
+  });
+
+  it('lets a search visitor open the set separately', async () => {
+    setup(makeCard({ id: 'sv03-002' }), { pathname: '/card/sv03-002', state: { searchResults: '/search?q=Charmander' } });
+    await userEvent.click(screen.getByRole('link', { name: /View set.*Obsidian Flames/ }));
+    expect(screen.getAllByTestId('location')[0]).toHaveTextContent('/sets/sv03');
   });
 
   it('omits gameplay sections for lighter cards', () => {
