@@ -6,15 +6,22 @@ before sending a pull request, so you don't spend time on something that doesn't
 
 ## Development setup
 
-See [Development](README.md#development) in the README for the full setup
-(`npm install`, `npm run dev`, tests, lint, typecheck, Docker build). In short:
+See [Development](README.md#development) for server configuration, frontend hot reload
+requirements and Docker builds. To run the web app and API together:
 
 ```bash
-npm install
-npm run dev        # API on :3000, web app on http://localhost:5173
+npm ci
+npm run build
+WEB_DIR=../web/dist npm run dev -w @poketracker/server # http://localhost:3000
+```
+
+Use the setup token printed by the server to create your local owner account. To validate changes:
+
+```bash
 npm test           # every workspace
 npm run lint
 npm run typecheck
+npm run validate:deploy
 ```
 
 You need Node 24 (see `.nvmrc`).

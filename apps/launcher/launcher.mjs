@@ -84,8 +84,8 @@ export function writableBy({ uid, gid, mode }, target) {
 /**
  * NAS hosts (Unraid, Synology) usually bind-mount a host folder for /data, and Docker creates
  * a missing folder owned by root. So when started as root we hand the data folder to PUID:PGID
- * (default 1000:1000, the image's "node" user) and then drop to that user for good. The server
- * never runs as root. If the folder can't be handed over (e.g. some network shares refuse
+ * (default 1000:1000, the image's "node" user) and then drop to that user for good.
+ * If the folder can't be handed over (e.g. some network shares refuse
  * chown) and isn't otherwise writable by that user, we stay root rather than fail to start, and
  * say so in the log.
  */

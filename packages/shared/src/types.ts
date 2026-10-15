@@ -74,7 +74,7 @@ export interface PokemonCard {
   printingContext?: PrintingContext;
   printingProfile?: string;
   printingCoverage?: 'complete' | 'partial';
-  /** Whether attacks, text and prices were loaded (search and set listings return lighter cards) */
+  /** Whether full card details were loaded; search/batch listings may omit text and prices. */
   detailed?: boolean;
   /** TCGplayer prices per variant, USD */
   tcgplayer?: PriceSource;
@@ -162,8 +162,9 @@ export interface CollectionEntry {
 export type Condition = 'M' | 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
 
 /**
- * Lightweight, source-agnostic copy of a card kept locally so the collection,
- * binder and value calculations work offline and without one request per card.
+ * Source-agnostic card snapshot stored once on the server and loaded into the browser's
+ * collection store. Supports binder and value calculations without a request per card;
+ * collection loading and persistence still require a server connection.
  */
 export interface CardSnapshot {
   id: string;

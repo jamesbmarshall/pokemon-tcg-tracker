@@ -5,7 +5,8 @@
 #
 # Installs Docker if it's missing, writes /opt/poketracker, and starts PokéTracker behind Caddy, which
 # gets a Let's Encrypt certificate for the domain. Then it prints the first-run setup token.
-# Safe to run again; it never touches your data.
+# Re-running replaces Compose/Caddy files, updates DOMAIN in .env and pulls the image;
+# the data volume is preserved. Save local deployment-file edits before re-running.
 set -eu
 
 DOMAIN="${1:-${DOMAIN:-}}"

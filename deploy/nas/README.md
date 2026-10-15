@@ -8,7 +8,7 @@
 | CasaOS (AppStore-flavoured, with `x-casaos` metadata) | [`casaos/`](casaos/) |
 
 All of them run the same single container on port 3000 with one `/data` volume. See the root
-[README's Configuration table](../../README.md#configuration) for every environment variable.
+[README's Configuration table](../../README.md#configuration) for common environment settings.
 
 ## Unraid
 

@@ -1,5 +1,5 @@
 /**
- * Admin "Updates" panel: shows the running version, checks for and applies updates, toggles
+ * Owner-only Settings → System panel: shows the version, checks for and applies updates, toggles
  * automatic updates, and rolls back. The update itself is done by the launcher process that
  * supervises the server; this UI asks the server to start it, then waits out the restart.
  */

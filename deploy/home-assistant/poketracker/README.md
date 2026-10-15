@@ -15,15 +15,11 @@ in `config.yaml`'s comments, matching the current docs).
 
 ## Known limitation: no Options panel
 
-Supervisor only forwards user-entered `options` values to an add-on as environment variables when
-the add-on supplies its own entrypoint script (`run.sh`) that reads `/data/options.json`, which in
-turn requires the add-on to build its own image from a `Dockerfile` rather than reference a
-published one with `image:`. Since this add-on intentionally uses `image:` to run PokéTracker
-unmodified, there is no such script, so this add-on has no Options panel — configuration beyond
-the fixed `environment:` block in `config.yaml` means forking this folder and editing it directly.
-This is documented for end users in `DOCS.md` and was double-checked against several reports (both
-official and community) before deciding not to implement a schema that would have looked
-configurable without actually doing anything.
+The published PokéTracker image reads environment variables, not Supervisor's
+`/data/options.json`. This packaging supplies no wrapper to translate options, so it
+sets `schema: false` and has no Options panel. To change configuration beyond the
+fixed `environment:` block in `config.yaml`, fork the packaging and edit that block.
+Adding an Options panel would also require an image or entrypoint that reads those options.
 
 ## Trying this add-on before it's published
 

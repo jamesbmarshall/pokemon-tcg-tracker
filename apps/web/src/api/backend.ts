@@ -11,7 +11,7 @@ import type { CardPriceHistory, CardSnapshot, CollectionEntry, GradedCopy, Grade
 import type { CardNote } from './types';
 import type { DeckTextLine } from '@poketracker/shared/decks/ptcgl';
 
-/** A PriceCharting search result. Only id/name/consoleName are used client-side; `raw` is ignored. */
+/** Public fields of a PriceCharting search result; provider payloads stay on the server. */
 export interface PcProduct {
   id: string;
   name: string;
@@ -177,7 +177,7 @@ export interface Backend {
   clear(collectionId: string): Promise<void>;
   /** Asks the server for full card details (prices), fetching them upstream if needed. */
   hydrate(ids: string[]): Promise<CardSnapshot[]>;
-  /** Records a set's master-set size (all variants) so progress can be computed without refetching the set. */
+  /** Requests a server recount of Master/All printing totals; the legacy masterTotal argument is ignored server-side. */
   putSetStat(setId: string, masterTotal: number): Promise<void>;
   createList(collectionId: string, name: string, description?: string, opts?: { kind?: 'list' | 'deck'; format?: DeckFormat }): Promise<CustomList>;
   updateList(collectionId: string, listId: string, patch: { name?: string; description?: string; order?: string[]; format?: DeckFormat }): Promise<void>;

@@ -22,7 +22,7 @@ docker logs poketracker      # prints your one-time setup token
 
 Then open `http://localhost:3000`, enter the setup token and you're in. Prefer Compose? [`deploy/docker/docker-compose.local.yml`](deploy/docker/docker-compose.local.yml) does the same thing with a `.env` file to edit instead of flags.
 
-Running a NAS or home server instead? There's a one-click template for yours:
+Running a NAS or home server instead? These deployment templates are available; the linked guides explain installation and any packaging prerequisites:
 
 | Box | Template |
 | --- | --- |
@@ -38,12 +38,12 @@ See [Deploy](#deploy) below for Azure and a bare VPS, or [`deploy/nas/README.md`
 ## Features
 
 - **Dashboard**: collection value with a daily history chart, biggest movers over the last 7 or 30 days, sets in progress, most valuable cards, recent additions and the sets you're closest to finishing.
-- **Sets**: every set in every TCGdex language, grouped by series, with progress bars. Each set page shows three kinds of completion:
+- **Sets**: physical-card sets in the supported TCGdex languages, grouped by series, with progress bars. Each set page shows four completion measures:
   - **Base**: numbered cards up to the printed total.
   - **Full**: base plus the secret rares.
   - **Master**: standard expansion printings, including applicable reverse holos.
   - **All printings**: every catalogued printing, including product exclusives, stamps and oversized cards.
-  Exclusive printings remain collectible but do not satisfy Base, Full or Master completion. Unverified treatments appear under All printings; provisional coverage is labelled. See [printing catalogue rules and migration](docs/printings.md).
+  Printings classified as additional or unresolved remain collectible but do not satisfy Base, Full or Master completion. Checklist membership is assessed separately from release origin, using TCGdex data; provisional coverage is labelled. See [printing catalogue rules and migration](docs/printings.md).
 - **Fast entry**: each card shows its printings as chips (N, RH, H, 1st…). Click a chip to add a copy and right-click to remove one. Quick add mode adds a − button for touch screens. Anything you remove can be undone.
 - **Binder view**: 9- or 12-pocket pages shown as a two-page spread. Empty pockets show a ghost of the missing card. Arrow keys turn the pages.
 - **Card pages**: a 3D holo-tilt image, per-variant quantity and condition, market prices with a daily price history chart per source, the full card text and other printings of the same card. Arrow keys or a swipe move through the set.
@@ -57,9 +57,9 @@ See [Deploy](#deploy) below for Azure and a bare VPS, or [`deploy/nas/README.md`
 - **GBP, EUR or USD**, converted at the daily ECB reference rate.
 - **Multi-user**: an owner account, admins and members, invite links and optional two-factor sign-in.
 - **Shared collections**: a household collection that several people can edit, alongside everyone's personal one.
-- **Sharing**: share a whole collection, one set, your wishlist, your slabs or a list. Pick who sees it (anyone with the link, specific people, or everyone on your instance), hide what you paid, values or notes, and set an expiry. Links can be revoked at any time.
+- **Sharing**: share a whole collection, one set, your wishlist, your slabs, sealed products or a list. Pick who sees it (anyone with the link, specific people, or everyone on your instance), hide what you paid, values or notes, and set an expiry. Links can be revoked at any time.
 - **Your data stays yours**: export JSON or CSV at any time, and the server takes a database backup every day.
-- **Installable**: add PokéTracker to your home screen or app list as a PWA, with the app shell and card images cached for offline use.
+- **Installable**: add PokéTracker to your home screen or app list as a PWA. The app shell and previously loaded card images are cached; signing in, loading collections and saving changes require a connection to your server.
 - **Scan a card**: point your camera at a card's bottom strip and on-device OCR reads the collector number to look it up — no photo ever leaves your device. Needs HTTPS, since browsers only allow camera access on a secure connection (`localhost` is exempt for local testing). A manual set code/number entry always works too.
 
 ## Deploy
@@ -89,7 +89,7 @@ You need a Linux server with ports 80 and 443 open, and a domain (or subdomain) 
 curl -fsSL https://raw.githubusercontent.com/jamesbmarshall/pokemon-tcg-tracker/main/deploy/docker/install.sh | sh -s -- cards.example.com
 ```
 
-The script installs Docker if it's missing, writes everything to `/opt/poketracker`, starts PokéTracker behind [Caddy](https://caddyserver.com) and prints your setup token. It's safe to run again; it never touches your data.
+The script installs Docker if it's missing, writes the deployment files to `/opt/poketracker`, starts PokéTracker behind [Caddy](https://caddyserver.com) and prints your setup token. Running it again replaces `docker-compose.yml` and `Caddyfile`, updates `DOMAIN` in `.env`, and pulls the configured image. Save any edits to those files first; the data volume is preserved.
 
 Caddy gets a free [Let's Encrypt](https://letsencrypt.org) certificate for your domain on first start and renews it on its own, so there's nothing to schedule. If you're experimenting and might rebuild the server a few times, point it at Let's Encrypt's staging service first, so you don't hit their [rate limits](https://letsencrypt.org/docs/rate-limits/):
 
@@ -131,7 +131,7 @@ Both templates pin PokéTracker to **one instance**. Don't scale it out: SQLite 
 
 Then open `http://<nas-ip>:3000`. To reach it securely from outside your home network, put it behind your NAS's reverse proxy and set `PUBLIC_URL`.
 
-If you bind-mount a folder rather than using a volume, set `PUID` and `PGID` to the folder owner's ids. The container starts as root just long enough to hand the folder to that user, then runs as it. Plain `docker run --user` works too.
+If you bind-mount a folder rather than using a volume, set `PUID` and `PGID` to the folder owner's ids. The launcher tries to give that user ownership of `/data`, then drops privileges. If the folder remains unwritable by that user, it logs a warning and continues as root. Plain `docker run --user` skips that ownership step; the folder must already be writable by the selected user.
 
 ### Moving from the browser-only version
 
@@ -147,11 +147,13 @@ The owner sees **Settings → System**, which shows the running version and, whe
 
 If the new version doesn't come up within 90 seconds, PokéTracker puts the previous version back, restores the backup and tells you what happened next time you open Settings. You can also turn on automatic updates there, or roll back to the previous version by hand.
 
-Very occasionally a release needs a newer container image (the small launcher inside it changes). The Update button says so, and you redeploy instead: `docker compose pull && docker compose up -d` on a VPS, *Restart* in the Azure portal, or *Check for updates* in Unraid or Portainer.
+Very occasionally a release needs a newer container image (the small launcher inside it changes). The Update button says so; pull and recreate the container with your deployment tool (`docker compose pull && docker compose up -d` for Compose). On Azure, redeploy with the newer image tag. Restarting a container alone does not guarantee an image refresh.
 
 ## Backups
 
-The server backs up its database every night to `/data/backups` and keeps the last seven (`BACKUPS_TO_KEEP`). Admins can download any of them from **Admin → Backups** (linked from Settings). Your own copies are still worth having: back up the whole `/data` volume with whatever you use for everything else, or take a JSON export now and then.
+With background jobs enabled, the server backs up its database at 03:00 in the server's time zone to `/data/backups` and keeps the last seven daily backups (`BACKUPS_TO_KEEP`), plus the latest three pre-update backups. Manual backups remain until deleted. The owner can create and download backups from **Admin → Backups** (linked from Settings).
+
+Database backups contain photo metadata, but the image files live separately in `/data/photos` and `/data/sealed-photos`. Back up the whole `/data` volume for a full recovery, including `/data/secret.key`, which decrypts two-factor secrets, saved share links and integration keys. If you supply `SECRET_KEY` through the environment, preserve that value separately. JSON exports are useful for moving a collection, but do not include photo files or instance accounts and settings.
 
 To restore, stop the container, copy a backup over `/data/poketracker.db`, delete any `poketracker.db-wal` and `poketracker.db-shm` files next to it, and start it again.
 
@@ -163,6 +165,10 @@ Everything has a sensible default. These are the settings you're most likely to 
 | --- | --- | --- |
 | `PUBLIC_URL` | (from the request) | The address people use, e.g. `https://cards.example.com`. Used for invite and share links and to check where requests come from. |
 | `SETUP_TOKEN` | random, in the log | The first-run token for creating the owner account. |
+| `PORT` | `3000` | HTTP port inside the server process. With the supplied containers, normally change the published host port instead. |
+| `DATA_DIR` | `./data` (`/data` in Docker) | Database, photos, cache, backups and downloaded updates. Relative paths use the server's working directory. |
+| `WEB_DIR` | unset (launcher supplies it) | Built web app to serve. Without it, the standalone server serves only the API. |
+| `SECRET_KEY` | generated in `DATA_DIR/secret.key` | Optional base64-encoded 32-byte encryption key. Keep it stable and include it in your recovery plan. |
 | `TZ` | `UTC` | Time zone for scheduled jobs and logs. |
 | `PUID` / `PGID` | `1000` | Who owns `/data` and runs the app. |
 | `IMAGE_CACHE_MB` | `2048` | Disk space for cached card images. |
@@ -171,17 +177,18 @@ Everything has a sensible default. These are the settings you're most likely to 
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
 | `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
-| `DEMO_MODE` | `false` | Boots with a seeded sample collection and a one-click read-only sign-in; blocks all other mutations, sign-up and updates. Resets nightly. See [Demo mode](#demo-mode). |
+| `JOBS` | `true` | Enables scheduled refreshes, backups and cleanup. Set `false` for isolated development or tests. |
+| `DEMO_MODE` | `false` | Seeds a sample collection with one-click read-only sign-in. Allows catalogue-cache writes, blocks collection edits, sign-up and updates, and resets nightly when jobs are enabled. See [Demo mode](#demo-mode). |
 
 ## Demo mode
 
 Set `DEMO_MODE=1` to run a public, read-only showcase instead of your own tracker: useful for a "try before you self-host it" link, not for everyday use.
 
-On first boot the server seeds a sample owner with a few hundred cards across a handful of popular sets — some owned, some graded, a wishlist, a couple of custom lists and a short value history — from [`apps/server/src/demo/seed.ts`](apps/server/src/demo/seed.ts). The login page then shows a **Try the demo** button instead of (or alongside) sign-in, which signs the visitor straight in as that sample owner.
+On first boot the server seeds a sample member account with several hundred cards across four sets — some owned, some graded, a wishlist, a couple of custom lists and a short value history — from [`apps/server/src/demo/seed.ts`](apps/server/src/demo/seed.ts). The login page shows a **Try the demo** button, which signs the visitor straight in as that account.
 
 From there, almost everything is read-only. A single server-side check rejects every mutating request with a 403 and a clear message, except demo sign-in/out and the shared card-data cache (TCGdex lookups, image hydration) that the UI needs to render anything at all. Sign-up, invites, password and two-factor changes, share creation, the updater and admin settings are all disabled outright, and the web app shows a dismissible banner reminding visitors they're looking at a demo. Price and set-data refresh jobs keep running as normal; only the update checker is skipped. A nightly job wipes and re-seeds the collection, so nothing anyone does to it (not that they can do much) sticks around.
 
-`deploy/azure/demo.bicep` deploys a standalone demo instance on Azure Container Apps; see the comments in that file for the `az deployment group create` command. Don't set `DEMO_MODE=1` on an instance you actually want to use — your own data would be reset every night.
+`deploy/azure/demo.bicep` deploys a standalone demo instance on Azure Container Apps; see the comments in that file for the `az deployment group create` command. Use a dedicated data directory for demos: collection edits are blocked, and the demo account's collections are rebuilt nightly when jobs are enabled.
 
 ### PriceCharting (optional)
 
@@ -189,19 +196,21 @@ Sealed-product pricing and graded-card values can optionally come from [PriceCha
 
 ## Resilience
 
+Set lists refresh every six hours. A persistent queue imports full printing catalogues every 15 minutes, up to eight due sets per run; opening a set can also refresh it on demand. Recent sets are queued daily and older sets weekly. The first import can take time because it fetches every card's detailed record. **Admin → Jobs** shows refresh outcomes; [Printing catalogue](docs/printings.md#automatic-lifecycle) explains coverage and retry behaviour.
+
 TCGdex is the only catalogue source, so PokéTracker is built to cope when it's slow or unreachable rather than break pages. Every call retries network errors, 5xx and 429 responses with exponential backoff and jitter (honouring a 429's `Retry-After` header), capped at a few seconds and a handful of attempts; a plain 4xx (e.g. a genuine 404) is never retried. If TCGdex keeps failing, a per-host circuit breaker opens after several failures in a row, so the app stops hammering a service that's already down — it tries again with a single "probe" request after a cool-down, and closes again once that succeeds.
 
 Whether the breaker is open or a single call fails, PokéTracker falls back to whatever it already has rather than erroring: a stale cached catalogue response past its normal refresh window, or the last synced card/set-stats snapshot. Pages still show set lists, card details and collection stats — card data just "may be out of date" until TCGdex recovers. A small, non-sensitive flag on the status endpoint drives a banner for every signed-in user when this is happening; **Admin → Jobs** shows the fuller picture (breaker state, last error, how many requests were served stale) for TCGdex and PriceCharting.
 
-When TCGdex has no TCGplayer or Cardmarket price at all for one of a card's variants, and a PriceCharting key is configured, PriceCharting is tried as a fallback price source for just that variant (a single ungraded price, since PriceCharting doesn't break prices down by printing). Price precedence is TCGplayer, then converted Cardmarket, then PriceCharting, then nothing — a manual value override always wins over any of them. The card page shows "PriceCharting" as the source when a fallback price was used.
+For legacy card data without physical printing records, a configured PriceCharting key can supply a missing variant price after TCGplayer and converted Cardmarket. Detailed printing records do not use this generic ungraded fallback, because it cannot identify a particular treatment. A manual value override takes precedence. The card page identifies PriceCharting when a fallback price was used.
 
 ## Security
 
 - **Accounts**: passwords are hashed with Argon2id. Sign-in is rate-limited per IP and per account, and errors don't reveal whether a username exists. Two-factor sign-in uses any authenticator app, with single-use recovery codes. TOTP secrets are encrypted at rest with a per-instance key in `/data/secret.key`.
 - **Roles**: the owner manages the instance and updates, admins manage people and invites, members look after their own collections. New people join through single-use invite links that expire.
 - **Sessions** use `HttpOnly`, `SameSite=Lax` cookies (`Secure` over HTTPS). Every change is checked against the request's origin and a custom header to block cross-site request forgery.
-- **Sharing**: share links contain a random 128-bit token stored only as a hash. Hidden fields are removed on the server before anything is sent, so they can't be dug out of the page. Share pages ask search engines not to index them.
-- **Updates** must be signed by the release key, and the container runs as an unprivileged user.
+- **Sharing**: share links contain a random 128-bit token. The server stores its hash for lookup and an encrypted copy so the owner can copy the link again. Hidden fields are removed on the server before anything is sent. Share pages ask search engines not to index them.
+- **Updates** must be signed by the release key. The launcher normally drops to an unprivileged user; see the storage-permissions fallback under [NAS and home servers](#nas-and-home-servers).
 - **Audit log**: sign-ins, admin changes, shares and updates are recorded, and admins can read them under **Admin → Activity**.
 - **PriceCharting**: the optional API key is encrypted at rest with the same per-instance key as TOTP secrets, is never returned to the browser, and the service is contacted only when a key is set.
 
@@ -209,18 +218,27 @@ Found a problem? Please open a private security advisory on the repository rathe
 
 ## Development
 
-You need Node 24 (see `.nvmrc`).
+You need Node 24 (see `.nvmrc`). Run these commands from the repository root to serve the built web app and API together:
 
 ```bash
-npm install
-npm run dev        # API on :3000, web app on http://localhost:5173
+npm ci
+npm run build      # web app + bundled server
+WEB_DIR=../web/dist npm run dev -w @poketracker/server
+```
+
+Open `http://localhost:3000/setup` and use the token printed by the server. Data goes to `apps/server/data`. The API restarts on server edits; after web changes, rebuild with `npm run build -w @poketracker/web` and reload. Set `JOBS=false` if you want to disable background work locally. Optional server environment settings can go in `apps/server/.env`.
+
+For frontend hot reload, `npm run dev` starts the API on port 3000 and Vite on port 5173. Vite currently has no API proxy configured: a same-origin reverse proxy must send `/api/*` and `/health` to port 3000 and other requests (including Vite's WebSocket) to port 5173. Opening port 5173 directly will not connect the UI to the API.
+
+Validation commands:
+
+```bash
 npm test           # every workspace
 npm run lint
 npm run typecheck
 npm run build      # web app + bundled server
+npm run validate:deploy
 ```
-
-In development the server prints a setup token on first start, and data goes to `apps/server/data`.
 
 To build and run the Docker image locally:
 
@@ -248,7 +266,8 @@ apps/
 packages/
   shared/     types and card logic shared by web and server, TCGdex adapter
 deploy/       Docker Compose + Caddy, Azure Bicep, Unraid and NAS templates
-scripts/      release bundling and signing
+scripts/      release bundling/signing, deployment validation, read-only printing audit
+docs/         printing standard, catalogue lifecycle and migration notes
 ```
 
 The server has no native dependencies: SQLite is Node's built-in `node:sqlite`, Argon2 runs in WebAssembly and signatures use Node's `crypto`. A release is therefore one JavaScript file plus the built web app, and the same bundle runs on amd64 and arm64.
@@ -281,10 +300,10 @@ If you change `deploy/azure/*.bicep`, rebuild the JSON the Deploy buttons use wi
 | What | Source |
 | --- | --- |
 | Cards, sets, images | [TCGdex](https://tcgdex.dev) (free, open source, no key) |
-| Prices | TCGplayer (US) and Cardmarket (EU), both supplied by TCGdex; [PriceCharting](https://www.pricecharting.com) (optional) as a fallback when TCGdex has none, and for sealed/graded prices |
+| Prices | TCGplayer (US) and Cardmarket (EU), supplied by TCGdex; optional [PriceCharting](https://www.pricecharting.com) links for sealed/graded prices and a generic fallback for legacy cards without printing records |
 | Currency conversion | [Frankfurter](https://frankfurter.dev) (ECB reference rates) |
 
-The server fetches all of this, caches it and shares it between users, so TCGdex sees one request per card rather than one per person. Card images are cached on disk too, up to `IMAGE_CACHE_MB`. About 1,600 older cards, mostly promos, have no TCGdex scan; those fall back to the old pokemontcg.io image CDN, then to a styled placeholder.
+The server fetches this data and shares cached responses between users. Card images are cached on disk too, up to `IMAGE_CACHE_MB`. Missing or failed scans fall back to the old pokemontcg.io image CDN where a legacy set mapping exists, then to a styled placeholder.
 
 Built with React 19, Vite, Tailwind CSS 4, TanStack Query, Zustand, Fastify and lucide icons.
 

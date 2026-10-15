@@ -22,12 +22,12 @@ export function isWithinPrintedTotal(number: string, printedTotal: number): bool
 /** Part of the numbered set (1 to printed total), i.e. not a secret rare. */
 export const isBaseCard = (c: Pick<PokemonCard, 'number' | 'set'>) => isWithinPrintedTotal(c.number, c.set.printedTotal);
 
-/** Base = numbered cards up to printed total; Full = every card; Master = standard expansion printings; All = every collectible printing. */
+/** Base/Full count cards with a Core/Parallel copy; Master counts those printing slots; All counts every listed printing. */
 export function setProgress(cards: PokemonCard[], byCard: Map<string, Record<string, number>>): SetProgress {
   const p: SetProgress = { base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 }, master: { owned: 0, total: 0 }, all: { owned: 0, total: 0 }, provisional: false, unresolved: 0, additional: 0, coverageComplete: true };
   for (const c of cards) {
     const owned = byCard.get(c.id);
-    // Entries are deleted at zero rather than stored, so any key means at least one copy.
+    // Additional/unresolved copies remain collectible but do not fill Base or Full slots.
     const eligible = new Set(standardVariants(c));
     const has = !!owned && Object.keys(owned).some((v) => eligible.has(v) && owned[v] > 0);
     if (!c.printings?.length || c.printings.some((p) => p.status !== 'verified')) p.provisional = true;

@@ -69,7 +69,8 @@ export default function SettingsPage() {
       exportedAt: new Date().toISOString(),
       collection: Array.from(entries.values()),
       wishlist: Array.from(wishlist.values()),
-      // Slab photos stay on the server (and in its backups); only slab details are exported.
+      // Photo files stay in the server's data directory; JSON exports contain item details only.
+      // Full-volume backups preserve photos; the scheduled database backup stores metadata only.
       graded: Array.from(graded.values()),
       sealed: Array.from(sealed.values()),
       notes: Array.from(notes, ([cardId, text]) => ({ cardId, text })),

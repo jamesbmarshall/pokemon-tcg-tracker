@@ -904,8 +904,9 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
   });
 
   /**
-   * Refreshes a set's master-set size (every variant of every card), which completion
-   * percentages use for every user. The server counts it from the catalogue itself rather than
+   * Refreshes shared set totals: Master counts Core/Parallel printings; All counts every
+   * catalogued printing. Coverage and unresolved/additional counts accompany the totals.
+   * The server counts from the catalogue itself rather than
    * trusting a number from the client, because the table is shared across the whole instance and
    * one member could otherwise skew everyone's progress. The client's figure is ignored.
    *

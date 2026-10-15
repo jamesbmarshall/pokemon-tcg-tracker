@@ -184,8 +184,8 @@ const LEGACY_BY_TCGDEX = new Map<string, string>();
 for (const [legacy, id] of Object.entries(LEGACY_SET_MAP)) if (!LEGACY_BY_TCGDEX.has(id)) LEGACY_BY_TCGDEX.set(id, legacy);
 
 /**
- * pokemontcg.io's image CDN, used only for the ~1,600 cards TCGdex hasn't scanned yet.
- * Best effort: it may disappear once that API is retired.
+ * Best-effort image fallback for cards with a legacy set mapping. CardImage tries this CDN
+ * when the primary scan is missing or fails; the mapping does not guarantee an image exists.
  */
 export function legacyImageUrl(cardId: string, hires = false): string | undefined {
   const setId = setIdFromCardId(cardId);
@@ -352,11 +352,10 @@ function eurPerUsd(): number {
 
 /**
  * Best single market price per variant in USD: TCGplayer, falling back to converted Cardmarket,
- * then to a PriceCharting fallback price (if supplied) for any variant still missing a price.
- * `pricechartingPrice` is a single ungraded-card price (PriceCharting doesn't break prices down
- * per printing variant the way TCGplayer/Cardmarket do), applied to every variant TCGdex had
- * nothing for. USD is the base for every stored price; EUR figures are divided by the
- * EUR-per-USD rate.
+ * then to a supplied PriceCharting quote for legacy cards without printing records only.
+ * Detailed printings require their own price key; a generic ungraded-card quote cannot
+ * distinguish treatments. Output prices are USD; Cardmarket EUR figures are divided by
+ * the EUR-per-USD rate. Native-currency price histories are stored separately.
  */
 export function usdPrices(card: Pick<PokemonCard, 'tcgplayer' | 'cardmarket' | 'variants'> & Partial<Pick<PokemonCard, 'printings'>>,  pricechartingPrice?: number): Record<string, number> {
   const out: Record<string, number> = {};

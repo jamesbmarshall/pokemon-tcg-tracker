@@ -1,4 +1,4 @@
-# PokéTracker for TrueNAS SCALE 24.10 ("Dragonfish") and newer, where Apps runs plain Docker
+# PokéTracker for TrueNAS SCALE 24.10 (Electric Eel) and newer, where Apps runs plain Docker
 # (not the older k3s-based custom app system) and accepts a Docker Compose file directly.
 #
 #   Apps → Discover Apps → Custom App → ⋮ → Install via YAML → paste this file → Install
@@ -6,9 +6,8 @@
 # See README.md in this folder for the exact UI steps, including where to point the host path.
 #
 # Caveat: TrueNAS's YAML editor only checks this for valid syntax, not for which Compose keys it
-# actually honours. Keep this file to the plain, widely-supported subset (image, restart,
-# environment, ports, volumes) — it does not use anything TrueNAS is known to reject (build,
-# profiles, networks, depends_on).
+# actually honours. This template uses image, restart, environment, ports and volumes;
+# check your TrueNAS version's documentation before adding other Compose features.
 
 services:
   poketracker:

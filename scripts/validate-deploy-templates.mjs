@@ -1,15 +1,13 @@
 #!/usr/bin/env node
-// Parses every deployment template in deploy/ and deploy/home-assistant/ to catch syntax errors
+// Checks YAML and XML deployment templates under deploy/ to catch structural mistakes
 // before they reach a NAS, add-on store or app store that won't tell you nearly as clearly.
 //
 //   node scripts/validate-deploy-templates.mjs
 //   npm run validate:deploy
 //
-// YAML is parsed with js-yaml. XML has no parser in the dependency tree worth adding just for a
-// syntax check (see the README note on this script), so it gets a small well-formedness check
-// instead: balanced/properly-nested tags, matching quotes in attributes, and a single root
-// element. That's enough to catch the mistakes a hand-edited template actually makes (an unclosed
-// tag, a stray `&` that should be `&amp;`, mismatched quotes) without a new runtime dependency.
+// YAML is parsed with js-yaml. XML gets a small tag-nesting and trailing-content check,
+// not a full XML parse: it does not validate entities, root count or all attribute syntax.
+// Passing this script does not establish platform-schema validity or installability.
 import { globSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
