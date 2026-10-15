@@ -1,7 +1,8 @@
 /**
  * Read-only public demo. When DEMO_MODE is on, the server seeds a sample collection under a
- * single demo account, rejects every mutating request except demo sign-in/out, keeps the demo
- * account out of /api/setup's reach, and resets the seed every night (see jobs.ts).
+ * single demo account, rejects mutations except sign-in/out and the catalogue-cache routes
+ * listed below, keeps the demo account out of /api/setup's reach, and resets the seed nightly
+ * when the scheduler is enabled (see jobs.ts).
  *
  * Nothing here runs unless config.demoMode is true, so a normal instance pays no cost for it.
  */

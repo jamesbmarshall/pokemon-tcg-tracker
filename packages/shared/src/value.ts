@@ -37,8 +37,9 @@ export function isPaid(v: unknown): v is Paid {
 }
 
 /**
- * Market price for a printing. Falls back to any price the card has, since a missing variant price
- * (common for reverse holos) is closer to the card's other price than to zero.
+ * Market price for a printing. Only legacy snapshots without printing records may fall back
+ * to another variant's price. Detailed printings need an exact price key to avoid valuing an
+ * unrelated treatment with a base-product quote.
  */
 export function priceOf(card: CardSnapshot | undefined, variant: string) {
   if (!card) return undefined;

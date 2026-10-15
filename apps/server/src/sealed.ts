@@ -3,7 +3,7 @@
  * catalogued upstream, so each item is free-form data the owner enters themselves, optionally
  * linked to a PriceCharting product for an automatic price.
  *
- * Mirrors the shape of graded.ts in collections.ts: a sanitiser that rebuilds a trusted object
+ * Mirrors graded-copy handling in collections.ts: a sanitiser that rebuilds a trusted object
  * field by field, CRUD routes under /api/collections/:id/sealed, and photo storage that mirrors
  * graded_photos. Opened items are kept (for history) but excluded from collection value.
  */

@@ -1,4 +1,8 @@
-/** Persistent, shared imports: every page and job sees the same set profile. */
+/**
+ * Complete set imports shared by pages and scheduled jobs. Publish cards, the classification
+ * profile and completion totals together; an incomplete refresh must not replace a catalogue.
+ * See docs/printings.md for refresh schedules and the identity-preserving migration policy.
+ */
 import { getSetCards, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
 import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type PrintingProfile } from '@poketracker/shared/printingRules';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
@@ -12,6 +16,8 @@ const HOUR = 3600_000;
 const running = new WeakMap<Db, Map<string, Promise<PokemonCard[]>>>();
 const slots = new WeakMap<Db, { active: number; waiting: (() => void)[] }>();
 async function importWithSlot(ctx: Ctx, setId: string) {
+  // At most two set imports per database. Hand the occupied slot to the next waiter so new
+  // arrivals cannot overtake it; requests for the same set share a promise in getCatalogSet().
   let pool = slots.get(ctx.db);
   if (!pool) { pool = { active: 0, waiting: [] }; slots.set(ctx.db, pool); }
   if (pool.active >= 2) await new Promise<void>((resolve) => pool!.waiting.push(resolve));
@@ -81,7 +87,10 @@ export async function catalogSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
   if (row && Date.now() - row.fetched_at < 6 * HOUR) return json(row.data, []);
   try { return await discoverSets(ctx, lang); } catch (err) { if (row) return json(row.data, []); throw err; }
 }
-/** Durable queue survives restarts. Per-card raw cache resumes partially fetched sets. */
+/**
+ * Processes due or version-invalidated sets from the durable queue, sequentially in this job.
+ * On-demand imports share the global slots; the raw-card cache resumes interrupted downloads.
+ */
 export async function syncPrintingCatalogues(ctx: Ctx, limit = 8) {
   const pending = ctx.db.all<{ set_id: string }>('SELECT q.set_id FROM printing_sync_queue q LEFT JOIN printing_catalogues c ON c.set_id = q.set_id WHERE q.next_at <= ? OR c.printing_version != ? OR c.policy_version != ? ORDER BY q.next_at, q.release_date DESC, q.set_id LIMIT ?', Date.now(), PRINTING_VERSION, POLICY_VERSION, limit);
   let imported = 0;

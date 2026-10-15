@@ -39,9 +39,9 @@ export interface Config {
   tcgdexBase: string;
   fxUrl: string;
   /**
-   * Read-only public demo: seeds a sample collection under a demo account, blocks every
-   * mutating request except demo sign-in/out, and resets the seed every night. Never set this
-   * on an instance that holds real data.
+   * Read-only public demo: seeds a sample collection under a demo account and blocks mutations
+   * except demo sign-in/out and shared catalogue-cache writes (see demo.ts). The scheduled
+   * reset rebuilds the demo account's collections nightly. Use a dedicated data directory.
    */
   demoMode: boolean;
   /** How many days of per-card price history to keep; older rows are pruned by the cleanup job. */

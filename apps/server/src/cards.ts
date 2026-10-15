@@ -166,9 +166,10 @@ function writePriceHistory(db: Db, cards: PokemonCard[], pcFallbacks: Map<string
  * A failed batch is logged and skipped so the rest still refresh; the call only throws when
  * every batch failed, which points at TCGdex being down rather than a few bad ids.
  *
- * When TCGdex has no TCGplayer/Cardmarket price at all for one of a card's variants, and a
- * PriceCharting key is configured, PriceCharting is tried as a fallback source for just those
- * variants (manual overrides and TCGdex prices still always win — see usdPrices()).
+ * For legacy cards without physical printing records, a configured PriceCharting key can
+ * supply missing variant prices. Detailed printings never receive this generic ungraded
+ * quote, which cannot distinguish treatments. See usdPrices() for market-source precedence;
+ * entryValue() applies manual valuations separately.
  */
 export async function refreshCards(ctx: Ctx, ids: string[]): Promise<number> {
   for (const setId of new Set(ids.map((id) => id.slice(0, id.lastIndexOf('-'))))) {

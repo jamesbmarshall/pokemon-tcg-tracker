@@ -3,10 +3,8 @@
 # This references the published image directly (no Dockerfile/build.yaml), so Supervisor never
 # builds anything locally — it just runs ghcr.io/jamesbmarshall/pokemon-tcg-tracker as-is.
 #
-# Caveat (see DOCS.md for the full explanation): because there's no build step, there's no
-# entrypoint script of ours Supervisor can hand user "options" to as environment variables either
-# — that mechanism (bashio::config reading /data/options.json) only works for add-ons that ship
-# their own Dockerfile and run.sh. So this add-on does NOT expose an Options panel. To change
+# The published image does not read Supervisor's /data/options.json or translate those values
+# into environment variables, so this packaging does not expose an Options panel. To change
 # PUBLIC_URL, TZ, TRUST_PROXY etc. from their defaults below, fork this file and edit the
 # `environment:` block before adding the repository. SETUP_TOKEN is deliberately left unset:
 # PokéTracker itself prints a random one to its own log on first start, readable from this add-on's

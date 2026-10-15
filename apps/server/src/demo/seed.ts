@@ -3,14 +3,9 @@
  * lists. Pure data (no database access) so it is easy to unit-test and to regenerate deterministically
  * on every reset.
  *
- * Card ids follow TCGdex's `<setId>-<localId>` scheme. The four sets and local-id ranges below were
- * each checked against the live catalogue (`GET https://api.tcgdex.net/v2/en/<setId>`) before
- * writing this file, so every generated id is a real, current TCGdex card: Base Set (`base1`,
- * 102 cards, no zero-padding), Sword & Shield base (`swsh1`, 202 numbered cards, no padding) and
- * two Scarlet & Violet sets (`sv01` Scarlet & Violet base, `sv03` Obsidian Flames; both 3-digit
- * zero-padded local ids). A handful of specific ids used for graded slabs and showcase lists
- * (e.g. `base1-4` Charizard, `swsh1-1` Celebi V, `sv01-013` Sprigatito, `sv01-015` Meowscarada,
- * `sv03-004` Scyther) were each individually confirmed in that same catalogue response.
+ * Card ids follow TCGdex's `<setId>-<localId>` scheme, including each set's zero-padding.
+ * When changing the plan, check ranges and showcase ids against the full set records;
+ * deterministic generation alone does not validate upstream catalogue membership.
  */
 
 export interface SeedSet {
@@ -23,7 +18,7 @@ export interface SeedSet {
   pad?: number;
 }
 
-/** A handful of popular sets spanning four eras, so the demo shows off old and new card styles. */
+/** Four sets spanning Base, Sword & Shield and Scarlet & Violet, showing old and new card styles. */
 export const SEED_SETS: SeedSet[] = [
   { id: 'base1', start: 1, end: 102 },
   { id: 'swsh1', start: 1, end: 202 },

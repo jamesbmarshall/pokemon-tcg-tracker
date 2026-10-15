@@ -1,19 +1,14 @@
 # PokéTracker on TrueNAS SCALE
 
-TrueNAS SCALE 24.10 ("Dragonfish") replaced the old Kubernetes/k3s-based "custom app" system with
-plain Docker. The Apps UI can now install a container straight from a Docker Compose file, which
-is what [`docker-compose.yml`](docker-compose.yml) in this folder is for.
+TrueNAS SCALE 24.10 (Electric Eel) introduced Docker-based Apps. This template uses
+the [Install via YAML flow](https://apps.truenas.com/managing-apps/installing-custom-apps/)
+to deploy [`docker-compose.yml`](docker-compose.yml).
 
 ## Before you start
 
-Create the folder PokéTracker will use for its data, on whichever pool you keep app data on, e.g.:
-
-```
-storage filesystem mkdir path="/mnt/tank/apps/poketracker"
-```
-
-(or use the Storage screen in the UI). The installer doesn't let you create datasets or
-directories partway through, so do this first.
+Create a dataset or directory for app data, for example `/mnt/tank/apps/poketracker`,
+using the TrueNAS storage UI. Set `PUID` and `PGID` in the Compose file to a user/group
+with write access to that directory.
 
 ## Install steps (TrueNAS SCALE 24.10+)
 
@@ -39,6 +34,4 @@ directories partway through, so do this first.
 - As with every other deployment of PokéTracker: run exactly **one** instance. SQLite allows a
   single writer, so do not point two custom apps at the same data folder or try to scale this
   beyond one replica.
-- This was verified against TrueNAS's published Apps documentation as of writing; the exact wizard
-  wording may have moved by the time you read this; if the menu names in the steps above don't
-  match what you see, the nearest reasonably-named buttons are almost certainly it.
+- Menu labels can vary by TrueNAS release; use the linked installation guide for your version.
