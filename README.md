@@ -159,7 +159,42 @@ To restore, stop the container, copy a backup over `/data/poketracker.db`, delet
 
 ## Configuration
 
-Everything has a sensible default. These are the settings you're most likely to touch:
+The variables below are **server environment variables**, read at startup. Where you edit them depends on how you run PokéTracker; there is no shared config file that every deployment reads.
+
+### Where to edit settings
+
+| How you run it | Where to edit | Apply the change |
+| --- | --- | --- |
+| **Azure Container Apps** | Open your **Container App** resource → **Revisions and replicas → Create new revision**. Edit the `poketracker` container's **Environment variables**. Add names such as `DEMO_MODE` with value `1`. These belong to the app's container, not the shared Container Apps Environment resource. | Save and deploy the new revision. Keep one active revision/replica using the data volume. See [Azure's environment-variable guide](https://learn.microsoft.com/azure/container-apps/environment-variables). |
+| **Azure App Service** | Open your **App Service** resource → **Settings → Environment variables → App settings**. Add or edit the variable name and value. | Apply the changes; App Service restarts the app. See [Azure's app-settings guide](https://learn.microsoft.com/azure/app-service/configure-common?tabs=portal). |
+| **Docker Compose / VPS installer** | Edit the `poketracker` service's `environment:` block in your Compose file. With the VPS installer, this is `/opt/poketracker/docker-compose.yml`. A `.env` beside the Compose file supplies only variables referenced by that file; see the example below. | Run `docker compose up -d` from that directory (include `-f docker-compose.local.yml` if using that file). Compose recreates the container when its environment changes; `docker compose restart` alone does not apply new values. |
+| **Plain `docker run`** | Pass `-e NAME=value` flags or `--env-file /path/to/poketracker.env` when creating the container. The file contains one `NAME=value` per line. | Recreate the container with the same data volume and the updated flags/file. |
+| **Local source development** | Create `apps/server/.env`, with one `NAME=value` per line. The server's `npm run dev` script loads this file automatically. Variables already set in the shell take precedence. | Stop and restart the dev command after editing the file. |
+
+**On Azure, use Azure's environment settings; you do not need to upload a `.env` file.** The Bicep templates supply initial values. If you manage deployments through Bicep, also keep your custom settings in the template (`env` in Container Apps, `siteConfig.appSettings` in App Service) so later deployments preserve them.
+
+For Compose, adding a name to `.env` alone does **not** pass it into the container. For example, to make demo mode configurable from `.env`, add this line alongside the existing variables under `services.poketracker.environment`:
+
+```yaml
+      DEMO_MODE: ${DEMO_MODE:-0}
+```
+
+Then put `DEMO_MODE=1` in the `.env` next to that Compose file and run `docker compose up -d`. The supplied Compose templates do not currently include this mapping. Alternatively, set `DEMO_MODE: "1"` directly in the service's `environment:` block.
+
+A local development file might look like this:
+
+```dotenv
+# apps/server/.env (loaded by npm run dev -w @poketracker/server)
+WEB_DIR=../web/dist
+JOBS=false
+DEMO_MODE=0
+```
+
+The production container and `npm start` do not automatically load a `.env` file. Supply environment variables through the host/container runtime, or explicitly load a file with Node's `--env-file` option when running the standalone server. Keep files containing secrets out of version control.
+
+### Available settings
+
+These are the settings you're most likely to touch:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -182,7 +217,9 @@ Everything has a sensible default. These are the settings you're most likely to 
 
 ## Demo mode
 
-Set `DEMO_MODE=1` to run a public, read-only showcase instead of your own tracker: useful for a "try before you self-host it" link, not for everyday use.
+Set the **server environment variable** `DEMO_MODE` to `1` to run a public, read-only showcase instead of your own tracker. On Azure, add it to the Container App's container environment variables or the App Service's app settings. For Compose, add it to the service's `environment:` block (or wire it to `.env` as shown under [Where to edit settings](#where-to-edit-settings)). For local development, put `DEMO_MODE=1` in `apps/server/.env`. Apply the change by restarting/redeploying as described above. Set it to `0` or remove it to disable demo mode; this does not delete the seeded demo account or its data.
+
+Use a **separate instance and data volume/directory** for a demo, with `JOBS=true` (the default) if you want nightly resets. Demo mode is intended for a public "try before you self-host it" link, not everyday collection management.
 
 On first boot the server seeds a sample member account with several hundred cards across four sets — some owned, some graded, a wishlist, a couple of custom lists and a short value history — from [`apps/server/src/demo/seed.ts`](apps/server/src/demo/seed.ts). The login page shows a **Try the demo** button, which signs the visitor straight in as that account.
 
