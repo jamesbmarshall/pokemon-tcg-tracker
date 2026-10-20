@@ -276,8 +276,15 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     if (!stored || !safeEqual(stored, sha256(str(body.token, 200)))) throw new HttpError(403, "That setup code isn't right. Check the server logs for the current code.", 'bad_setup_token');
     const username = validUsername(body.username);
     const password = checkPassword(body.password, username);
-    const id = createUser(ctx, { username, displayName: str(body.displayName, 60) || username, passwordHash: await hashPassword(password), role: 'owner' });
-    ctx.db.run("DELETE FROM settings WHERE key = 'setup_token_hash'");
+    const hash = await hashPassword(password);
+    const id = ctx.db.tx(() => {
+      if (userCount(ctx) > 0) throw forbidden('This server is already set up');
+      const current = JSON.parse(ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'setup_token_hash'")?.value ?? '""');
+      if (!current || !safeEqual(current, sha256(str(body.token, 200)))) throw forbidden('Setup code expired');
+      const uid = createUser(ctx, { username, displayName: str(body.displayName, 60) || username, passwordHash: hash, role: 'owner' });
+      ctx.db.run("DELETE FROM settings WHERE key = 'setup_token_hash'");
+      return uid;
+    });
     createSession(ctx, req, reply, id);
     req.user = toSessionUser(getUser(ctx, id)!);
     audit(ctx, req, 'setup.owner_created', id);
@@ -311,10 +318,14 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
       throw fail();
     }
     if (!ok) {
-      const n = user.failed_logins + 1;
-      const lock = n >= LOCK_AFTER ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : null;
-      // The counter restarts after a lock, so each subsequent lock needs another full run of failures.
-      ctx.db.run('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?', lock ? 0 : n, lock, user.id);
+      // Read-modify-write atomically after the asynchronous password verification.
+      ctx.db.tx(() => {
+        const current = getUser(ctx, user.id)!;
+        if (current.locked_until && current.locked_until > now()) return;
+        const n = current.failed_logins + 1;
+        const lock = n >= LOCK_AFTER ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString() : null;
+        ctx.db.run('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?', lock ? 0 : n, lock, user.id);
+      });
       audit(ctx, req, 'auth.login_failed', user.id);
       throw fail();
     }
@@ -586,7 +597,8 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     const password = checkPassword((req.body as Record<string, unknown>)?.password, user.username);
     const hash = await hashPassword(password);
     ctx.db.tx(() => {
-      ctx.db.run('UPDATE password_resets SET used_at = ? WHERE token_hash = ?', now(), r.token_hash);
+      const claim = ctx.db.run('UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', now(), r.token_hash, now());
+      if (!claim.changes) throw bad('This reset link has expired or was already used', 'reset_invalid');
       // A reset also lifts any lockout, and signs out every existing session in case the
       // account was compromised; a fresh session is then issued to the person resetting.
       ctx.db.run('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL, updated_at = ? WHERE id = ?', hash, now(), user.id);
@@ -679,8 +691,8 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     const row = getUser(ctx, actor.id)!;
     if (!(await verifyPassword(String((req.body as Record<string, unknown>)?.password ?? ''), row.password_hash))) throw bad('Your password is wrong', 'bad_credentials');
     ctx.db.tx(() => {
-      ctx.db.run("UPDATE users SET role = 'owner' WHERE id = ?", target.id);
       ctx.db.run("UPDATE users SET role = 'admin' WHERE id = ?", actor.id);
+      ctx.db.run("UPDATE users SET role = 'owner' WHERE id = ?", target.id);
     });
     audit(ctx, req, 'admin.ownership_transferred', target.id);
     return { ok: true };

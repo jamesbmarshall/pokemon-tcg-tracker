@@ -4,9 +4,10 @@
  * the launcher, which restarts us when we exit with RESTART_CODE after staging an update.
  */
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { loadConfig } from './config.ts';
 import { Db } from './db.ts';
-import { loadInstanceKey, Sealer } from './security.ts';
+import { loadInstanceKey, Sealer, validateInstanceSecrets } from './security.ts';
 import type { Ctx } from './context.ts';
 import { buildApp } from './app.ts';
 import { ensureSetupToken } from './auth.ts';
@@ -21,7 +22,10 @@ async function main() {
   // Migrate before anything reads the schema. A failure here exits non-zero before /health is
   // up, which is what lets the launcher roll a bad update back.
   const applied = db.migrate();
-  const sealer = new Sealer(loadInstanceKey(join(config.dataDir, 'secret.key'), process.env.SECRET_KEY));
+  const keyFile = join(config.dataDir, 'secret.key');
+  if (!process.env.SECRET_KEY && !existsSync(keyFile) && (db.get('SELECT 1 FROM users WHERE totp_secret IS NOT NULL') || db.get('SELECT 1 FROM shares') || db.get("SELECT 1 FROM settings WHERE key = 'pricecharting_key'"))) throw new Error('Instance key is missing for existing encrypted data. Restore secret.key or supply the original SECRET_KEY.');
+  const sealer = new Sealer(loadInstanceKey(keyFile, process.env.SECRET_KEY));
+  validateInstanceSecrets(db, sealer);
 
   let exitCode = 0;
   let stopJobs = () => {};

@@ -20,7 +20,7 @@ it('migration 7 retains inventory, graded photos and price history while invalid
     db.run("INSERT INTO set_stats (set_id, master_total, synced_at) VALUES ('x', 10, 'today')");
     const preserved = ['entries', 'graded', 'graded_photos', 'price_history'];
     const before = preserved.map((table) => db.all(`SELECT * FROM ${table}`));
-    expect(db.migrate()).toBe(1);
+    expect(db.migrate()).toBe(MIGRATIONS.length - 6);
     expect(preserved.map((table) => db.all(`SELECT * FROM ${table}`))).toEqual(before);
     expect(db.get('SELECT data, synced_at FROM cards')).toMatchObject({ data: '{"prices":{"holofoil":5}}', synced_at: '1970-01-01T00:00:00.000Z' });
     expect(db.all('SELECT * FROM set_stats')).toEqual([]);
