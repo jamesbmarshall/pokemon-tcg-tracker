@@ -388,4 +388,12 @@ export const MIGRATIONS: string[] = [
   /* Enforce the documented single-owner invariant. Duplicate owners require operator repair. */ `
   CREATE UNIQUE INDEX users_single_owner ON users(role) WHERE role = 'owner';
   `,
+  /* Stable destination identities make repeated cross-collection imports idempotent. */ `
+  CREATE TABLE imported_list_ids (
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL,
+    destination_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    PRIMARY KEY (collection_id, source_id)
+  );
+  `,
 ];

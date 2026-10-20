@@ -324,6 +324,9 @@ export interface ImportResult {
   history: number;
   photos: number;
   remapped: number;
+  lists: number;
+  decks: number;
+  warnings: { entity: string; skipped: number; reason: string }[];
 }
 
 /**
@@ -338,6 +341,9 @@ export interface ImportResult {
  */
 export async function importInto(ctx: Ctx, collectionId: string, data: unknown): Promise<ImportResult> {
   const obj = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  if (obj.version !== undefined && (!Number.isInteger(obj.version) || Number(obj.version) < 1 || Number(obj.version) > 6)) throw bad('Unsupported export version. No changes were made.', 'import_version');
+  const rawLists: unknown[] = Array.isArray(obj.lists) ? obj.lists : [];
+  const warnings: ImportResult['warnings'] = [];
   const rawEntries: unknown[] = Array.isArray(data) ? data : Array.isArray(obj.collection) ? obj.collection : [];
   const rawWishlist: unknown[] = Array.isArray(obj.wishlist) ? obj.wishlist : [];
   const rawGraded: unknown[] = Array.isArray(obj.graded) ? obj.graded : [];
@@ -382,10 +388,48 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
       ...(typeof p.costUsd === 'number' ? { costUsd: p.costUsd, costedValueUsd: Number(p.costedValueUsd) || 0 } : {}),
     }));
 
-  if (!entries.size && !graded.length && !sealed.length && !wishlist.length && !notes.length && !history.length) throw bad('No collection entries found in that file');
+  const seenLists = new Set<string>();
+  const lists = rawLists.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const l = raw as Record<string, unknown>;
+    const name = str(l.name, 80);
+    if (!name || !Array.isArray(l.cards) || (l.kind !== undefined && l.kind !== 'list' && l.kind !== 'deck')) return [];
+    const kind = l.kind === 'deck' ? 'deck' : 'list';
+    if (kind === 'deck' && l.format != null && !['standard', 'expanded', 'unlimited'].includes(String(l.format))) return [];
+    const format = kind === 'deck' && ['standard', 'expanded', 'unlimited'].includes(String(l.format)) ? l.format as DeckFormat : null;
+    const cards = [...new Set(l.cards.filter((c): c is string => typeof c === 'string' && CARD_ID.test(c)))];
+    const qtys = l.cardQtys && typeof l.cardQtys === 'object' ? l.cardQtys as Record<string, unknown> : {};
+    const sourceId = typeof l.id === 'string' && /^[\w-]{1,64}$/.test(l.id) ? l.id : newId();
+    if (seenLists.has(sourceId)) return [];
+    seenLists.add(sourceId);
+    const mapped = ctx.db.get<{ destination_id: string }>('SELECT destination_id FROM imported_list_ids WHERE collection_id = ? AND source_id = ?', collectionId, sourceId);
+    const owner = ctx.db.get<{ collection_id: string }>('SELECT collection_id FROM lists WHERE id = ?', sourceId);
+    const id = mapped?.destination_id ?? (owner && owner.collection_id !== collectionId ? newId() : sourceId);
+    if (cards.length !== l.cards.length) warnings.push({ entity: 'listCards', skipped: l.cards.length - cards.length, reason: 'Invalid or duplicate card IDs' });
+    return [{ id, sourceId, name, description: str(l.description, 500) || null, kind, format, cards, qtys, createdAt: iso(l.createdAt), updatedAt: iso(l.updatedAt) }];
+  });
+  for (const [entity, raw, valid] of [['entries', rawEntries.length, entries.size], ['graded', rawGraded.length, graded.length], ['sealed', rawSealed.length, sealed.length], ['lists', rawLists.length, lists.length], ['wishlist', rawWishlist.length, wishlist.length], ['notes', rawNotes.length, notes.length], ['history', rawHistory.length, history.length]] as const) {
+    if (raw > valid) warnings.push({ entity, skipped: raw - valid, reason: 'Invalid rows or merged duplicates' });
+  }
+  if (lists.length > 200 || lists.some((l) => l.cards.length > 100_000)) throw bad('Import contains too many lists or list cards');
+  if (!entries.size && !graded.length && !sealed.length && !wishlist.length && !notes.length && !history.length && !lists.length) throw bad('No collection entries found in that file');
 
   let photos = 0;
   ctx.db.tx(() => {
+    const existing = ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM lists WHERE collection_id = ?', collectionId)!.n;
+    const fresh = lists.filter((l) => !ctx.db.get('SELECT 1 FROM lists WHERE id = ? AND collection_id = ?', l.id, collectionId)).length;
+    if (existing + fresh > 200) throw bad('The imported lists would exceed the collection limit');
+    for (const l of lists) {
+      ctx.db.run('INSERT INTO lists (id, collection_id, name, description, kind, format, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, kind = excluded.kind, format = excluded.format, updated_at = excluded.updated_at', l.id, collectionId, l.name, l.description, l.kind, l.format, l.createdAt, l.updatedAt);
+      ctx.db.run('INSERT OR REPLACE INTO imported_list_ids (collection_id, source_id, destination_id) VALUES (?, ?, ?)', collectionId, l.sourceId, l.id);
+      ctx.db.run('DELETE FROM list_cards WHERE list_id = ?', l.id);
+      l.cards.forEach((card, position) => {
+        const rawQty = l.qtys[card];
+        if (l.kind === 'deck' && rawQty !== undefined && !(typeof rawQty === 'number' && Number.isInteger(rawQty) && rawQty >= 1 && rawQty <= 60)) warnings.push({ entity: 'deckQuantities', skipped: 1, reason: 'Invalid quantity replaced with one' });
+        const qty = l.kind === 'deck' && typeof rawQty === 'number' && Number.isInteger(rawQty) && rawQty >= 1 && rawQty <= 60 ? rawQty : 1;
+        ctx.db.run('INSERT INTO list_cards (list_id, card_id, position, added_at, qty) VALUES (?, ?, ?, ?, ?)', l.id, card, position, l.createdAt, qty);
+      });
+    }
     for (const e of entries.values()) putEntry(ctx, collectionId, e);
     for (const g of graded) putGraded(ctx, collectionId, g);
     for (const s of sealed) putSealed(ctx, collectionId, s);
@@ -423,7 +467,8 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
   });
   void hydrateMissing(ctx, [...entries.values()].map((e) => e.cardId).concat(graded.map((g) => g.cardId), wishlist.map((w) => w.cardId))).then(() => recordValue(ctx, collectionId))
     .catch((err) => ctx.log.warn({ err }, 'post-import value snapshot failed'));
-  return { entries: entries.size, graded: graded.length, sealed: sealed.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped };
+  if (rawPhotos.length + rawSealedPhotos.length > photos) warnings.push({ entity: 'photos', skipped: rawPhotos.length + rawSealedPhotos.length - photos, reason: 'Unsupported or unattached photos' });
+  return { entries: entries.size, graded: graded.length, sealed: sealed.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped, lists: lists.filter((l) => l.kind === 'list').length, decks: lists.filter((l) => l.kind === 'deck').length, warnings };
 }
 
 // -------------------------------------------------------------- scan lookup
@@ -707,7 +752,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     reply.header('content-disposition', `attachment; filename="poketracker-${new Date().toISOString().slice(0, 10)}.json"`);
     return {
       app: 'poketracker',
-      version: 5,
+      version: 6,
       exportedAt: now(),
       collection: s.entries,
       wishlist: s.wishlist,

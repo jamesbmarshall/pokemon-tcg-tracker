@@ -126,7 +126,7 @@ describe('SettingsPage', () => {
     expect(downloads[0].name).toMatch(/^poketracker-\d{4}-\d{2}-\d{2}\.json$/);
     expect(downloads[0].blob.type).toBe('application/json');
     const data = JSON.parse(await downloads[0].blob.text());
-    expect(data).toMatchObject({ app: 'poketracker', version: 4, wishlist: [{ cardId: 'sv03-009' }] });
+    expect(data).toMatchObject({ app: 'poketracker', version: 6, wishlist: [{ cardId: 'sv03-009' }] });
     expect(data.collection).toHaveLength(3);
     expect(data).toMatchObject({ history: [], lists: [] });
   });
@@ -172,7 +172,7 @@ describe('SettingsPage', () => {
     const { container } = renderWithProviders(<SettingsPage />);
     const input = container.querySelector('input[type=file]') as HTMLInputElement;
     await userEvent.upload(input, new File(['{"collection":[]}'], 'backup.json', { type: 'application/json' }));
-    await waitFor(() => expect(toasts()[0]).toMatchObject({ message: 'Imported 7 entries', tone: 'success' }));
+    await waitFor(() => expect(toasts()[0]).toMatchObject({ message: 'Imported 7 items', tone: 'success' }));
     expect(importData).toHaveBeenCalledWith({ collection: [] });
     expect(input.value).toBe('');
   });

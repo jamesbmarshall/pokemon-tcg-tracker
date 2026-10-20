@@ -97,6 +97,9 @@ export interface ImportResult {
   history: number;
   photos: number;
   remapped: number;
+  lists?: number;
+  decks?: number;
+  warnings?: { entity: string; skipped: number; reason: string }[];
 }
 
 export interface SystemStatus {
