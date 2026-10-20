@@ -45,6 +45,7 @@ export interface ApiInit extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /** Don't broadcast a 401 (e.g. the sign-in form handles it itself). */
   quiet401?: boolean;
+  acceptRevision?: boolean;
 }
 
 /**
@@ -67,7 +68,7 @@ export function api<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
 }
 
 async function request<T>(path: string, init: ApiInit): Promise<T> {
-  const { body, quiet401, headers, ...rest } = init;
+  const { body, quiet401, headers, acceptRevision, ...rest } = init;
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   let res: Response;
   try {
@@ -106,9 +107,10 @@ async function request<T>(path: string, init: ApiInit): Promise<T> {
     throw new ApiError(res.status, err.message ?? err.error ?? `Request failed (${res.status})`, err.code, data);
   }
   const id = /^\/api\/collections\/([^/?]+)(?:\/|$)/.exec(path)?.[1];
-  if (id && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())) {
+  if (id && (acceptRevision || !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase()))) {
     const etag = res.headers.get('etag');
     if (etag && /^"\d+"$/.test(etag)) acceptCollectionRevision(id, Number(etag.slice(1, -1)));
+    if (!['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase()) && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pt:collection-saved', { detail: id }));
   }
   return data as T;
 }

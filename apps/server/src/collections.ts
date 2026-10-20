@@ -27,7 +27,7 @@ import { parseDeckText, type DeckTextLine } from '@poketracker/shared/decks/ptcg
 import { HttpError, Limiter, audit, bad, forbidden, notFound, now, requireRole, requireUser, str, type Ctx } from './context.ts';
 import { hydrateMissing, readCards, readEntries, readGraded, readHistory, readPriceHistory, biggestMovers, recordValue, saveSnapshots } from './cards.ts';
 import { json } from './db.ts';
-import { newId } from './security.ts';
+import { newId, sha256 } from './security.ts';
 import { migrateImport } from './legacy.ts';
 import { cleanSealed, deleteSealedPhotoFiles, putSealed, readSealed, saveSealedPhoto } from './sealed.ts';
 import { pcGradedPrice, pcProduct } from './providers/pricecharting.ts';
@@ -47,6 +47,7 @@ export interface CollectionRow {
   kind: 'personal' | 'shared';
   owner_id: string;
   created_at: string;
+  revision: number;
 }
 
 /**
@@ -197,7 +198,7 @@ export function listCollections(ctx: Ctx, userId: string) {
       userId,
       userId,
     )
-    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, role: c.role as Access, ownerName: c.owner_name, mine: c.owner_id === userId }));
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, role: c.role as Access, ownerName: c.owner_name, mine: c.owner_id === userId, revision: c.revision }));
 }
 
 export interface StateOptions {
@@ -340,7 +341,7 @@ export interface ImportResult {
  * only fills gaps. Card data and a fresh value snapshot are fetched afterwards in the background
  * so a large import returns promptly.
  */
-export async function importInto(ctx: Ctx, collectionId: string, data: unknown): Promise<ImportResult> {
+export async function importInto(ctx: Ctx, collectionId: string, data: unknown, commit: (fn: () => ImportResult) => ImportResult = (fn) => fn()): Promise<ImportResult> {
   const obj = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   if (obj.version !== undefined && (!Number.isInteger(obj.version) || Number(obj.version) < 1 || Number(obj.version) > 6)) throw bad('Unsupported export version. No changes were made.', 'import_version');
   const rawLists: unknown[] = Array.isArray(obj.lists) ? obj.lists : [];
@@ -415,6 +416,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
   if (lists.length > 200 || lists.some((l) => l.cards.length > 100_000)) throw bad('Import contains too many lists or list cards');
   if (!entries.size && !graded.length && !sealed.length && !wishlist.length && !notes.length && !history.length && !lists.length) throw bad('No collection entries found in that file');
 
+  return commit(() => {
   let photos = 0;
   ctx.db.tx(() => {
     const existing = ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM lists WHERE collection_id = ?', collectionId)!.n;
@@ -470,6 +472,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown):
     .catch((err) => ctx.log.warn({ err }, 'post-import value snapshot failed'));
   if (rawPhotos.length + rawSealedPhotos.length > photos) warnings.push({ entity: 'photos', skipped: rawPhotos.length + rawSealedPhotos.length - photos, reason: 'Unsupported or unattached photos' });
   return { entries: entries.size, graded: graded.length, sealed: sealed.length, wishlist: wishlist.length, notes: notes.length, history: history.length, photos, remapped: legacy.remapped, lists: lists.filter((l) => l.kind === 'list').length, decks: lists.filter((l) => l.kind === 'deck').length, warnings };
+  });
 }
 
 // -------------------------------------------------------------- scan lookup
@@ -520,15 +523,18 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { id, name, kind: 'shared', role: 'owner', mine: true, ownerName: u.displayName };
   });
 
-  app.patch('/api/collections/:id', async (req) => {
+  app.patch('/api/collections/:id', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'own');
     const name = str((req.body as Record<string, unknown>)?.name, 60);
     if (!name) throw bad('Give the collection a name');
     ctx.db.run('UPDATE collections SET name = ? WHERE id = ?', name, id);
     return { ok: true };
+    });
   });
 
-  app.delete('/api/collections/:id', async (req) => {
+  app.delete('/api/collections/:id', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'own');
     const c = ctx.db.get<CollectionRow>('SELECT * FROM collections WHERE id = ?', id)!;
     if (c.kind === 'personal') throw bad("Your personal collection can't be deleted");
@@ -540,10 +546,12 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     deleteSealedPhotoFiles(ctx, sealedPhotos);
     audit(ctx, req, 'collection.deleted', id);
     return { ok: true };
+    });
   });
 
-  app.get('/api/collections/:id/members', async (req) => {
+  app.get('/api/collections/:id/members', async (req, reply) => {
     const { id } = need(ctx, req, 'read');
+    reply.header('etag', `"${revisionOf(ctx, id)}"`);
     return ctx.db.all(
       `SELECT u.id, u.username, u.display_name AS displayName, m.role FROM collection_members m JOIN users u ON u.id = m.user_id WHERE m.collection_id = ? ORDER BY u.display_name`,
       id,
@@ -554,7 +562,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
    * Adds or changes a member. Owner only, shared collections only: a personal collection stays
    * private to its owner and is shared via share links instead. Role defaults to editor.
    */
-  app.put('/api/collections/:id/members/:userId', async (req) => {
+  app.put('/api/collections/:id/members/:userId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'own');
     const c = ctx.db.get<CollectionRow>('SELECT * FROM collections WHERE id = ?', id)!;
     if (c.kind === 'personal') throw bad('Create a shared collection to add members');
@@ -564,9 +573,11 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     ctx.db.run('INSERT OR REPLACE INTO collection_members (collection_id, user_id, role, added_at) VALUES (?, ?, ?, ?)', id, userId, role, now());
     audit(ctx, req, 'collection.member_set', id, { userId, role });
     return { ok: true };
+    });
   });
 
-  app.delete('/api/collections/:id/members/:userId', async (req) => {
+  app.delete('/api/collections/:id/members/:userId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const u = requireUser(req);
     const { id, userId } = req.params as { id: string; userId: string };
     const role = access(ctx, u.id, id);
@@ -575,6 +586,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     ctx.db.run('DELETE FROM collection_members WHERE collection_id = ? AND user_id = ?', id, userId);
     audit(ctx, req, 'collection.member_removed', id, { userId });
     return { ok: true };
+    });
   });
 
   app.get('/api/collections/:id/state', async (req, reply) => {
@@ -648,63 +660,76 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     });
   });
 
-  app.put('/api/collections/:id/wishlist/:cardId', async (req) => {
+  app.put('/api/collections/:id/wishlist/:cardId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const card = cardId((req.params as { cardId: string }).cardId);
     const addedAt = iso((req.body as Record<string, unknown>)?.addedAt);
     ctx.db.run('INSERT OR REPLACE INTO wishlist (collection_id, card_id, added_at) VALUES (?, ?, ?)', id, card, addedAt);
     void hydrateMissing(ctx, [card]);
     return { cardId: card, addedAt };
+    });
   });
 
-  app.delete('/api/collections/:id/wishlist/:cardId', async (req) => {
+  app.delete('/api/collections/:id/wishlist/:cardId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     ctx.db.run('DELETE FROM wishlist WHERE collection_id = ? AND card_id = ?', id, (req.params as { cardId: string }).cardId);
     return { ok: true };
+    });
   });
 
   // Saving empty text deletes the note, so the client needs only one endpoint for both.
-  app.put('/api/collections/:id/notes/:cardId', async (req) => {
+  app.put('/api/collections/:id/notes/:cardId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const card = cardId((req.params as { cardId: string }).cardId);
     const text = str((req.body as Record<string, unknown>)?.text, NOTE_MAX);
     if (text) ctx.db.run('INSERT OR REPLACE INTO notes (collection_id, card_id, text, updated_at) VALUES (?, ?, ?, ?)', id, card, text, now());
     else ctx.db.run('DELETE FROM notes WHERE collection_id = ? AND card_id = ?', id, card);
     return { cardId: card, text };
+    });
   });
 
-  app.put('/api/collections/:id/graded/:gid', async (req) => {
+  app.put('/api/collections/:id/graded/:gid', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const { gid } = req.params as { gid: string };
     // The URL id wins over any id in the body, and must survive cleanGraded unchanged.
     const copy = cleanGraded({ ...(req.body as object), id: gid });
     if (!copy || copy.id !== gid) throw bad('That graded copy is invalid');
+    const prior = readGraded(ctx.db, id).find((g) => g.id === copy.id);
+    copy.pcProductId = prior?.pcProductId; copy.pcPrice = prior?.pcPrice; copy.pcUpdatedAt = prior?.pcUpdatedAt;
     putGraded(ctx, id, copy);
     void hydrateMissing(ctx, [copy.cardId]);
     return copy;
+    });
   });
 
   /** Links a slab to a PriceCharting product and fetches its price for the slab's company + grade. */
-  app.post('/api/collections/:id/graded/:gid/link', async (req) => {
-    const { id } = need(ctx, req, 'write');
-    const { gid } = req.params as { gid: string };
-    const row = ctx.db.get<{ data: string }>('SELECT data FROM graded WHERE collection_id = ? AND id = ? AND deleted_at IS NULL', id, gid);
-    if (!row) throw notFound('Graded copy not found');
-    const copy = JSON.parse(row.data) as GradedCopy;
+  app.post('/api/collections/:id/graded/:gid/link', async (req, reply) => {
+    need(ctx, req, 'write');
     const pid = str((req.body as { pcProductId?: unknown })?.pcProductId, 64);
     if (!pid) throw bad('Pick a product to link');
     const product = await pcProduct(ctx, pid);
-    const price = pcGradedPrice(product, copy.company, copy.grade);
-    const updated: GradedCopy = { ...copy, pcProductId: pid, pcPrice: price, pcUpdatedAt: now() };
-    putGraded(ctx, id, updated);
-    return updated;
+    return mutate(ctx, req, reply, () => {
+      const { id } = need(ctx, req, 'write');
+      const { gid } = req.params as { gid: string };
+      const copy = readGraded(ctx.db, id).find((g) => g.id === gid);
+      if (!copy) throw notFound('Graded copy not found');
+      const updated = { ...copy, pcProductId: pid, pcPrice: pcGradedPrice(product, copy.company, copy.grade), pcUpdatedAt: now() };
+      putGraded(ctx, id, updated);
+      return updated;
+    });
   });
 
   /** Soft delete so "Undo" can restore the slab and its photos. Purged by the cleanup job. */
-  app.delete('/api/collections/:id/graded/:gid', async (req) => {
+  app.delete('/api/collections/:id/graded/:gid', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     ctx.db.run('UPDATE graded SET deleted_at = ? WHERE collection_id = ? AND id = ?', now(), id, (req.params as { gid: string }).gid);
     return { ok: true };
+    });
   });
 
   app.get('/api/collections/:id/graded/:gid/photos', async (req) => {
@@ -714,17 +739,16 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // Multipart upload. Each part is sniffed and stored individually; size limits come from the
   // multipart plugin configuration in app.ts.
-  app.post('/api/collections/:id/graded/:gid/photos', async (req) => {
-    const { id } = need(ctx, req, 'write');
-    const { gid } = req.params as { gid: string };
-    if (!ctx.db.get('SELECT 1 FROM graded WHERE collection_id = ? AND id = ?', id, gid)) throw notFound('Save the graded copy first');
-    const out = [];
-    for await (const part of req.files()) {
-      const buf = await part.toBuffer();
-      const side = (part.fields.side as { value?: string } | undefined)?.value ?? 'other';
-      out.push(savePhoto(ctx, id, gid, side, buf));
-    }
-    return out;
+  app.post('/api/collections/:id/graded/:gid/photos', async (req, reply) => {
+    need(ctx, req, 'write');
+    const files: { buf: Buffer; side: string }[] = [];
+    for await (const part of req.files()) files.push({ buf: await part.toBuffer(), side: (part.fields.side as { value?: string } | undefined)?.value ?? 'other' });
+    return mutate(ctx, req, reply, () => {
+      const { id } = need(ctx, req, 'write');
+      const { gid } = req.params as { gid: string };
+      if (!ctx.db.get('SELECT 1 FROM graded WHERE collection_id = ? AND id = ? AND deleted_at IS NULL', id, gid)) throw notFound('Save the graded copy first');
+      return files.map((f) => savePhoto(ctx, id, gid, f.side, f.buf));
+    }, { fingerprint: sha256(JSON.stringify(files.map((f) => [f.side, sha256(f.buf)]))) });
   });
 
   app.get('/api/collections/:id/photos/:pid', async (req, reply) => {
@@ -736,18 +760,22 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return reply.send(stream);
   });
 
-  app.delete('/api/collections/:id/photos/:pid', async (req) => {
+  app.delete('/api/collections/:id/photos/:pid', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const { pid } = req.params as { pid: string };
     const res = ctx.db.run('DELETE FROM graded_photos WHERE id = ? AND collection_id = ?', pid, id);
     if (res.changes) deletePhotoFiles(ctx, [pid]);
     return { ok: true };
+    });
   });
 
   // Lets the client take a value snapshot on demand (e.g. after a big edit) instead of waiting for the nightly job.
-  app.post('/api/collections/:id/value', async (req) => {
+  app.post('/api/collections/:id/value', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     return { point: recordValue(ctx, id) ?? null };
+    });
   });
 
   // "Biggest movers": the cards in the collection whose value has changed most over the window.
@@ -759,11 +787,13 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // Backups can carry slab photos as data URLs.
   // Hence the much larger body limit than the global default, on this route only.
-  app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req) => {
+  app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req, reply) => {
     const { id } = need(ctx, req, 'write');
-    const result = await importInto(ctx, id, req.body);
-    audit(ctx, req, 'collection.imported', id, result);
-    return result;
+    return importInto(ctx, id, req.body, (commit) => mutate(ctx, req, reply, () => {
+      const result = commit();
+      audit(ctx, req, 'collection.imported', id, result);
+      return result;
+    }));
   });
 
   /**
@@ -790,7 +820,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // Wipes the contents but keeps the collection, its members and its shares. Owner only because
   // it is destructive and, unlike slab deletion, has no undo.
-  app.post('/api/collections/:id/clear', async (req) => {
+  app.post('/api/collections/:id/clear', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'own');
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM graded_photos WHERE collection_id = ?', id).map((p) => p.id);
     const sealedPhotos = ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos WHERE collection_id = ?', id).map((p) => p.id);
@@ -802,6 +833,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     deleteSealedPhotoFiles(ctx, sealedPhotos);
     audit(ctx, req, 'collection.cleared', id);
     return { ok: true };
+    });
   });
 
   // ------------------------------------------------------------ custom lists
@@ -822,7 +854,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     throw bad('Invalid deck format');
   }
 
-  app.post('/api/collections/:id/lists', async (req) => {
+  app.post('/api/collections/:id/lists', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const body = (req.body ?? {}) as Record<string, unknown>;
     const name = str(body.name, 80);
@@ -846,9 +879,11 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       t,
     );
     return { id: listId, name, description: str(body.description, 500) || undefined, kind, format, createdAt: t, updatedAt: t, cards: [], cardQtys: {} };
+    });
   });
 
-  app.patch('/api/collections/:id/lists/:listId', async (req) => {
+  app.patch('/api/collections/:id/lists/:listId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const listId = ownList(req, 'write');
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (body.name !== undefined) {
@@ -870,15 +905,19 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       ctx.db.tx(() => (body.order as unknown[]).forEach((c, i) => typeof c === 'string' && ctx.db.run('UPDATE list_cards SET position = ? WHERE list_id = ? AND card_id = ?', i, listId, c)));
     }
     return { ok: true };
+    });
   });
 
-  app.delete('/api/collections/:id/lists/:listId', async (req) => {
+  app.delete('/api/collections/:id/lists/:listId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const listId = ownList(req, 'write');
     ctx.db.run('DELETE FROM lists WHERE id = ?', listId);
     return { ok: true };
+    });
   });
 
-  app.put('/api/collections/:id/lists/:listId/cards/:cardId', async (req) => {
+  app.put('/api/collections/:id/lists/:listId/cards/:cardId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const listId = ownList(req, 'write');
     const card = cardId((req.params as { cardId: string }).cardId);
     const body = (req.body ?? {}) as { qty?: unknown };
@@ -895,12 +934,15 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     ctx.db.run('UPDATE lists SET updated_at = ? WHERE id = ?', now(), listId);
     void hydrateMissing(ctx, [card]);
     return { ok: true };
+    });
   });
 
-  app.delete('/api/collections/:id/lists/:listId/cards/:cardId', async (req) => {
+  app.delete('/api/collections/:id/lists/:listId/cards/:cardId', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const listId = ownList(req, 'write');
     ctx.db.run('DELETE FROM list_cards WHERE list_id = ? AND card_id = ?', listId, (req.params as { cardId: string }).cardId);
     return { ok: true };
+    });
   });
 
   // ------------------------------------------------------------ shared catalogue data
