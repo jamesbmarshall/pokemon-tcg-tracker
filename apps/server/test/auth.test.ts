@@ -13,6 +13,11 @@ afterEach(async () => {
 });
 
 describe('first-run setup', () => {
+  it('allows exactly one concurrent owner claim', async () => {
+    const results = await Promise.all(['ash', 'misty'].map((username) => new Client(s.app).post('/api/setup', { token: SETUP, username, password: PASSWORD })));
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 403]);
+    expect(s.ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'")!.n).toBe(1);
+  });
   it('requires the setup token and only works once', async () => {
     const c = new Client(s.app);
     expect((await c.get('/api/setup')).json()).toEqual({ needed: true, demoMode: false });

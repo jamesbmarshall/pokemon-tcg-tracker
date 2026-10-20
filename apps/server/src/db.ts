@@ -77,6 +77,10 @@ export class Db {
    */
   migrate(): number {
     this.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+    if (this.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'")) {
+      const owners = this.get<{ n: number }>("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'")!.n;
+      if (owners > 1) throw new Error('Multiple owner accounts detected. Preserve a backup and choose one owner before upgrading; no accounts were changed.');
+    }
     const done = new Set(this.all<{ version: number }>('SELECT version FROM schema_migrations').map((r) => r.version));
     let applied = 0;
     for (const [i, sql] of MIGRATIONS.entries()) {

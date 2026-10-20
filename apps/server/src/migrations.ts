@@ -385,4 +385,7 @@ export const MIGRATIONS: string[] = [
   DELETE FROM set_stats;
   UPDATE cards SET synced_at = '1970-01-01T00:00:00.000Z';
   `,
+  /* Enforce the documented single-owner invariant. Duplicate owners require operator repair. */ `
+  CREATE UNIQUE INDEX users_single_owner ON users(role) WHERE role = 'owner';
+  `,
 ];

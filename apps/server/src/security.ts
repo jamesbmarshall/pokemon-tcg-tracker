@@ -9,9 +9,10 @@
  * human-chosen passwords go through Argon2id.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { argon2id, argon2Verify } from 'hash-wasm';
+import type { Db } from './db.ts';
 
 /** URL-safe bearer secret. 32 bytes (256 bits) by default, which is far beyond guessable. */
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString('base64url');
@@ -58,17 +59,12 @@ export function loadInstanceKey(file: string, fromEnv?: string): Buffer {
   if (existsSync(file)) {
     const k = Buffer.from(readFileSync(file, 'utf8').trim(), 'base64');
     if (k.length === 32) return k;
+    throw new Error(`Invalid instance key at ${file}. Restore the original key; the file has not been changed.`);
   }
-  // Reached on first run, and also if the key file is unreadable as a 32-byte key (it is then overwritten).
   mkdirSync(dirname(file), { recursive: true });
   const k = randomBytes(32);
-  writeFileSync(file, k.toString('base64'), { mode: 0o600 });
-  // `mode` is ignored if the file already existed, so tighten permissions explicitly.
-  try {
-    chmodSync(file, 0o600);
-  } catch {
-    /* not supported on some mounts */
-  }
+  // Exclusive creation never replaces a key created by another process.
+  writeFileSync(file, k.toString('base64'), { mode: 0o600, flag: 'wx' });
   return k;
 }
 
@@ -98,6 +94,17 @@ export class Sealer {
     d.setAuthTag(Buffer.from(tag, 'base64url'));
     return Buffer.concat([d.update(Buffer.from(body, 'base64url')), d.final()]).toString('utf8');
   }
+}
+
+/** A valid-length but incorrect restore key must fail before the server accepts traffic. */
+export function validateInstanceSecrets(db: Db, sealer: Sealer) {
+  const values = [
+    ...db.all<{ value: string }>('SELECT totp_secret AS value FROM users WHERE totp_secret IS NOT NULL'),
+    ...db.all<{ value: string }>('SELECT token_enc AS value FROM shares'),
+    ...db.all<{ value: string }>("SELECT value FROM settings WHERE key = 'pricecharting_key'"),
+  ];
+  try { for (const row of values) sealer.open(row.value); }
+  catch { throw new Error('The instance key cannot decrypt existing secrets. Restore the original secret.key or SECRET_KEY; stored values have not been changed.'); }
 }
 
 // OWASP 2024: Argon2id, m=19 MiB, t=2, p=1 (minimum). We go a little higher on memory.
