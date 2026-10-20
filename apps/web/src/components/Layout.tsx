@@ -130,6 +130,9 @@ function AccountLink() {
 export default function Layout() {
   const [palette, setPalette] = useState(false);
   const { pathname } = useLocation();
+  const pendingSaves = useCollectionStore((s) => s.pendingSaves);
+  const saveError = useCollectionStore((s) => s.saveError);
+  const lastSavedAt = useCollectionStore((s) => s.lastSavedAt);
   const wishCount = useCollectionStore((s) => s.wishlist.size);
   // Only hides the link; the admin page and its endpoints check the role again.
   const admin = useAuth((s) => isAdmin(s.user));
@@ -253,6 +256,11 @@ export default function Layout() {
           <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-loss/30 bg-loss/5 px-3 py-2 text-sm text-loss">
             <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />
             Card data may be out of date — TCGdex is unreachable. We're showing the last data we have.
+          </div>
+        )}
+        {(pendingSaves > 0 || saveError || lastSavedAt) && (
+          <div role={saveError ? 'alert' : 'status'} className={`mb-3 text-sm ${saveError ? 'text-loss' : 'text-muted'}`}>
+            {pendingSaves > 0 ? `Saving ${pendingSaves} change${pendingSaves === 1 ? '' : 's'}…` : saveError ? `Could not save: ${saveError}. Review your change before trying again.` : 'Saved'}
           </div>
         )}
         <Outlet />

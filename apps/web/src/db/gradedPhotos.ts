@@ -54,9 +54,12 @@ const collectionId = () => {
 /** Uploads photos to a graded copy in the active collection. The server rejects it if the user can't edit. */
 export async function addPhotos(gradedId: string, files: Blob[], side: GradedPhoto['side'] = 'other') {
   if (!files.length) return [];
+  const cid = collectionId();
+  const backend = getBackend();
   const prepared = await Promise.all(files.map(prepareImage));
-  const out = await getBackend().addPhotos(collectionId(), gradedId, prepared, side);
-  usePhotoVersions.getState().bump(gradedId);
+  if (cid !== collectionId() || backend !== getBackend()) throw new Error('Collection changed before the photos could be uploaded');
+  const out = await backend.addPhotos(cid, gradedId, prepared, side);
+  if (cid === useCollectionStore.getState().collectionId && backend === getBackend()) usePhotoVersions.getState().bump(gradedId);
   return out;
 }
 

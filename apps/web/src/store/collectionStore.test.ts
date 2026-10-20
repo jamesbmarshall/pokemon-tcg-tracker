@@ -640,6 +640,32 @@ describe('purchase prices', () => {
 });
 
 describe('optimistic writes', () => {
+  it('a failed entry write does not rewind another optimistic note', async () => {
+    await store().adjust(priced('sv03-001'), 'normal', 1);
+    let reject!: (err: Error) => void;
+    vi.spyOn(mem, 'putEntries').mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const first = store().setQuantity('sv03-001', 'normal', 2);
+    await flush();
+    const note = store().setNote('sv03-002', 'Keep this note');
+    reject(new Error('offline'));
+    await Promise.all([first, note]);
+    expect(store().entries.get('sv03-001::normal')!.quantity).toBe(1);
+    expect(store().notes.get('sv03-002')).toBe('Keep this note');
+    expect(store().pendingSaves).toBe(0);
+  });
+
+  it('a delayed failure cannot replace state after logout', async () => {
+    let reject!: (err: Error) => void;
+    vi.spyOn(mem, 'putNote').mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    const save = store().setNote('sv03-001', 'Private');
+    await flush();
+    store().reset();
+    reject(new Error('offline'));
+    await save;
+    expect(store().collectionId).toBeNull();
+    expect(store().notes.size).toBe(0);
+    expect(store().saveError).toBeNull();
+  });
   it('rolls back and explains when the server rejects a change', async () => {
     await store().adjust(priced('sv03-001'), 'normal', 1);
     mem.fail = new ApiError(403, "You can't edit this collection", 'forbidden');
