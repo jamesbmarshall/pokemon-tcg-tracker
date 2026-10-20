@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { ValuePoint } from '../api/types';
 import { formatDate } from '../utils/format';
 
@@ -30,6 +30,7 @@ export default function ValueChart<T extends { date: string } = ValuePoint>({
   emptyMessage,
   maxPoints = 90,
 }: Props<T>) {
+  const fillId = useId().replace(/:/g, '');
   const [hover, setHover] = useState<number | null>(null);
   const gain = metric === 'gain';
   const accessor = value ?? (defaultValue as unknown as (point: T) => number);
@@ -73,27 +74,32 @@ export default function ValueChart<T extends { date: string } = ValuePoint>({
   return (
     <div className="relative">
       <svg
+        role="img"
+        aria-label={`${gain ? 'Estimated gain' : 'Estimated collection value'}: ${formatDate(data[0].date)} ${format(values[0])} to ${formatDate(data[data.length - 1].date)} ${format(values[values.length - 1])}; ${data.length} observations. Use the date slider to inspect each point.`}
         viewBox={`0 0 ${W} ${height}`}
         preserveAspectRatio="none"
         className="block w-full overflow-visible"
         style={{ height }}
         onPointerMove={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
-          setHover(Math.round(((e.clientX - r.left) / r.width) * (data.length - 1)));
+          setHover(Math.max(0, Math.min(data.length - 1, Math.round(((e.clientX - r.left) / Math.max(1, r.width)) * (data.length - 1)))));
         }}
         onPointerLeave={() => setHover(null)}
       >
         <defs>
-          <linearGradient id="vc-fill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={stroke} stopOpacity="0.28" />
             <stop offset="1" stopColor={stroke} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path d={area} fill="url(#vc-fill)" />
+        <path d={area} fill={`url(#${fillId})`} />
         {gain && <line x1="0" x2={W} y1={base} y2={base} stroke="var(--color-faint)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" data-testid="zero-line" />}
         <path d={line} fill="none" stroke={stroke} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
         <line x1={x(h)} x2={x(h)} y1="0" y2={height} stroke="var(--color-line-strong)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
       </svg>
+      <input type="range" min={0} max={data.length - 1} value={h} onChange={(event) => setHover(Number(event.target.value))}
+        aria-label="Inspect chart date" aria-valuetext={`${formatDate(data[h].date)}: ${format(values[h])}`}
+        className="sr-only focus:not-sr-only focus:mt-3 focus:w-full" />
       <span
         className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-surface"
         style={{ left: `${(x(h) / W) * 100}%`, top: y(values[h]), background: stroke }}

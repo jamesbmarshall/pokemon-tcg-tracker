@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import NativeDialog from './NativeDialog';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, CornerDownLeft, Layers, LoaderCircle, Package, ScanLine, Search } from 'lucide-react';
@@ -15,6 +16,7 @@ type Item =
   | { kind: 'action'; id: string; title: string; sub: string };
 
 export default function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const listId = useId();
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
   const navigate = useNavigate();
@@ -69,11 +71,8 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-onyx/45 px-3 pt-[12vh]" onMouseDown={onClose}>
+    <NativeDialog label="Search" onClose={onClose} initialFocus={inputRef} className="!items-start !px-3 !pt-[12vh]">
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search"
         className="w-full max-w-xl animate-rise overflow-hidden rounded-xl border border-line-strong bg-surface shadow-pop"
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -81,17 +80,21 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           <Search size={18} className="text-muted" />
           <input
             ref={inputRef}
-            autoFocus
+            role="combobox"
+            aria-label="Search cards and sets"
+            aria-autocomplete="list"
+            aria-expanded={items.length > 0}
+            aria-controls={listId}
+            aria-activedescendant={items[active] ? `${listId}-${active}` : undefined}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
               setActive(0);
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') onClose();
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                setActive((a) => Math.min(a + 1, items.length - 1));
+                setActive((a) => Math.max(0, Math.min(a + 1, items.length - 1)));
               }
               if (e.key === 'ArrowUp') {
                 e.preventDefault();
@@ -105,7 +108,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           {cards.isFetching && <LoaderCircle size={16} className="animate-spin text-muted" />}
           <kbd className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[10px] text-faint">esc</kbd>
         </div>
-        <div ref={listRef} className="max-h-[55vh] overflow-y-auto p-2">
+        <div ref={listRef} id={listId} role="listbox" aria-label="Search results" className="max-h-[55vh] overflow-y-auto p-2">
           {items.length === 0 && (
             <p className="px-3 py-10 text-center text-sm text-faint">{cards.isFetching ? 'Searching…' : 'Nothing found'}</p>
           )}
@@ -113,6 +116,10 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
             <button
               key={`${it.kind}-${it.id}`}
               data-idx={i}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              tabIndex={-1}
               onMouseEnter={() => setActive(i)}
               onClick={() => go(it)}
               className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left ${i === active ? 'bg-surface-2' : ''}`}
@@ -146,6 +153,6 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           )}
         </div>
       </div>
-    </div>
+    </NativeDialog>
   );
 }

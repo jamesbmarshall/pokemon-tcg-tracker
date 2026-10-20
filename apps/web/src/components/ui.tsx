@@ -149,20 +149,34 @@ export function Segmented<T extends string | number>({
   onChange,
   options,
   size = 'md',
+  label = 'Options',
 }: {
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: ReactNode; title?: string }[];
   size?: 'sm' | 'md';
+  label?: string;
 }) {
   return (
-    <div role="radiogroup" className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
-      {options.map((o) => (
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
+      {options.map((o, index) => (
         <button
           key={String(o.value)}
           type="button"
           role="radio"
           aria-checked={value === o.value}
+          tabIndex={value === o.value || (!options.some((item) => item.value === value) && index === 0) ? 0 : -1}
+          onKeyDown={(event) => {
+            const directions: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+            let next: number;
+            if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = options.length - 1;
+            else if (directions[event.key]) next = (index + directions[event.key] + options.length) % options.length;
+            else return;
+            event.preventDefault();
+            onChange(options[next].value);
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+          }}
           title={o.title}
           aria-label={o.title}
           onClick={() => onChange(o.value)}

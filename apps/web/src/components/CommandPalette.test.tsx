@@ -95,9 +95,9 @@ describe('CommandPalette', () => {
 
   it('closes when the backdrop is clicked but not the dialog', () => {
     const { onClose } = setup();
-    fireEvent.mouseDown(screen.getByRole('dialog'));
+    fireEvent.mouseDown(screen.getByRole('dialog').firstElementChild!);
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.mouseDown(screen.getByRole('dialog').parentElement!);
+    fireEvent.mouseDown(screen.getByRole('dialog'));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
