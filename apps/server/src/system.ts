@@ -1,3 +1,4 @@
+import { diagnostics } from './diagnostics.ts';
 /**
  * Admin and status routes: job control, storage figures, backups and in-app updates.
  * Members only see the small status endpoint. Admins can run jobs. Backups and updates are
@@ -22,6 +23,7 @@ import {
 } from './updater.ts';
 
 export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
+  app.get('/api/admin/diagnostics', async (req) => { requireRole(req, 'owner'); return diagnostics(ctx); });
   /**
    * Small status for every signed-in user: version and when prices last refreshed.
    * `catalogDegraded` is a non-sensitive flag (no error detail) so the web app can show a

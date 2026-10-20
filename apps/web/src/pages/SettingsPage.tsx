@@ -1,3 +1,4 @@
+import RecoveryPanel from '../components/RecoveryPanel';
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -207,6 +208,8 @@ export default function SettingsPage() {
           </Link>
         )}
       </Section>
+
+      {user?.role === 'owner' && <Section title="Recovery protection" description="Host backups, verified recovery points and storage health."><RecoveryPanel /></Section>}
 
       {user?.role === 'owner' && (
         <Section title="Updates" description="Install new versions of PokéTracker from here. Your data is backed up first, and a version that won't start is undone automatically.">

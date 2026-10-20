@@ -15,7 +15,7 @@ export class Db {
   private stmts = new Map<string, ReturnType<DatabaseSync['prepare']>>();
 
   /** See Config.journalMode for why network shares need 'delete'. */
-  constructor(file: string, journalMode: 'wal' | 'delete' = 'wal') {
+  constructor(readonly file: string, journalMode: 'wal' | 'delete' = 'wal') {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);
     // journalMode is a closed union, so interpolating it cannot inject SQL.

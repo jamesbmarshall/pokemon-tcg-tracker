@@ -64,6 +64,7 @@ write_files:
           environment:
             PUBLIC_URL: https://${DOMAIN}
             TRUST_PROXY: "1"
+            APP_IMAGE_DIGEST: ${POKETRACKER_IMAGE}
           volumes:
             - type: bind
               source: /srv/poketracker/data

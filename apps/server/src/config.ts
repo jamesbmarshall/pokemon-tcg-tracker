@@ -17,6 +17,9 @@ export interface Config {
   /** Passed straight to Fastify: false, true, a hop count, or a comma-separated list of proxy IPs/CIDRs. */
   trustProxy: boolean | number | string;
   version: string;
+  commit?: string;
+  builtAt?: string;
+  imageDigest?: string;
   /** Set by the launcher; self-update is only possible when it supervises us. */
   supervised: boolean;
   launcherVersion: string;
@@ -52,16 +55,19 @@ export interface Config {
  * The bundle's manifest is the source of truth for our version, because /health reports it and
  * the launcher only accepts a new version once /health returns that exact string.
  */
-function readVersion(): string {
-  const candidates = [process.env.APP_MANIFEST, join(process.cwd(), 'manifest.json')].filter(Boolean) as string[];
+function readBuild(env: NodeJS.ProcessEnv): Pick<Config, 'version' | 'commit' | 'builtAt' | 'imageDigest'> {
+  const candidates = [env.APP_MANIFEST, join(process.cwd(), 'manifest.json')].filter(Boolean) as string[];
+  let manifest: Record<string, unknown> = {};
   for (const file of candidates) {
-    try {
-      return JSON.parse(readFileSync(file, 'utf8')).version;
-    } catch {
-      /* try next */
-    }
+    try { manifest = JSON.parse(readFileSync(file, 'utf8')); break; }
+    catch { /* standalone development may not have a build manifest */ }
   }
-  return process.env.APP_VERSION ?? '0.0.0-dev';
+  return {
+    version: typeof manifest.version === 'string' ? manifest.version : env.APP_VERSION ?? '0.0.0-dev',
+    commit: typeof manifest.commit === 'string' && /^[a-f0-9]{40,64}$/.test(manifest.commit) ? manifest.commit : undefined,
+    builtAt: typeof manifest.builtAt === 'string' && Number.isFinite(Date.parse(manifest.builtAt)) ? manifest.builtAt : undefined,
+    imageDigest: env.APP_IMAGE_DIGEST && /^[a-zA-Z0-9./_-]+@sha256:[a-f0-9]{64}$/.test(env.APP_IMAGE_DIGEST) ? env.APP_IMAGE_DIGEST : undefined,
+  };
 }
 
 /** The Ed25519 public key that release bundles must be signed with; the image bakes in a file. */
@@ -102,7 +108,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Off by default: trusting X-Forwarded-For from the open internet lets anyone pick their own
     // IP and walk around the rate limits. The bundled deploys set it to 1 (one proxy hop).
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
-    version: readVersion(),
+    ...readBuild(env),
     supervised: env.POKETRACKER_LAUNCHER === '1',
     launcherVersion: env.POKETRACKER_LAUNCHER_VERSION ?? '',
     githubRepo: env.GITHUB_REPO ?? 'jamesbmarshall/pokemon-tcg-tracker',
