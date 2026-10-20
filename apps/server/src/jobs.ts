@@ -77,6 +77,7 @@ export const JOBS: JobDef[] = [
       // means a card owned by ten people costs one upstream lookup, not ten.
       const ids = trackedCardIds(ctx.db);
       const refreshed = await refreshCards(ctx, ids);
+      ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_price_sync_result', ?)", JSON.stringify({ requested: ids.length, refreshed, missing: ids.length - refreshed, at: new Date().toISOString() }));
       ctx.db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_price_sync', ?)", new Date().toISOString());
       // PriceCharting items refresh alongside card prices (no-ops with no key configured).
       const sealed = await refreshSealedPrices(ctx);

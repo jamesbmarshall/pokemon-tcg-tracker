@@ -1,3 +1,4 @@
+import ValuationCoverage from '../components/ValuationCoverage';
 import { printingLabel } from '@poketracker/shared/printings';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -127,6 +128,7 @@ export default function CollectionPage() {
           </>
         )}
       </dl>
+      <ValuationCoverage />
 
       <div className="sticky top-14 z-20 -mx-4 flex flex-wrap items-center gap-2 border-b border-line bg-canvas/95 px-4 py-3 lg:top-0">
         <div className="relative">

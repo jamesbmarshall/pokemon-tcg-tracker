@@ -1,3 +1,4 @@
+import { gradedQuote } from '@poketracker/shared/valuation';
 import { printingLabel } from '@poketracker/shared/printings';
 import NativeDialog from './NativeDialog';
 import { lazy, Suspense, useEffect, useState } from 'react';
@@ -168,9 +169,9 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
 
       <div className="flex shrink-0 flex-col items-end justify-between gap-2">
         <div className="text-right">
-          <p className="font-mono text-sm font-semibold tabular">{money(gradedValue(g, cards))}</p>
+          <p className="font-mono text-sm font-semibold tabular">{gradedQuote(g, cards).amount == null ? 'Unknown' : money(gradedValue(g, cards))}</p>
           <p className="text-[10px] text-faint">
-            {g.valueUsd != null ? 'your value' : g.pcPrice != null ? `PriceCharting · ${name} ${g.grade}${g.pcUpdatedAt ? ` · updated ${relativeTime(g.pcUpdatedAt)}` : ''}` : 'raw price'}
+            {g.valueUsd != null ? 'your value' : g.pcPrice != null ? `PriceCharting · ${name} ${g.grade}${g.pcUpdatedAt ? ` · updated ${relativeTime(g.pcUpdatedAt)}` : ''}` : 'raw-card estimate'}
           </p>
           {paidCost != null && <Gain valueUsd={gradedValue(g, cards)} costUsd={paidCost} className="text-[10px]" />}
         </div>
