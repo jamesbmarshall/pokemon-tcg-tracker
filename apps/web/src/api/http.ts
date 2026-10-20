@@ -1,3 +1,5 @@
+import { acceptCollectionRevision, collectionRevision, mutationKey, observeMutationProtocol, queueCollectionWrite, usesMutationProtocol } from './concurrency';
+
 /**
  * Thin fetch wrapper for the PokéTracker server API.
  *
@@ -52,12 +54,24 @@ export interface ApiInit extends Omit<RequestInit, 'body'> {
  * multipart boundary itself. A 401 notifies onUnauthenticated() listeners before throwing, so
  * an expired session sends the user to sign-in even if the caller swallows the error.
  */
-export async function api<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
+export function api<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
+  const id = /^\/api\/collections\/([^/?]+)(?:\/|$)/.exec(path)?.[1];
+  const writing = !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase());
+  if (!id || !writing || !usesMutationProtocol()) return request<T>(path, init);
+  const key = mutationKey();
+  return queueCollectionWrite(id, () => {
+    const revision = collectionRevision(id);
+    if (revision === undefined) throw new ApiError(428, 'Reload this collection before saving.', 'revision_required');
+    return request<T>(path, { ...init, headers: { 'if-match': `"${revision}"`, 'idempotency-key': key, ...init.headers } });
+  });
+}
+
+async function request<T>(path: string, init: ApiInit): Promise<T> {
   const { body, quiet401, headers, ...rest } = init;
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   let res: Response;
   try {
-    res = await fetch(path, {
+    const send = () => fetch(path, {
       credentials: 'same-origin',
       ...rest,
       headers: {
@@ -67,9 +81,16 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
       },
       body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
     });
+    // A lost response is retried once with the identical receipt key; never retry an
+    // unguarded request or an HTTP rejection automatically.
+    res = await send().catch((err) => {
+      if (!(headers as Record<string, string> | undefined)?.['idempotency-key']) throw err;
+      return send();
+    });
   } catch {
     throw new ApiError(0, "Couldn't reach the PokéTracker server. Check your connection.", 'network');
   }
+  observeMutationProtocol(res.headers.get('x-write-protocol'));
   // Read as text first: some endpoints return an empty body (204) or plain text errors from a
   // proxy in front of the server, and res.json() would throw on both.
   const text = await res.text();
@@ -83,6 +104,11 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
     const err = (data ?? {}) as { error?: string; message?: string; code?: string };
     if (res.status === 401 && !quiet401) unauthListeners.forEach((fn) => fn());
     throw new ApiError(res.status, err.message ?? err.error ?? `Request failed (${res.status})`, err.code, data);
+  }
+  const id = /^\/api\/collections\/([^/?]+)(?:\/|$)/.exec(path)?.[1];
+  if (id && !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase())) {
+    const etag = res.headers.get('etag');
+    if (etag && /^"\d+"$/.test(etag)) acceptCollectionRevision(id, Number(etag.slice(1, -1)));
   }
   return data as T;
 }

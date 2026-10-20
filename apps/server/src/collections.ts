@@ -1,4 +1,5 @@
 import { getCatalogSet, readPrintingProfile } from './printingCatalog.ts';
+import { mutate, revisionOf } from './mutations.ts';
 import { publicState } from './publicState.ts';
 import { POLICY_VERSION } from '@poketracker/shared/printingRules';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
@@ -237,8 +238,8 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
   // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
   const setStats = ctx.db.all<{ set_id: string; master_total: number; all_total: number; provisional: number; unresolved_total: number; additional_total: number; profile: string; printing_version: number; synced_at: string }>('SELECT s.* FROM set_stats s JOIN printing_catalogues c ON c.set_id = s.set_id AND c.profile IS NOT NULL WHERE s.printing_version = ? AND c.policy_version = ?', PRINTING_VERSION, POLICY_VERSION).map((s) => ({ setId: s.set_id, masterTotal: s.master_total, allTotal: s.all_total, provisional: !!s.provisional, unresolvedTotal: s.unresolved_total, additionalTotal: s.additional_total, profile: s.profile, printingVersion: s.printing_version, syncedAt: s.synced_at }));
-  const state = { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
-  return opts.publicView ? publicState(state, opts) : state;
+  const state = { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists, revision: revisionOf(ctx, collectionId) ?? 0 };
+  return opts.publicView ? { ...publicState(state, opts), revision: 0 } : state;
 }
 
 export function readLists(ctx: Ctx, collectionId: string) {
@@ -576,14 +577,31 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
 
-  app.get('/api/collections/:id/state', async (req) => {
+  app.get('/api/collections/:id/state', async (req, reply) => {
     const { id, role } = need(ctx, req, 'read');
+    reply.header('etag', `"${revisionOf(ctx, id)}"`);
     return { role, ...collectionState(ctx, id) };
+  });
+
+  app.post('/api/collections/:id/entries/adjust', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
+      const { id } = need(ctx, req, 'write');
+      const b = (req.body ?? {}) as { cardId?: unknown; variant?: unknown; delta?: unknown };
+      if (typeof b.cardId !== 'string' || !CARD_ID.test(b.cardId) || typeof b.variant !== 'string' || !VARIANT.test(b.variant) || !Number.isSafeInteger(b.delta) || Math.abs(Number(b.delta)) > 100_000 || b.delta === 0) throw bad('Send a valid card, printing and non-zero integer delta');
+      const key = entryKey(b.cardId, b.variant);
+      const previous = readEntries(ctx.db, id).find((e) => e.id === key);
+      const quantity = (previous?.quantity ?? 0) + Number(b.delta);
+      if (quantity < 0 || quantity > 100_000) throw bad('The resulting quantity must be between 0 and 100000');
+      if (quantity === 0) ctx.db.run('DELETE FROM entries WHERE collection_id = ? AND id = ?', id, key);
+      else putEntry(ctx, id, cleanEntry({ ...previous, cardId: b.cardId, variant: b.variant, quantity, addedAt: previous?.addedAt ?? now(), updatedAt: now() })!);
+      return { entry: quantity ? readEntries(ctx.db, id).find((e) => e.id === key) : null };
+    }, { delta: true });
   });
 
   // Bulk upsert so the client can save many changes in one request. All-or-nothing:
   // one bad entry rejects the batch, so the client never ends up half-saved.
-  app.put('/api/collections/:id/entries', async (req) => {
+  app.put('/api/collections/:id/entries', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const list = (req.body as { entries?: unknown[] })?.entries;
     if (!Array.isArray(list) || list.length > 5000) throw bad('Send 1–5000 entries');
@@ -593,14 +611,17 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     // Fire and forget: fetch catalogue data for any new cards without holding up the save.
     void hydrateMissing(ctx, clean.map((e) => e!.cardId));
     return { entries: clean };
+    });
   });
 
-  app.post('/api/collections/:id/entries/reassign', async (req) => {
+  app.post('/api/collections/:id/entries/reassign', async (req, reply) => {
+    need(ctx, req, 'write');
+    await hydrateMissing(ctx, [cardId((req.body as { cardId?: unknown })?.cardId)]);
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const body = req.body as { cardId?: unknown; from?: unknown; to?: unknown };
     const card = cardId(body?.cardId);
     if (typeof body.from !== 'string' || typeof body.to !== 'string' || !VARIANT.test(body.from) || !VARIANT.test(body.to) || body.from === body.to) throw bad('Invalid printing reassignment');
-    await hydrateMissing(ctx, [card]);
     const snapshot = readCards(ctx.db, [card]).get(card);
     if (!snapshot?.printings?.some((p) => p.id === body.to)) throw bad('Choose a known printing');
     ctx.db.tx(() => {
@@ -614,14 +635,17 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
       ctx.db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', id, card, body.from as string, body.to as string, 'collector identification', now());
     });
     return { ok: true };
+    });
   });
 
-  app.post('/api/collections/:id/entries/delete', async (req) => {
+  app.post('/api/collections/:id/entries/delete', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const ids = (req.body as { ids?: unknown[] })?.ids;
     if (!Array.isArray(ids) || ids.length > 5000) throw bad('Send 1–5000 ids');
     ctx.db.tx(() => ids.forEach((e) => typeof e === 'string' && ctx.db.run('DELETE FROM entries WHERE collection_id = ? AND id = ?', id, e)));
     return { ok: true };
+    });
   });
 
   app.put('/api/collections/:id/wishlist/:cardId', async (req) => {

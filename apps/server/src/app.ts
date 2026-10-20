@@ -86,7 +86,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
     if (!req.url.startsWith('/api/')) return;
     if (ctx.services.isStopping?.() && !SAFE.has(req.method)) throw new HttpError(503, 'Server is shutting down. Your change was not accepted.', 'shutting_down');
     // API responses are per-user; never let a browser or shared proxy keep them.
-    reply.header('cache-control', 'no-store');
+    reply.header('cache-control', 'no-store').header('x-write-protocol', '1');
     if (!SAFE.has(req.method)) {
       // A custom header can't be sent cross-site without a CORS preflight we never grant.
       if (req.headers['x-poketracker'] !== '1') throw new HttpError(403, 'Missing request header', 'csrf');
