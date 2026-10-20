@@ -1,3 +1,4 @@
+import { startRecoveryControl } from './recoveryControl.ts';
 /**
  * Server entry point (bundled by esbuild into server.mjs). Opens and migrates the database,
  * starts HTTP, prints the first-run setup token and starts the job scheduler. Normally run by
@@ -31,6 +32,7 @@ async function main() {
 
   let exitCode = 0;
   let stopJobs: () => Promise<void> = async () => {};
+  let stopRecovery: () => Promise<void> = async () => {};
   let stopping = false;
   let shutdownPromise: Promise<void> | undefined;
   const ctx: Ctx = { config, db, sealer, log: console as unknown as Ctx['log'], services: {} };
@@ -53,7 +55,7 @@ async function main() {
         process.exit(1);
       }, 30_000).unref();
       try {
-        await Promise.all([app.close(), stopJobs()]);
+        await Promise.all([app.close(), stopJobs(), stopRecovery()]);
         db.close();
         releaseLock();
       } finally {
@@ -73,6 +75,7 @@ async function main() {
   process.on('SIGTERM', () => void shutdown(0));
   process.on('SIGINT', () => void shutdown(0));
 
+  stopRecovery = await startRecoveryControl(ctx);
   await app.listen({ port: config.port, host: config.host });
   app.log.info({ version: config.version, schema: db.schemaVersion, migrationsApplied: applied, dataDir: config.dataDir, supervised: config.supervised }, 'PokéTracker started');
 

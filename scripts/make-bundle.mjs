@@ -55,6 +55,7 @@ const stage = join(out, 'bundle');
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
 cpSync(join(serverDist, 'server.mjs'), join(stage, 'server.mjs'));
+cpSync(join(serverDist, 'recovery.mjs'), join(stage, 'recovery.mjs'));
 if (existsSync(join(serverDist, 'server.mjs.map'))) cpSync(join(serverDist, 'server.mjs.map'), join(stage, 'server.mjs.map'));
 cpSync(webDist, join(stage, 'web'), { recursive: true });
 const manifest = { version, minLauncher, writeProtocol: 1, ...(commit && { commit }), builtAt: new Date().toISOString() };
@@ -66,7 +67,7 @@ if (flag('--stage-only')) process.exit(0);
 const name = `poketracker-${version}.tar.gz`;
 const file = join(out, name);
 // An explicit entry list keeps anything else in the stage folder out of the archive.
-const entries = ['manifest.json', 'server.mjs', ...(existsSync(join(stage, 'server.mjs.map')) ? ['server.mjs.map'] : []), 'web'];
+const entries = ['manifest.json', 'server.mjs', 'recovery.mjs', ...(existsSync(join(stage, 'server.mjs.map')) ? ['server.mjs.map'] : []), 'web'];
 // portable + noMtime drop owner ids and timestamps: no build-machine details in the archive,
 // and nothing that would make ownership odd when the server extracts it.
 await tar.c({ gzip: { level: 9 }, file, cwd: stage, portable: true, noMtime: true }, entries);

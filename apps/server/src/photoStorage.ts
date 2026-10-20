@@ -21,6 +21,7 @@ export function publishPhoto(ctx: Ctx, kind: PhotoKind, id: string, bytes: Buffe
 }
 
 export function pinPhotos(ctx: Ctx, files: { kind: PhotoKind; id: string }[]) {
+  if (files.some((file) => !validId(file.id))) throw new Error('Invalid photo ID in database; recovery snapshot aborted');
   let held = pins.get(ctx);
   if (!held) { held = new Map(); pins.set(ctx, held); }
   for (const file of files) {
