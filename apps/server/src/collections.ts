@@ -1,3 +1,4 @@
+import { IMPORT_BYTES, validateImportEnvelope } from './resourceLimits.ts';
 import { publishPhoto } from './photoStorage.ts';
 import { getCatalogSet, readPrintingProfile } from './printingCatalog.ts';
 import { mutate, revisionOf } from './mutations.ts';
@@ -69,7 +70,7 @@ export function access(ctx: Ctx, userId: string, collectionId: string): Access |
  * 'own' = owner only (rename, delete, membership, clear). Non-members get 404 rather than 403 so
  * collection ids can't be probed.
  */
-function need(ctx: Ctx, req: FastifyRequest, level: 'read' | 'write' | 'own'): { id: string; role: Access } {
+export function need(ctx: Ctx, req: FastifyRequest, level: 'read' | 'write' | 'own'): { id: string; role: Access } {
   const u = requireUser(req);
   const id = (req.params as { id: string }).id;
   const role = access(ctx, u.id, id);
@@ -343,6 +344,7 @@ export interface ImportResult {
  * so a large import returns promptly.
  */
 export async function importInto(ctx: Ctx, collectionId: string, data: unknown, commit: (fn: () => ImportResult) => ImportResult = (fn) => fn()): Promise<ImportResult> {
+  validateImportEnvelope(data);
   const obj = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   if (obj.version !== undefined && (!Number.isInteger(obj.version) || Number(obj.version) < 1 || Number(obj.version) > 6)) throw bad('Unsupported export version. No changes were made.', 'import_version');
   const rawLists: unknown[] = Array.isArray(obj.lists) ? obj.lists : [];
@@ -368,7 +370,7 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown, 
     if (!e) continue;
     const prev = entries.get(e.id);
     // The same card + variant can appear more than once in hand-edited files; sum rather than drop.
-    entries.set(e.id, prev ? { ...prev, quantity: prev.quantity + e.quantity } : e);
+    entries.set(e.id, prev ? { ...prev, quantity: Math.min(100_000, prev.quantity + e.quantity) } : e);
   }
   const graded = rawGraded.map((g) => cleanGraded(remap(g))).filter((g): g is GradedCopy => !!g);
   const sealed = rawSealed.map((s) => cleanSealed(s)).filter((s): s is SealedItem => !!s);
@@ -451,7 +453,8 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown, 
       try {
         savePhoto(ctx, collectionId, p.gradedId, p.side ?? 'other', Buffer.from(m[1], 'base64'));
         photos++;
-      } catch {
+      } catch (error) {
+        if (error instanceof HttpError && error.status >= 500) throw error;
         /* skip unreadable photo: savePhoto re-sniffs the decoded bytes rather than trusting the data URL's type */
       }
     }
@@ -464,7 +467,8 @@ export async function importInto(ctx: Ctx, collectionId: string, data: unknown, 
       try {
         saveSealedPhoto(ctx, collectionId, p.sealedId, Buffer.from(m[1], 'base64'));
         photos++;
-      } catch {
+      } catch (error) {
+        if (error instanceof HttpError && error.status >= 500) throw error;
         /* skip unreadable photo */
       }
     }
@@ -596,7 +600,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     return { role, ...collectionState(ctx, id) };
   });
 
-  app.post('/api/collections/:id/entries/adjust', async (req, reply) => {
+  app.post('/api/collections/:id/entries/adjust', { schema: { body: { type: 'object', required: ['cardId', 'variant', 'delta'], additionalProperties: false, properties: { cardId: { type: 'string', maxLength: 100 }, variant: { type: 'string', maxLength: 100 }, delta: { type: 'integer', minimum: -100000, maximum: 100000, not: { const: 0 } } } } } }, async (req, reply) => {
     return mutate(ctx, req, reply, () => {
       const { id } = need(ctx, req, 'write');
       const b = (req.body ?? {}) as { cardId?: unknown; variant?: unknown; delta?: unknown };
@@ -788,7 +792,7 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // Backups can carry slab photos as data URLs.
   // Hence the much larger body limit than the global default, on this route only.
-  app.post('/api/collections/:id/import', { bodyLimit: 200 * 1024 * 1024 }, async (req, reply) => {
+  app.post('/api/collections/:id/import', { bodyLimit: IMPORT_BYTES }, async (req, reply) => {
     const { id } = need(ctx, req, 'write');
     return importInto(ctx, id, req.body, (commit) => mutate(ctx, req, reply, () => {
       const result = commit();

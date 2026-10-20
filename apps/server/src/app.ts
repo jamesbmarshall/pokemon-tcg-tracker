@@ -1,3 +1,5 @@
+import { assertStorage, IMPORT_BYTES, parseImportJson } from './resourceLimits.ts';
+import { need } from './collections.ts';
 import { readiness } from './diagnostics.ts';
 import { initCatalog } from './cards.ts';
 /**
@@ -45,6 +47,15 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
     logController: new LogController({ disableRequestLogging: true }),
   });
   ctx.log = app.log;
+  const defaultJson = app.getDefaultJsonParser('error', 'error');
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    if (req.routeOptions.url === '/api/collections/:id/import') void parseImportJson(body as string).then(value => done(null, value), done);
+    else defaultJson(req, body as string, done);
+  });
+  let importing: string | undefined;
+  app.addHook('onResponse', async req => { if (importing === req.id) importing = undefined; });
+  app.addHook('onRequestAbort', async req => { if (importing === req.id) importing = undefined; });
 
   // Test-only hook: lets the demo-guard test enumerate every registered route without having to
   // hand-maintain a route list of its own.
@@ -102,6 +113,13 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
     }
     attachSession(ctx, req, reply);
     attachShare(ctx, req);
+    await demoGuard(ctx)(req);
+    if (req.routeOptions.url === '/api/collections/:id/import') {
+      need(ctx, req, 'write');
+      if (importing) throw new HttpError(429, 'Another import is running. Try again when it finishes.', 'import_busy');
+      assertStorage(ctx, IMPORT_BYTES * 2);
+      importing = req.id;
+    }
   });
 
   // No-op outside demo mode. Runs as a preHandler (after routing), so it can key off the

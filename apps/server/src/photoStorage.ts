@@ -1,3 +1,4 @@
+import { assertStorage } from './resourceLimits.ts';
 import { closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Ctx } from './context.ts';
@@ -6,6 +7,7 @@ const pins = new WeakMap<Ctx, Map<string, number>>();
 const validId = (id: string) => /^[\w-]{1,64}$/.test(id);
 
 export function publishPhoto(ctx: Ctx, kind: PhotoKind, id: string, bytes: Buffer) {
+  assertStorage(ctx, bytes.length * 2);
   if (!validId(id)) throw new Error('Invalid photo identity');
   const dir = join(ctx.config.dataDir, kind);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
