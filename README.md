@@ -143,6 +143,8 @@ Very occasionally a release needs a newer container image (the small launcher in
 
 ## Backups
 
+**For complete encrypted off-host recovery, use the [host backup setup](deploy/backup/README.md) and [restore runbook](docs/recovery.md). Check owner diagnostics and rehearse recovery before relying on a deployment.**
+
 With background jobs enabled, the server backs up its database at 03:00 in the server's time zone to `/data/backups` and keeps the last seven daily backups (`BACKUPS_TO_KEEP`), plus the latest three pre-update backups. Manual backups remain until deleted. The owner can create and download backups from **Admin → Backups** (linked from Settings).
 
 Database backups contain photo metadata, but the image files live separately in `/data/photos` and `/data/sealed-photos`. Back up the whole `/data` volume for a full recovery, including `/data/secret.key`, which decrypts two-factor secrets, saved share links and integration keys. If you supply `SECRET_KEY` through the environment, preserve that value separately. JSON exports are useful for moving a collection, but do not include photo files or instance accounts and settings.
@@ -202,7 +204,7 @@ These are the settings you're most likely to touch:
 | `BACKUPS_TO_KEEP` | `7` | Nightly database backups to keep. |
 | `PRICE_HISTORY_DAYS` | `730` | How many days of daily per-card price history to keep before the cleanup job prunes older rows. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
-| `SQLITE_JOURNAL_MODE` | `wal` | `delete` for network storage (Azure Files, SMB, NFS). |
+| `SQLITE_JOURNAL_MODE` | `wal` | Local disk only. `delete` is a local compatibility option, not permission to use SMB/NFS; known network filesystems are rejected on Linux. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `JOBS` | `true` | Enables scheduled refreshes, backups and cleanup. Set `false` for isolated development or tests. |
 | `DEMO_MODE` | `false` | Seeds a sample collection with one-click read-only sign-in. Allows catalogue-cache writes, blocks collection edits, sign-up and updates, and resets nightly when jobs are enabled. See [Demo mode](#demo-mode). |

@@ -32,9 +32,9 @@ export interface Config {
   imageCacheMb: number;
   backupsToKeep: number;
   /**
-   * 'wal' on local disks. 'delete' for network shares such as Azure Files (SMB): WAL relies on a
+   * 'wal' on local disks. 'delete' is retained for local compatibility. Network storage is unsupported: WAL relies on a
    * memory-mapped -shm file and byte-range locks that SMB does not honour reliably, which can
-   * corrupt the database. Rollback journalling is slower but safe there.
+   * corrupt the database. Changing journal mode does not make a shared filesystem a supported durable deployment.
    */
   journalMode: 'wal' | 'delete';
   logLevel: string;

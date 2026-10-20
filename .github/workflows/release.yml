@@ -59,6 +59,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm run test:crash
+      - run: sudo apt-get update && sudo apt-get install -y restic
+      - run: npm run test:recovery
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:browser
 
@@ -69,7 +72,7 @@ jobs:
   #  - the tagged commit must already be on main, so code has to get through main's branch
   #    protection before it can be signed, not just be tagged on a side branch.
   bundle:
-    needs: [meta, test, image-check]
+    needs: [meta, test, image-check, recovery-profile]
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -104,7 +107,7 @@ jobs:
           if-no-files-found: error
 
   image:
-    needs: [meta, test, image-check]
+    needs: [meta, test, image-check, recovery-profile]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -228,3 +231,9 @@ jobs:
       - if: failure()
         run: docker logs pt || true
 
+
+  recovery-profile:
+    needs: meta
+    uses: ./.github/workflows/recovery-profile.yml
+    with:
+      ref: ${{ needs.meta.outputs.tag }}

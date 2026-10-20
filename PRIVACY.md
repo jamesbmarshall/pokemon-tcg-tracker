@@ -1,58 +1,61 @@
 # Privacy
 
-PokéTracker is **self-hosted**: you (or whoever deploys an instance) run the server and
-database, not the project maintainer. That means the person who deploys an instance is
-the data controller for it, not `jamesbmarshall/pokemon-tcg-tracker`. This document
-describes what the *software itself* does with data, so both operators and the people
-they invite know what to expect.
+PokéTracker is self-hosted. The instance operator controls its data, access, hosting and backup
+services; the project maintainer does not receive the instance database.
 
-## What the app stores
+## Stored on the instance
 
-An instance keeps, in its own SQLite database under `/data`:
+- Accounts: username, display name, password hash, role, account timestamps and optional
+  encrypted TOTP secrets. Recovery codes and invite/reset tokens are hashed.
+- Sessions: a hashed session token, expiry, recent activity, client IP and user agent.
+- Collections: raw cards, graded copies, sealed products, quantities, purchase prices, notes,
+  owner valuations, lists/decks, daily value history and uploaded photos.
+- Shares: access scope, visibility settings, expiry, view count and last-view timestamp. The
+  share token is hashed for lookup and encrypted so its owner can retrieve the existing link.
+- Audit events: actor, action, timestamp and relevant request metadata, including IP where
+  available. Audit events are normally pruned after 400 days when housekeeping jobs run.
+- Mutation receipts: the actor, operation fingerprint, revision and acknowledged response,
+  retained to prevent duplicate writes after retries. These are private instance records.
+- Optional PriceCharting API key, encrypted using the same instance key as TOTP/share secrets.
 
-- **Accounts**: username/email, an Argon2id password hash, role (owner/admin/member),
-  and, if enabled, an encrypted TOTP secret for two-factor sign-in (encrypted at rest
-  with a per-instance key in `/data/secret.key`).
-- **Collection data**: the cards, sets, sealed product, graded slabs, wishlist and
-  custom-list entries an account owns, including optional notes, prices paid and photos
-  of slabs.
-- **Share links**: a random, hashed token and whatever fields the sharer chose to expose.
-- **Audit log**: sign-ins, admin changes, shares and update events, as described in the
-  README's [Security](README.md#security) section.
+Collection data and photos are not encrypted individually. The effective instance key is in
+`secret.key` or supplied by `SECRET_KEY`; host/disk encryption and host access remain the
+operator's responsibility. Anyone with host root or Docker access can read the live instance.
 
-## What the app sends elsewhere
+## Outbound services
 
-To do its job, the server makes outbound requests to:
+The server contacts TCGdex for card/set/pricing data and its approved image hosts for card
+images; Frankfurter for exchange rates; GitHub for release metadata and signed update bundles;
+and PriceCharting when the operator configures that integration. These providers see the
+server's network address and the requested reference identifiers. PriceCharting receives its
+configured API key. Collection records, account passwords, private notes and uploaded photos
+are not submitted to these reference providers. Their lookups can nevertheless reveal which
+card or product identifiers interest this instance.
 
-- **[TCGdex](https://tcgdex.dev)** — card, set and price data. The server fetches and
-  caches this centrally, so TCGdex sees one request per card per instance, not one per
-  user.
-- **[Frankfurter](https://frankfurter.dev)** (ECB reference rates) — daily currency
-  conversion rates.
+Browsers retrieve catalogue images through the instance. External links, including source and
+product links, open the chosen third-party site and are governed by that site's policies.
+There is no built-in analytics, advertising, crash reporting or usage telemetry to the maintainer.
+The public demo is a separate, read-only synthetic instance; operators must not put personal
+collections or real integration credentials in a demo deployment.
 
-No personal or collection data is sent to either service: both are read-only reference
-data lookups keyed by card/set IDs or currency codes.
+## Sharing and recovery
 
-## What the app does *not* do
+Public links deliberately publish the selected collection scope. Visibility settings hide
+structured prices, purchase costs or notes, but do not redact writing visible inside uploaded
+photos. Anyone who receives an unrestricted link can forward it. Revocation prevents further
+server access; it cannot erase copies already downloaded by another person.
 
-- No analytics, telemetry, crash reporting or third-party trackers are built into the
-  app. Nothing about how you use your instance is sent back to the project maintainer.
-- No advertising, and no data is sold or shared with anyone beyond the two services
-  above.
-- Card images are cached on the instance's own disk, not proxied through a third party.
+Portable exports contain collection data and can contain photos when requested. They do not
+restore instance accounts, sessions or integrations. Keep downloaded exports private.
+Nightly database copies retain a configured number of files (`BACKUPS_TO_KEEP`, default 7),
+plus separate pre-update/manual backups. Database copies alone do not recover photo files.
+Complete instance snapshots contain the database, referenced photos, effective encryption key,
+configuration and compatibility metadata. They are restricted plaintext recovery material on
+the host. The recommended host backup jobs encrypt them with Restic before uploading to the
+operator's independent Azure/S3 repository; the application container receives no repository
+credentials. Default remote retention is 24 hourly, 7 daily and 4 weekly points.
 
-## Your choices as an operator
-
-- **Export or delete**: export your data as JSON or CSV at any time from Settings, and
-  delete your account or instance data outright by removing the `/data` volume.
-- **Backups**: the server takes a nightly database backup (kept for `BACKUPS_TO_KEEP`
-  days, default 7); these live in `/data/backups` on your own infrastructure.
-- **Access control**: invite-only sign-up, roles, and per-share visibility controls
-  (anyone with the link, specific people, or everyone on your instance) are described in
-  the README.
-
-## Questions
-
-If you're a beta tester with questions about what a particular instance does with your
-data, ask whoever invited you — they're the operator and data controller. For questions
-about the software's own behaviour, see [SUPPORT.md](SUPPORT.md).
+Deleting live records does not immediately remove older backup copies. Unreferenced photo
+files have a grace period before housekeeping removes them, and soft-deleted slabs can be
+restored during their undo retention. Account/instance removal, external storage retention and
+requests about personal data must be handled by the instance operator, including their backups.

@@ -1,6 +1,6 @@
 import { assertStorage } from './resourceLimits.ts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, renameSync } from 'node:fs';
+import { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, renameSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpError, requireUser, type Ctx } from './context.ts';
 import { sha256 } from './security.ts';
@@ -8,10 +8,17 @@ import { sha256 } from './security.ts';
 export const WRITE_PROTOCOL = 1;
 export const revisionOf = (ctx: Ctx, id: string) => ctx.db.get<{ revision: number }>('SELECT revision FROM collections WHERE id = ?', id)?.revision;
 
+export function assertWriteProtocol(dataDir: string) {
+  const file = join(dataDir, 'app/write-protocol-floor.json');
+  if (!existsSync(file)) return;
+  let floor: unknown;
+  try { floor = JSON.parse(readFileSync(file, 'utf8')).protocol; } catch { throw new Error('Invalid write-protocol floor. Preserve the instance and inspect its recovery metadata.'); }
+  if (!Number.isSafeInteger(floor) || Number(floor) < 0 || Number(floor) > WRITE_PROTOCOL) throw new Error('This instance requires a newer write protocol. Upgrade the application; do not overwrite its data.');
+}
 const protectedInstances = new WeakSet<Ctx>();
-function protectRollback(ctx: Ctx) {
-  if (protectedInstances.has(ctx)) return;
-  const dir = join(ctx.config.dataDir, 'app');
+export function protectWriteProtocol(dataDir: string) {
+  assertWriteProtocol(dataDir);
+  const dir = join(dataDir, 'app');
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'write-protocol-floor.json');
   const staged = `${file}.tmp`;
@@ -21,6 +28,12 @@ function protectRollback(ctx: Ctx) {
   renameSync(staged, file);
   const parent = openSync(dir, 'r');
   try { fsyncSync(parent); } finally { closeSync(parent); }
+}
+
+function protectRollback(ctx: Ctx) {
+  assertWriteProtocol(ctx.config.dataDir);
+  if (protectedInstances.has(ctx)) return;
+  protectWriteProtocol(ctx.config.dataDir);
   protectedInstances.add(ctx);
 }
 

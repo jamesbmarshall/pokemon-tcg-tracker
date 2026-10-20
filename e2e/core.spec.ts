@@ -61,3 +61,26 @@ test('lost successful response retries once with the same receipt key', async ({
   await page.reload();
   await expect(page.getByRole('main').getByText(name, { exact: true })).toHaveCount(1);
 });
+test('two tabs preserve the winning edit and keep a stale form open for review', async ({ page, context }) => {
+  const name = `concurrency-${Date.now()}`;
+  await page.goto('/lists');
+  await page.getByRole('button', { name: 'New list', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Name', { exact: true }).fill(name);
+  await page.getByRole('button', { name: 'Create list', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  const other = await context.newPage();
+  await other.goto(page.url());
+  await expect(other.getByRole('heading', { name, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await other.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Name', { exact: true }).fill(`${name}-winner`);
+  await other.getByRole('dialog').getByLabel('Name', { exact: true }).fill(`${name}-stale`);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await other.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(other.getByRole('dialog')).toContainText('changed on another device');
+  await expect(other.getByRole('dialog').getByLabel('Name', { exact: true })).toHaveValue(`${name}-stale`);
+  await other.reload();
+  await expect(other.getByRole('heading', { name: `${name}-winner`, exact: true })).toBeVisible();
+  await other.close();
+});

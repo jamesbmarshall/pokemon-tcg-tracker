@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+import { protectWriteProtocol } from './mutations.ts';
 import { classifyPrintings } from '@poketracker/shared/printingRules';
 import { readPrintingProfile } from './printingCatalog.ts';
 import { PRINTING_VERSION, resolvePrintings } from '@poketracker/shared/printings';
@@ -71,6 +73,7 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
   if (!snaps.length) return;
   const prev = readCards(db, snaps.map((s) => s.id), false);
   db.tx(() => {
+    const changedCollections = new Set<string>();
     for (let next of snaps) {
       const old = prev.get(next.id);
       if (old?.printingCoverage === 'complete' && next.printingCoverage !== 'complete' && !next.pricingComplete) next = { ...next, variants: old.variants, printings: old.printings, printingVersion: old.printingVersion, printingContext: old.printingContext, printingProfile: old.printingProfile, printingCoverage: old.printingCoverage };
@@ -84,12 +87,14 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
         const rows = db.all<{ collection_id: string }>('SELECT collection_id FROM entries WHERE card_id = ? AND variant = ?', next.id, alias);
         for (const row of rows) {
           if (db.get('SELECT 1 FROM entries WHERE collection_id = ? AND card_id = ? AND variant = ?', row.collection_id, next.id, printing.id)) continue;
+          changedCollections.add(row.collection_id);
           db.run('UPDATE entries SET id = ?, variant = ? WHERE collection_id = ? AND card_id = ? AND variant = ?', `${next.id}::${printing.id}`, printing.id, row.collection_id, next.id, alias);
           db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', row.collection_id, next.id, alias, printing.id, 'unambiguous catalogue alias', new Date().toISOString());
         }
         for (const row of db.all<{ collection_id: string; id: string; data: string }>('SELECT collection_id, id, data FROM graded WHERE card_id = ?', next.id)) {
           const copy = json<GradedCopy | null>(row.data, null);
           if (!copy || copy.variant !== alias) continue;
+          changedCollections.add(row.collection_id);
           db.run('UPDATE graded SET data = ? WHERE collection_id = ? AND id = ?', JSON.stringify({ ...copy, variant: printing.id }), row.collection_id, row.id);
           db.run('INSERT INTO printing_reassignments (collection_id, card_id, from_variant, to_variant, reason, changed_at) VALUES (?, ?, ?, ?, ?, ?)', row.collection_id, next.id, alias, printing.id, `unambiguous graded alias: ${row.id}`, new Date().toISOString());
         }
@@ -97,7 +102,7 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
       const priced = Object.keys(next.prices).length > 0 || next.pricingComplete;
       const merged = !old || priced
         ? next
-        : { ...next, prices: old.prices, tcgplayerUrl: old.tcgplayerUrl, cardmarketUrl: old.cardmarketUrl, tcgplayerUpdatedAt: old.tcgplayerUpdatedAt, cardmarketUpdatedAt: old.cardmarketUpdatedAt };
+        : { ...next, prices: old.prices, tcgplayerUrl: old.tcgplayerUrl, cardmarketUrl: old.cardmarketUrl, tcgplayerUpdatedAt: old.tcgplayerUpdatedAt, cardmarketUpdatedAt: old.cardmarketUpdatedAt, pricechartingUpdatedAt: old.pricechartingUpdatedAt };
       db.run(
         'INSERT OR REPLACE INTO cards (id, set_id, data, priced, synced_at) VALUES (?, ?, ?, ?, ?)',
         merged.id,
@@ -107,6 +112,8 @@ export function saveSnapshots(db: Db, snaps: CardSnapshot[]) {
         merged.syncedAt,
       );
     }
+    if (changedCollections.size && db.file !== ':memory:') protectWriteProtocol(dirname(db.file));
+    for (const id of changedCollections) db.run('UPDATE collections SET revision = revision + 1 WHERE id = ?', id);
   });
 }
 

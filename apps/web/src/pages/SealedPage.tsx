@@ -104,7 +104,7 @@ export default function SealedPage() {
             </div>
 
             <div className="text-right">
-              <p className="font-mono text-sm font-semibold tabular">{money(sealedValue(item))}</p>
+              <p className="font-mono text-sm font-semibold tabular">{item.status !== 'opened' && item.valueUsd == null && item.pcPrice == null ? 'Unknown' : money(sealedValue(item))}</p>
               {item.paid && (
                 <p className="text-[11px] text-faint">
                   Paid {item.paid.currency} {item.paid.amount.toFixed(2)}

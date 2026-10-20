@@ -1,4 +1,4 @@
-/** Revisions advance only when the UI accepts state or this client commits a mutation.
+/** Revisions advance only when the UI accepts state or this client commits a contiguous mutation.
  * A background GET that the UI discards must not authorize writes from stale displayed data.
  */
 const revisions = new Map<string, number>();

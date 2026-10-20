@@ -45,7 +45,7 @@ export interface ApiInit extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /** Don't broadcast a 401 (e.g. the sign-in form handles it itself). */
   quiet401?: boolean;
-  acceptRevision?: boolean;
+  acceptRevision?: 'initial';
 }
 
 /**
@@ -107,9 +107,16 @@ async function request<T>(path: string, init: ApiInit): Promise<T> {
     throw new ApiError(res.status, err.message ?? err.error ?? `Request failed (${res.status})`, err.code, data);
   }
   const id = /^\/api\/collections\/([^/?]+)(?:\/|$)/.exec(path)?.[1];
-  if (id && (acceptRevision || !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase()))) {
+  if (id && ((acceptRevision === 'initial' && collectionRevision(id) === undefined) || !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase()))) {
     const etag = res.headers.get('etag');
-    if (etag && /^"\d+"$/.test(etag)) acceptCollectionRevision(id, Number(etag.slice(1, -1)));
+    if (etag && /^"\d+"$/.test(etag)) {
+      const next = Number(etag.slice(1, -1));
+      const writing = !['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase());
+      const expected = (headers as Record<string, string> | undefined)?.['if-match'];
+      // A commuting delta or receipt replay may return a revision that includes unseen
+      // edits from another writer. Only a contiguous own commit can advance accepted state.
+      if (!writing || (expected && /^"\d+"$/.test(expected) && next === Number(expected.slice(1, -1)) + 1 && collectionRevision(id) === next - 1)) acceptCollectionRevision(id, next);
+    }
     if (!['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase()) && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pt:collection-saved', { detail: id }));
   }
   return data as T;

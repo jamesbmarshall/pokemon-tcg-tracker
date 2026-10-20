@@ -765,3 +765,17 @@ describe('show', () => {
     expect(store().wishlist.size).toBe(0);
   });
 });
+
+it('does not accept an idle refresh if an editor opens while the response is in flight', async () => {
+  await store().load();
+  mem.collection.set('sv03-001::normal', makeEntry());
+  const data = await mem.state(TEST_COLLECTION);
+  let release!: (value: typeof data) => void;
+  vi.spyOn(mem, 'state').mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const pending = store().refresh();
+  const dialog = document.createElement('dialog'); dialog.setAttribute('open', ''); document.body.append(dialog);
+  try { release(data); await pending; expect(store().entries.size).toBe(0); }
+  finally { dialog.remove(); }
+  await store().refresh();
+  expect(store().entries.size).toBe(1);
+});
