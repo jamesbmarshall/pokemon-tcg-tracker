@@ -3,6 +3,14 @@ import { loadConfig, parseTrustProxy } from '../src/config.ts';
 import { Limiter } from '../src/context.ts';
 import { Client, PASSWORD, setupOwner, startServer } from './helpers.ts';
 
+it.each([
+  { PORT: 'NaN' }, { PORT: '70000' }, { BACKUPS_TO_KEEP: '0' },
+  { PRICE_HISTORY_DAYS: '-1' }, { IMAGE_CACHE_MB: '1.5' }, { JOBS: 'maybe' },
+  { SQLITE_JOURNAL_MODE: 'wla' }, { PUBLIC_URL: 'https://example.com/path' },
+])('rejects invalid configuration before startup: %o', (env) => {
+  expect(() => loadConfig(env)).toThrow();
+});
+
 describe('TRUST_PROXY', () => {
   it('is off unless asked for, so clients cannot pick their own IP', () => {
     expect(loadConfig({}).trustProxy).toBe(false);

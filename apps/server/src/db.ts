@@ -21,10 +21,9 @@ export class Db {
     // journalMode is a closed union, so interpolating it cannot inject SQL.
     this.raw.exec(`PRAGMA journal_mode = ${journalMode === 'wal' ? 'WAL' : 'DELETE'};`);
     // foreign_keys is off by default in SQLite and is per connection, so it must be set here for
-    // ON DELETE CASCADE to work. busy_timeout waits rather than failing straight away if another
-    // process (an admin's sqlite3 shell, say) holds a lock. synchronous=NORMAL is the usual WAL
-    // trade-off: safe against app crashes, may lose the last commit on power loss.
-    this.raw.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;');
+    // ON DELETE CASCADE to work. Strict synchronization preserves committed transactions
+    // across host crashes when the underlying storage honors flush/barrier requests.
+    this.raw.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = ${journalMode === 'wal' ? 'FULL' : 'EXTRA'};`);
   }
 
   private prep(sql: string) {

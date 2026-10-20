@@ -86,13 +86,15 @@ export function writableBy({ uid, gid, mode }, target) {
  * a missing folder owned by root. So when started as root we hand the data folder to PUID:PGID
  * (default 1000:1000, the image's "node" user) and then drop to that user for good.
  * If the folder can't be handed over (e.g. some network shares refuse
- * chown) and isn't otherwise writable by that user, we stay root rather than fail to start, and
- * say so in the log.
+ * chown) and isn't otherwise writable by that user, startup fails unless ALLOW_ROOT=1.
  */
 function dropPrivileges() {
   if (typeof process.getuid !== 'function' || process.getuid() !== 0) return;
   const target = { uid: Number(process.env.PUID || 1000), gid: Number(process.env.PGID || 1000) };
-  if (target.uid === 0) return;
+  if (target.uid === 0) {
+    if (process.env.ALLOW_ROOT !== '1') throw new Error('PUID=0 requires explicit ALLOW_ROOT=1');
+    return;
+  }
   try {
     mkdirSync(DATA_DIR, { recursive: true });
     chownTree(DATA_DIR, target.uid, target.gid);
@@ -100,8 +102,11 @@ function dropPrivileges() {
     log(`could not change owner of ${DATA_DIR} to ${target.uid}:${target.gid} (${err.code ?? err.message})`, { level: 40 });
   }
   if (!writableBy(statSync(DATA_DIR), target)) {
-    log(`${DATA_DIR} is not writable by ${target.uid}:${target.gid}; continuing as root`, { level: 40 });
-    return;
+    if (process.env.ALLOW_ROOT === '1') {
+      log(`${DATA_DIR} is not writable by ${target.uid}:${target.gid}; ALLOW_ROOT=1 explicitly permits root`, { level: 40 });
+      return;
+    }
+    throw new Error(`${DATA_DIR} is not writable by ${target.uid}:${target.gid}. Fix ownership or explicitly set ALLOW_ROOT=1; refusing silent root fallback.`);
   }
   // Groups first, then gid, then uid: once uid is dropped we no longer have the right to change
   // the others. setgroups clears root's supplementary groups so none of them leak through.
