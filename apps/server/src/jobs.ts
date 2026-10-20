@@ -249,6 +249,7 @@ interface JobRow {
  * overlap. Rejects with the job's error after recording it.
  */
 export function runJob(ctx: Ctx, name: string): Promise<unknown> {
+  if (ctx.services.isStopping?.()) return Promise.reject(new Error('Server is shutting down'));
   const def = JOBS.find((j) => j.name === name);
   if (!def) return Promise.reject(new Error(`Unknown job ${name}`));
   const existing = running.get(name);
@@ -333,8 +334,9 @@ export function startScheduler(ctx: Ctx) {
   }, 5_000);
   timer.unref();
 
-  return () => {
+  return async () => {
     clearTimeout(timer);
     crons.forEach((c) => c.stop());
+    await Promise.allSettled([...running.values()]);
   };
 }

@@ -71,7 +71,12 @@ function readKey(): string {
   return file && existsSync(file) ? readFileSync(file, 'utf8') : '';
 }
 
-const bool = (v: string | undefined, dflt: boolean) => (v == null || v === '' ? dflt : /^(1|true|yes|on)$/i.test(v));
+const bool = (v: string | undefined, dflt: boolean) => {
+  if (v == null || v === '') return dflt;
+  if (/^(1|true|yes|on)$/i.test(v)) return true;
+  if (/^(0|false|no|off)$/i.test(v)) return false;
+  throw new Error(`Invalid boolean configuration value: ${v}`);
+};
 
 /**
  * TRUST_PROXY accepts true/false, a hop count ("1" = trust only the nearest proxy, so the
@@ -88,7 +93,7 @@ export function parseTrustProxy(v: string | undefined): boolean | number | strin
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  return {
+  const config: Config = {
     port: Number(env.PORT ?? 3000),
     host: env.HOST ?? '0.0.0.0',
     dataDir: resolve(env.DATA_DIR ?? './data'),
@@ -115,4 +120,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     demoMode: bool(env.DEMO_MODE, false),
     priceHistoryDays: Number(env.PRICE_HISTORY_DAYS ?? 730),
   };
+  for (const [name, value, min, max] of [
+    ['PORT', config.port, 1, 65535], ['IMAGE_CACHE_MB', config.imageCacheMb, 0, 1_048_576],
+    ['BACKUPS_TO_KEEP', config.backupsToKeep, 1, 3650], ['PRICE_HISTORY_DAYS', config.priceHistoryDays, 1, 36500],
+  ] as const) if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  if (env.SQLITE_JOURNAL_MODE && !['wal', 'delete'].includes(env.SQLITE_JOURNAL_MODE)) throw new Error('SQLITE_JOURNAL_MODE must be wal or delete');
+  if (!['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'].includes(config.logLevel)) throw new Error('Invalid LOG_LEVEL');
+  if (typeof config.trustProxy === 'number' && config.trustProxy > 32) throw new Error('TRUST_PROXY hop count is too large');
+  if (config.publicUrl) {
+    const url = new URL(config.publicUrl);
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== config.publicUrl) throw new Error('PUBLIC_URL must be an HTTP(S) origin without credentials, path, query or fragment');
+  }
+  return config;
 }

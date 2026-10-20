@@ -37,6 +37,7 @@ export interface Ctx {
 }
 
 export interface Services {
+  isStopping: () => boolean;
   runJob: (name: string) => Promise<unknown>;
   jobStatus: () => unknown[];
   requestRestart: (code?: number) => void;

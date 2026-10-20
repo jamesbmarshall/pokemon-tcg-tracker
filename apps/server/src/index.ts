@@ -5,6 +5,7 @@
  */
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { acquireInstanceLock } from './instanceLock.ts';
 import { loadConfig } from './config.ts';
 import { Db } from './db.ts';
 import { loadInstanceKey, Sealer, validateInstanceSecrets } from './security.ts';
@@ -18,6 +19,7 @@ import { seedDemo } from './demo.ts';
 
 async function main() {
   const config = loadConfig();
+  const releaseLock = acquireInstanceLock(config.dataDir);
   const db = new Db(join(config.dataDir, 'poketracker.db'), config.journalMode);
   // Migrate before anything reads the schema. A failure here exits non-zero before /health is
   // up, which is what lets the launcher roll a bad update back.
@@ -28,7 +30,9 @@ async function main() {
   validateInstanceSecrets(db, sealer);
 
   let exitCode = 0;
-  let stopJobs = () => {};
+  let stopJobs: () => Promise<void> = async () => {};
+  let stopping = false;
+  let shutdownPromise: Promise<void> | undefined;
   const ctx: Ctx = { config, db, sealer, log: console as unknown as Ctx['log'], services: {} };
   const app = await buildApp(ctx);
   initCatalog(ctx);
@@ -39,17 +43,28 @@ async function main() {
 
   // Stop jobs first so none start a write mid-shutdown, then drain HTTP, then close the DB.
   // The finally makes sure we still exit with the requested code if closing the app throws.
-  const shutdown = async (code = 0) => {
+  const shutdown = (code = 0): Promise<void> => {
+    if (shutdownPromise) return shutdownPromise;
+    stopping = true;
     exitCode = code;
-    stopJobs();
-    try {
-      await app.close();
-    } finally {
-      db.close();
-      process.exit(exitCode);
-    }
+    shutdownPromise = (async () => {
+      const deadline = setTimeout(() => {
+        app.log.error('Shutdown deadline exceeded; terminating without acknowledging further writes');
+        process.exit(1);
+      }, 30_000).unref();
+      try {
+        await Promise.all([app.close(), stopJobs()]);
+        db.close();
+        releaseLock();
+      } finally {
+        clearTimeout(deadline);
+        process.exit(exitCode);
+      }
+    })();
+    return shutdownPromise;
   };
   ctx.services = {
+    isStopping: () => stopping,
     runJob: (name) => runJob(ctx, name),
     jobStatus: () => jobStatus(ctx),
     // Let the HTTP response flush before exiting; the launcher restarts us.

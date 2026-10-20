@@ -84,6 +84,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
+    if (ctx.services.isStopping?.() && !SAFE.has(req.method)) throw new HttpError(503, 'Server is shutting down. Your change was not accepted.', 'shutting_down');
     // API responses are per-user; never let a browser or shared proxy keep them.
     reply.header('cache-control', 'no-store');
     if (!SAFE.has(req.method)) {
