@@ -1,0 +1,276 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.47.16.16243",
+      "templateHash": "7140841337306252903"
+    }
+  },
+  "parameters": {
+    "appName": {
+      "type": "string",
+      "defaultValue": "poketracker",
+      "minLength": 3,
+      "maxLength": 24
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "image": {
+      "type": "string",
+      "metadata": {
+        "description": "Published application image pinned by sha256 digest, including launcher 1.1 or newer."
+      }
+    },
+    "sshPublicKey": {
+      "type": "string",
+      "metadata": {
+        "description": "SSH public key; password authentication is disabled."
+      }
+    },
+    "sshSourceCidr": {
+      "type": "string",
+      "metadata": {
+        "description": "Administrator source CIDR for SSH. Do not use an unrestricted internet range."
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "poketracker"
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B2s"
+    },
+    "dataDiskGiB": {
+      "type": "int",
+      "defaultValue": 64,
+      "minValue": 32
+    }
+  },
+  "variables": {
+    "$fxv#0": "#cloud-config\npackage_update: true\npackages: [docker.io, docker-compose-v2, restic, ca-certificates]\nwrite_files:\n  - path: /usr/local/sbin/poketracker-bootstrap\n    permissions: '0700'\n    content: |\n      #!/bin/bash\n      set -euo pipefail\n      image=$(echo '__IMAGE_B64__' | base64 -d)\n      domain=$(echo '__DOMAIN_B64__' | base64 -d)\n      [[ \"$image\" =~ ^[a-zA-Z0-9./_-]+@sha256:[a-f0-9]{64}$ ]] || { echo 'Application image must be pinned by digest'; exit 1; }\n      device=/dev/disk/azure/scsi1/lun0\n      for attempt in $(seq 1 60); do [ -b \"$device\" ] && break; sleep 2; done\n      [ -b \"$device\" ] || { echo 'Required managed data disk is missing'; exit 1; }\n      if ! blkid \"$device\" >/dev/null; then\n        [ \"$(lsblk -nr -o TYPE \"$device\" | wc -l)\" -eq 1 ] || { echo 'Refusing to format a partitioned disk'; exit 1; }\n        mkfs.ext4 \"$device\"\n      fi\n      [ \"$(blkid -s TYPE -o value \"$device\")\" = ext4 ] || { echo 'Expected an ext4 data disk'; exit 1; }\n      mkdir -p /srv/poketracker /opt/poketracker\n      uuid=$(blkid -s UUID -o value \"$device\")\n      grep -q \"UUID=$uuid \" /etc/fstab || echo \"UUID=$uuid /srv/poketracker ext4 defaults 0 2\" >> /etc/fstab\n      mountpoint -q /srv/poketracker || mount /srv/poketracker\n      mountpoint -q /srv/poketracker\n      chmod 0750 /srv/poketracker\n      mkdir -p /srv/poketracker/data /srv/poketracker/caddy-data /srv/poketracker/caddy-config\n      chown 1000:1000 /srv/poketracker/data\n      printf 'POKETRACKER_IMAGE=%s\\nDOMAIN=%s\\n' \"$image\" \"$domain\" > /opt/poketracker/.env\n      cat > /opt/poketracker/compose.yaml <<'COMPOSE'\n      services:\n        poketracker:\n          image: ${POKETRACKER_IMAGE:?Set a published image digest}\n          restart: unless-stopped\n          stop_grace_period: 40s\n          environment:\n            PUBLIC_URL: https://${DOMAIN}\n            TRUST_PROXY: \"1\"\n          volumes:\n            - type: bind\n              source: /srv/poketracker/data\n              target: /data\n              bind: {create_host_path: false}\n        caddy:\n          image: caddy:2-alpine\n          restart: unless-stopped\n          environment: {DOMAIN: \"${DOMAIN}\"}\n          ports: [\"80:80\", \"443:443\"]\n          volumes:\n            - ./Caddyfile:/etc/caddy/Caddyfile:ro\n            - /srv/poketracker/caddy-data:/data\n            - /srv/poketracker/caddy-config:/config\n      COMPOSE\n      printf '{$DOMAIN} {\\n reverse_proxy poketracker:3000\\n}\\n' > /opt/poketracker/Caddyfile\n      mkdir -p /etc/systemd/system/docker.service.d\n      printf '[Unit]\\nRequiresMountsFor=/srv/poketracker\\n' > /etc/systemd/system/docker.service.d/poketracker-storage.conf\n      systemctl daemon-reload\n      systemctl enable --now docker\n      cd /opt/poketracker\n      docker compose pull\n      docker compose up -d\nruncmd:\n  - [/usr/local/sbin/poketracker-bootstrap]\n"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-nsg', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "https",
+            "properties": {
+              "priority": 100,
+              "access": "Allow",
+              "direction": "Inbound",
+              "protocol": "Tcp",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "443"
+            }
+          },
+          {
+            "name": "acme-http",
+            "properties": {
+              "priority": 110,
+              "access": "Allow",
+              "direction": "Inbound",
+              "protocol": "Tcp",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "80"
+            }
+          },
+          {
+            "name": "admin-ssh",
+            "properties": {
+              "priority": 120,
+              "access": "Allow",
+              "direction": "Inbound",
+              "protocol": "Tcp",
+              "sourceAddressPrefix": "[parameters('sshSourceCidr')]",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "22"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-network', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.43.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "app",
+            "properties": {
+              "addressPrefix": "10.43.1.0/24",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', parameters('appName')))]"
+              }
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', parameters('appName')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-ip', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "dnsSettings": {
+          "domainNameLabel": "[format('{0}-{1}', parameters('appName'), uniqueString(resourceGroup().id))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-nic', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "app",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('appName')))]"
+              },
+              "subnet": {
+                "id": "[format('{0}/subnets/app', resourceId('Microsoft.Network/virtualNetworks', format('{0}-network', parameters('appName'))))]"
+              }
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('appName')))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-network', parameters('appName')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Compute/disks",
+      "apiVersion": "2024-03-02",
+      "name": "[format('{0}-data', parameters('appName'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "StandardSSD_LRS"
+      },
+      "properties": {
+        "creationData": {
+          "createOption": "Empty"
+        },
+        "diskSizeGB": "[parameters('dataDiskGiB')]"
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2024-07-01",
+      "name": "[parameters('appName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "ubuntu-24_04-lts",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS"
+            },
+            "deleteOption": "Delete"
+          },
+          "dataDisks": [
+            {
+              "lun": 0,
+              "name": "[format('{0}-data', parameters('appName'))]",
+              "createOption": "Attach",
+              "managedDisk": {
+                "id": "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('appName')))]"
+              },
+              "caching": "None",
+              "deleteOption": "Detach"
+            }
+          ]
+        },
+        "osProfile": {
+          "computerName": "[parameters('appName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "customData": "[base64(replace(replace(variables('$fxv#0'), '__IMAGE_B64__', base64(parameters('image'))), '__DOMAIN_B64__', base64(reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('appName'))), '2024-05-01').dnsSettings.fqdn)))]",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "[format('/home/{0}/.ssh/authorized_keys', parameters('adminUsername'))]",
+                  "keyData": "[parameters('sshPublicKey')]"
+                }
+              ]
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', parameters('appName')))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('appName')))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('appName')))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', parameters('appName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "url": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('appName'))), '2024-05-01').dnsSettings.fqdn)]"
+    },
+    "dataDiskResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/disks', format('{0}-data', parameters('appName')))]"
+    },
+    "vmResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('appName'))]"
+    }
+  }
+}
