@@ -108,6 +108,7 @@ export interface ImportResult {
 export interface SystemStatus {
   version: string;
   lastPriceSync: string | null;
+  priceSyncPartial?: boolean;
   /** Epoch ms of the last FX rate fetch, or null if rates have never been loaded. */
   fxAt: number | null;
   /** This server is running DEMO_MODE, so mutations are rejected and reset nightly. */

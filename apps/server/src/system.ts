@@ -33,7 +33,9 @@ export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
     const u = requireUser(req);
     const lastPriceSync = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'last_price_sync'")?.value ?? null;
     const fx = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'fx'");
-    const base = { version: ctx.config.version, lastPriceSync, fxAt: fx ? (JSON.parse(fx.value) as { at: number }).at : null, demoMode: ctx.config.demoMode, catalogDegraded: !isHealthy('tcgdex') };
+    const priceResult = ctx.db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'last_price_sync_result'");
+    const priceSyncPartial = priceResult ? (JSON.parse(priceResult.value) as { missing: number }).missing > 0 : false;
+    const base = { priceSyncPartial, version: ctx.config.version, lastPriceSync, fxAt: fx ? (JSON.parse(fx.value) as { at: number }).at : null, demoMode: ctx.config.demoMode, catalogDegraded: !isHealthy('tcgdex') };
     // Members can't act on updates, so don't show them a nag they can't resolve.
     if (u.role === 'member') return base;
     return { ...base, updateAvailable: updateAvailable(ctx), latest: readUpdateState(ctx).latest?.version ?? null };

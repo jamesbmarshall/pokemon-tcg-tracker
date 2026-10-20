@@ -187,7 +187,7 @@ const newId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto
 function merge(prev: CardSnapshot | undefined, next: CardSnapshot): CardSnapshot {
   if (prev?.printingCoverage === 'complete' && next.printingCoverage !== 'complete' && !next.pricingComplete) next = { ...next, variants: prev.variants, printings: prev.printings, printingVersion: prev.printingVersion, printingContext: prev.printingContext, printingProfile: prev.printingProfile, printingCoverage: prev.printingCoverage };
   if (!prev || next.pricingComplete || Object.keys(next.prices).length) return next;
-  return { ...next, prices: prev.prices, tcgplayerUrl: prev.tcgplayerUrl, cardmarketUrl: prev.cardmarketUrl };
+  return { ...next, prices: prev.prices, tcgplayerUrl: prev.tcgplayerUrl, cardmarketUrl: prev.cardmarketUrl, tcgplayerUpdatedAt: prev.tcgplayerUpdatedAt, cardmarketUpdatedAt: prev.cardmarketUpdatedAt, pricechartingUpdatedAt: prev.pricechartingUpdatedAt };
 }
 
 const EMPTY = {

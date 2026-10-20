@@ -269,6 +269,7 @@ export default function Layout() {
 
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
         <CollectionSwitcher className="mb-5 lg:hidden" />
+        {status?.priceSyncPartial && <p role="status" className="mb-3 text-sm text-loss">The last price refresh was incomplete. Some quotes retain their previous source date; review valuation coverage before relying on the total.</p>}
         {status?.catalogDegraded && (
           <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-loss/30 bg-loss/5 px-3 py-2 text-sm text-loss">
             <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />

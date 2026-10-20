@@ -1,3 +1,4 @@
+import ValuationCoverage from '../components/ValuationCoverage';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -189,7 +190,8 @@ export default function HomePage() {
             <p className="font-display text-[3.25rem] font-medium leading-none tracking-tight tabular sm:text-[4.25rem]">{money(stats.valueUsd)}</p>
             <Delta now={stats.valueUsd} then={then} money={(n) => money(n)} />
           </div>
-          <p className="mt-2 text-xs text-muted">Market prices, converted at today's rate</p>
+          <p className="mt-2 text-xs text-muted">Market quotes and owner valuations, converted at today's rate</p>
+          <ValuationCoverage />
           {stats.cost.costed > 0 && (
             <p className="mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted">
               <span>
