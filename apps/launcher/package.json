@@ -1,14 +1,18 @@
 {
   "name": "@poketracker/launcher",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",
-  "description": "Supervises the PokéTracker server: applies staged updates, health-gates them and rolls back failures.",
-  "bin": { "poketracker-launcher": "launcher.mjs" },
+  "description": "Supervises the Pok\u00e9Tracker server: applies staged updates, health-gates them and rolls back failures.",
+  "bin": {
+    "poketracker-launcher": "launcher.mjs"
+  },
   "scripts": {
     "start": "node launcher.mjs",
     "test": "node --test launcher.test.mjs"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  }
 }

@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import { chownSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const LAUNCHER_VERSION = '1.0.0';
+export const LAUNCHER_VERSION = '1.1.0';
 // Must match RESTART_CODE in apps/server/src/updater.ts. 75 is EX_TEMPFAIL: "try again".
 const RESTART_CODE = 75;
 
@@ -116,10 +116,16 @@ function dropPrivileges() {
 }
 
 /** Where a version's files live, or undefined if we don't have it. */
+export function supportsWriteProtocol(manifest, floor) {
+  return Number.isSafeInteger(floor) && floor >= 0 && Number.isSafeInteger(manifest?.writeProtocol ?? 0) && (manifest?.writeProtocol ?? 0) >= floor;
+}
 function dirFor(version) {
   if (!version) return undefined;
-  if (version === imageVersion()) return BUNDLE_DIR;
-  const dir = join(APP_DIR, version);
+  const dir = version === imageVersion() ? BUNDLE_DIR : join(APP_DIR, version);
+  const floorFile = join(APP_DIR, 'write-protocol-floor.json');
+  const floor = existsSync(floorFile) ? readJson(floorFile)?.protocol : 0;
+  if (!Number.isSafeInteger(floor) || floor < 0) throw new Error('Invalid write-protocol floor; refusing unsafe rollback');
+  if (!supportsWriteProtocol(readJson(join(dir, 'manifest.json')), floor)) return undefined;
   return existsSync(join(dir, 'server.mjs')) ? dir : undefined;
 }
 
@@ -265,6 +271,7 @@ async function main() {
         await stop(proc, exited);
         // Only updates come with a backup. A failed image or rollback trial leaves the DB as is,
         // which is safe only because migrations are additive.
+        if (!dirFor(trial.from)) throw new Error('Rollback target cannot read the active write protocol; preserving the database and refusing rollback');
         const restored = trial.kind === 'update' ? restoreDb(trial.backup) : false;
         writeJson(STATE, {
           image: imageVersion(),
