@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useId, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import NativeDialog from './NativeDialog';
 import { Check, Copy, X } from 'lucide-react';
 import { useSubmit } from './formUtils';
 
@@ -10,7 +10,7 @@ export function Field({ label, hint, error, ...input }: { label: string; hint?: 
       <label htmlFor={id} className="mb-1.5 block text-sm font-medium">
         {label}
       </label>
-      <input id={id} className="input" aria-invalid={!!error || undefined} aria-describedby={hint || error ? `${id}-hint` : undefined} {...input} />
+      <input id={id} className="input" data-autofocus={input.autoFocus || undefined} aria-invalid={!!error || undefined} aria-describedby={hint || error ? `${id}-hint` : undefined} {...input} />
       {(error || hint) && (
         <p id={`${id}-hint`} className={`mt-1.5 text-xs ${error ? 'text-loss' : 'text-faint'}`}>
           {error || hint}
@@ -62,19 +62,9 @@ export function CopyField({ value, label = 'Link' }: { value: string; label?: st
 }
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  useEffect(() => {
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = overflow;
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
-  return createPortal(
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-onyx/45 p-4" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} className={`max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-surface shadow-pop ${wide ? 'max-w-xl' : 'max-w-md'} p-6`} onMouseDown={(e) => e.stopPropagation()}>
+  return (
+    <NativeDialog label={title} onClose={onClose}>
+      <div data-dialog-content className={`max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-surface shadow-pop ${wide ? 'max-w-xl' : 'max-w-md'} p-6`}>
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 className="font-display text-lg font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:text-fg" aria-label="Close">
@@ -83,8 +73,7 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
         </div>
         {children}
       </div>
-    </div>,
-    document.body,
+    </NativeDialog>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
+import NativeDialog from '../components/NativeDialog';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ImagePlus, Package, PackageOpen, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
@@ -204,12 +204,7 @@ function SealedForm({ item, onClose }: { item?: SealedItem; onClose: () => void 
   const previews = useMemo(() => newFiles.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })), [newFiles]);
   useEffect(() => () => previews.forEach((p) => URL.revokeObjectURL(p.url)), [previews]);
 
-  useEffect(() => {
-    first.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -244,12 +239,9 @@ function SealedForm({ item, onClose }: { item?: SealedItem; onClose: () => void 
     }
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-onyx/45 sm:items-center sm:p-4" onMouseDown={onClose}>
+  return (
+    <NativeDialog onClose={onClose} labelledBy={`${uid}-title`} initialFocus={first} className="!items-end !p-0 sm:!items-center sm:!p-4">
       <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${uid}-title`}
         onSubmit={submit}
         onMouseDown={(e) => e.stopPropagation()}
         className="flex max-h-[92vh] w-full max-w-lg animate-rise flex-col overflow-hidden rounded-t-xl border border-line-strong bg-surface shadow-pop sm:rounded-xl"
@@ -391,8 +383,7 @@ function SealedForm({ item, onClose }: { item?: SealedItem; onClose: () => void 
           </button>
         </footer>
       </form>
-    </div>,
-    document.body,
+    </NativeDialog>
   );
 }
 

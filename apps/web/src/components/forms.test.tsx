@@ -8,7 +8,7 @@ describe('Modal', () => {
     document.body.style.overflow = 'auto';
     const { unmount } = render(<Modal title="Share wishlist" onClose={() => {}}>Long content</Modal>);
     expect(document.body.style.overflow).toBe('hidden');
-    expect(screen.getByRole('dialog')).toHaveClass('max-h-[calc(100dvh-2rem)]', 'overflow-y-auto', 'overscroll-contain');
+    expect(screen.getByRole('dialog').querySelector('[data-dialog-content]')).toHaveClass('max-h-[calc(100dvh-2rem)]', 'overflow-y-auto', 'overscroll-contain');
     unmount();
     expect(document.body.style.overflow).toBe('auto');
     document.body.style.overflow = '';

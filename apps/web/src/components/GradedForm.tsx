@@ -1,6 +1,6 @@
 import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
+import NativeDialog from './NativeDialog';
 import { ImagePlus, Search, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import type { GradedCopy, GradingCompany, PokemonCard, Subgrades } from '../api/types';
@@ -73,12 +73,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
     enabled: pcConfigured === true && debouncedPcQuery.trim().length > 1,
   });
 
-  useEffect(() => {
-    first.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+
 
   const pickCompany = (c: GradingCompany) => {
     setCompany(c);
@@ -134,12 +129,9 @@ export default function GradedForm({ card, copy, onClose }: Props) {
   const field = 'block text-[11px] font-medium uppercase tracking-[0.12em] text-faint';
 
   // Portalled so ancestor transforms/overflow (panels, page animations) can't clip the overlay.
-  return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-onyx/45 sm:items-center sm:p-4" onMouseDown={onClose}>
+  return (
+    <NativeDialog onClose={onClose} labelledBy={`${uid}-title`} initialFocus={first} className="!items-end !p-0 sm:!items-center sm:!p-4">
       <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${uid}-title`}
         onSubmit={submit}
         onMouseDown={(e) => e.stopPropagation()}
         className="flex max-h-[92vh] w-full max-w-lg animate-rise flex-col overflow-hidden rounded-t-xl border border-line-strong bg-surface shadow-pop sm:rounded-xl"
@@ -372,8 +364,7 @@ export default function GradedForm({ card, copy, onClose }: Props) {
           </button>
         </footer>
       </form>
-    </div>,
-    document.body,
+    </NativeDialog>
   );
 }
 

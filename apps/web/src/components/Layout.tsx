@@ -157,6 +157,7 @@ export default function Layout() {
   // The layout persists across routes, so the browser won't reset scroll on navigation by itself.
   useEffect(() => {
     window.scrollTo(0, 0);
+    document.getElementById('main-content')?.focus({ preventScroll: true });
   }, [pathname]);
 
   useEffect(() => {
@@ -178,6 +179,7 @@ export default function Layout() {
 
   return (
     <div className="min-h-dvh lg:pl-64">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded focus:bg-surface focus:p-3">Skip to main content</a>
       <DemoBanner />
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-line bg-surface px-4 py-5 lg:flex">
@@ -265,7 +267,7 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
         <CollectionSwitcher className="mb-5 lg:hidden" />
         {status?.catalogDegraded && (
           <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-loss/30 bg-loss/5 px-3 py-2 text-sm text-loss">

@@ -1,5 +1,5 @@
 import { printingLabel } from '@poketracker/shared/printings';
-import { createPortal } from 'react-dom';
+import NativeDialog from './NativeDialog';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Award, Copy, ExternalLink, ImageIcon, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { GradedCopy, PokemonCard } from '../api/types';
@@ -202,7 +202,6 @@ function Slab({ card, copy: g, onEdit }: { card: PokemonCard; copy: GradedCopy; 
 function Lightbox({ photos, index, onIndex, onClose, title }: { photos: { id: string; url: string }[]; index: number; onIndex: (i: number) => void; onClose: () => void; title: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowRight') onIndex((index + 1) % photos.length);
       if (e.key === 'ArrowLeft') onIndex((index - 1 + photos.length) % photos.length);
     };
@@ -210,8 +209,8 @@ function Lightbox({ photos, index, onIndex, onClose, title }: { photos: { id: st
     return () => window.removeEventListener('keydown', onKey);
   }, [index, photos.length, onIndex, onClose]);
 
-  return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-black/90 p-4" onClick={onClose}>
+  return (
+    <NativeDialog label={title} onClose={onClose} dark className="flex-col gap-4 text-paper">
       <button onClick={onClose} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Close">
         <X size={16} />
       </button>
@@ -229,7 +228,6 @@ function Lightbox({ photos, index, onIndex, onClose, title }: { photos: { id: st
           ))}
         </div>
       )}
-    </div>,
-    document.body,
+    </NativeDialog>
   );
 }

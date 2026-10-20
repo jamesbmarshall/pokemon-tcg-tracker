@@ -21,6 +21,10 @@ class MockIntersectionObserver {
 }
 
 function installBrowserStubs() {
+  // jsdom does not implement native modal top-layer behavior. Real browser tests cover
+  // inert background content and Tab containment; this shim only provides the DOM API.
+  if (!HTMLDialogElement.prototype.showModal) HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  if (!HTMLDialogElement.prototype.close) HTMLDialogElement.prototype.close = function () { this.open = false; };
   if (!window.matchMedia) {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
