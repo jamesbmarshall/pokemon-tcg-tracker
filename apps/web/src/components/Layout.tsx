@@ -270,13 +270,13 @@ export default function Layout() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav data-mobile-nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <nav data-mobile-nav className="fixed inset-x-0 bottom-0 z-40 grid auto-cols-fr grid-flow-col border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
-            className={({ isActive }) => `flex h-16 flex-col items-center justify-center gap-1 text-[10.5px] ${isActive ? 'font-semibold text-accent' : 'font-medium text-muted'}`}
+            className={({ isActive }) => `flex h-16 min-w-0 flex-col items-center justify-center gap-1 whitespace-nowrap text-[9px] min-[400px]:text-[10.5px] ${isActive ? 'font-semibold text-accent' : 'font-medium text-muted'}`}
           >
             <Icon size={20} />
             {label}
