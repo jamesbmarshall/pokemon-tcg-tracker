@@ -1,0 +1,7 @@
+[Unit]
+Description=Weekly Poketracker recovery rehearsal
+[Timer]
+OnCalendar=Sun *-*-* 05:10:00
+Persistent=true
+[Install]
+WantedBy=timers.target

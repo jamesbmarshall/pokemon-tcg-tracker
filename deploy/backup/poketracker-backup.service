@@ -1,0 +1,11 @@
+[Unit]
+Description=Encrypted off-host Poketracker backup
+Requires=docker.service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/poketracker/backup/backup.sh
+TimeoutStartSec=25min
+UMask=0077

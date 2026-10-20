@@ -1,0 +1,9 @@
+[Unit]
+Description=Verify encrypted backups and rehearse an isolated restore
+Requires=docker.service
+After=network-online.target docker.service
+[Service]
+Type=oneshot
+ExecStart=/opt/poketracker/backup/verify.sh
+TimeoutStartSec=2h
+UMask=0077

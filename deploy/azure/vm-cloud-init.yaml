@@ -2,6 +2,34 @@
 package_update: true
 packages: [docker.io, docker-compose-v2, restic, ca-certificates]
 write_files:
+  - path: /opt/poketracker/backup/backup.sh
+    permissions: '0700'
+    encoding: b64
+    content: '__BACKUP_FILE_0__'
+  - path: /opt/poketracker/backup/verify.sh
+    permissions: '0700'
+    encoding: b64
+    content: '__BACKUP_FILE_1__'
+  - path: /opt/poketracker/backup/status.py
+    permissions: '0700'
+    encoding: b64
+    content: '__BACKUP_FILE_2__'
+  - path: /etc/systemd/system/poketracker-backup.service
+    permissions: '0644'
+    encoding: b64
+    content: '__BACKUP_FILE_3__'
+  - path: /etc/systemd/system/poketracker-backup.timer
+    permissions: '0644'
+    encoding: b64
+    content: '__BACKUP_FILE_4__'
+  - path: /etc/systemd/system/poketracker-verify.service
+    permissions: '0644'
+    encoding: b64
+    content: '__BACKUP_FILE_5__'
+  - path: /etc/systemd/system/poketracker-verify.timer
+    permissions: '0644'
+    encoding: b64
+    content: '__BACKUP_FILE_6__'
   - path: /usr/local/sbin/poketracker-bootstrap
     permissions: '0700'
     content: |

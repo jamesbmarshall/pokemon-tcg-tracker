@@ -1,0 +1,7 @@
+[Unit]
+Description=Keep Poketracker recovery points within one hour
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+[Install]
+WantedBy=timers.target

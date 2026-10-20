@@ -49,7 +49,17 @@ resource disk 'Microsoft.Compute/disks@2024-03-02' = {
   sku: { name: 'StandardSSD_LRS' }
   properties: { creationData: { createOption: 'Empty' }, diskSizeGB: dataDiskGiB }
 }
-var init = replace(replace(loadTextContent('vm-cloud-init.yaml'), '__IMAGE_B64__', base64(image)), '__DOMAIN_B64__', base64(ip.properties.dnsSettings.fqdn))
+var initBase = replace(replace(loadTextContent('vm-cloud-init.yaml'), '__IMAGE_B64__', base64(image)), '__DOMAIN_B64__', base64(ip.properties.dnsSettings.fqdn))
+var backupFiles = [
+  { token: '__BACKUP_FILE_0__', content: base64(loadTextContent('../backup/backup.sh')) }
+  { token: '__BACKUP_FILE_1__', content: base64(loadTextContent('../backup/verify.sh')) }
+  { token: '__BACKUP_FILE_2__', content: base64(loadTextContent('../backup/status.py')) }
+  { token: '__BACKUP_FILE_3__', content: base64(loadTextContent('../backup/poketracker-backup.service')) }
+  { token: '__BACKUP_FILE_4__', content: base64(loadTextContent('../backup/poketracker-backup.timer')) }
+  { token: '__BACKUP_FILE_5__', content: base64(loadTextContent('../backup/poketracker-verify.service')) }
+  { token: '__BACKUP_FILE_6__', content: base64(loadTextContent('../backup/poketracker-verify.timer')) }
+]
+var init = reduce(backupFiles, initBase, (text, file) => replace(text, file.token, file.content))
 resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
   name: appName
   location: location
