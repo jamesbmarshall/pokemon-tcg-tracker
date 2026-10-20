@@ -5,6 +5,28 @@ beforeEach(async () => { vi.stubGlobal('fetch', vi.fn(async () => new Response('
 afterEach(async () => { await s.close(); vi.unstubAllGlobals(); });
 
 describe('guarded collection edits', () => {
+  it.each([
+    ['PUT', '/notes/sv1-001', { text: 'note' }],
+    ['PUT', '/wishlist/sv1-001', {}],
+    ['PUT', '/graded/slab', { cardId: 'sv1-001', variant: 'normal', company: 'PSA', grade: '10' }],
+    ['PUT', '/sealed/box', { name: 'Box', productType: 'booster_box', quantity: 1 }],
+    ['POST', '/lists', { name: 'Deck', kind: 'deck' }],
+    ['POST', '/import', { version: 6, lists: [{ id: 'test-list', name: 'Import', cards: [] }] }],
+    ['POST', '/clear', {}],
+  ])('rejects stale %s %s mutations', async (method, suffix, body) => {
+    const c = await setupOwner(s.app); const id = await personalId(c);
+    await c.put(`/api/collections/${id}/notes/sv1-001`, { text: 'Keep this' });
+    const response = await c.req(String(method), `/api/collections/${id}${suffix}`, body, { 'if-match': '"0"' });
+    expect(response.statusCode).toBe(409);
+    expect((await c.get(`/api/collections/${id}/state`)).json().notes[0].text).toBe('Keep this');
+  });
+
+  it('does not accept provider-owned price fields through ordinary edits', async () => {
+    const c = await setupOwner(s.app); const id = await personalId(c);
+    const response = await c.put(`/api/collections/${id}/graded/slab`, { cardId: 'sv1-001', variant: 'normal', company: 'PSA', grade: '10', pcPrice: 999, pcProductId: 'fake' });
+    expect(response.statusCode).toBe(200);
+    expect((await c.get(`/api/collections/${id}/state`)).json().graded[0]).not.toHaveProperty('pcPrice');
+  });
   it('preserves concurrent increments and applies a retried increment once', async () => {
     const c = await setupOwner(s.app); const id = await personalId(c);
     await c.put(`/api/collections/${id}/entries`, { entries: [{ cardId: 'sv1-001', variant: 'normal', quantity: 1 }] });

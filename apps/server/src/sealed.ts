@@ -1,3 +1,5 @@
+import { mutate } from './mutations.ts';
+import { sha256 } from './security.ts';
 /**
  * Sealed product tracking: booster boxes, ETBs and the like. Unlike single cards these aren't
  * catalogued upstream, so each item is free-form data the owner enters themselves, optionally
@@ -186,17 +188,22 @@ export function sealedRoutes(app: FastifyInstance, ctx: Ctx) {
     return readSealed(ctx, id);
   });
 
-  app.put('/api/collections/:id/sealed/:sid', async (req) => {
+  app.put('/api/collections/:id/sealed/:sid', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const { sid } = req.params as { sid: string };
     const item = cleanSealed({ ...(req.body as object), id: sid });
     if (!item || item.id !== sid) throw bad('That sealed item is invalid');
+    const prior = readSealed(ctx, id).find((s) => s.id === sid);
+    item.pcProductId = prior?.pcProductId; item.pcPrice = prior?.pcPrice; item.pcUpdatedAt = prior?.pcUpdatedAt;
     putSealed(ctx, id, item);
     audit(ctx, req, 'sealed.saved', id, { sealedId: sid });
     return item;
+    });
   });
 
-  app.delete('/api/collections/:id/sealed/:sid', async (req) => {
+  app.delete('/api/collections/:id/sealed/:sid', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const { sid } = req.params as { sid: string };
     const photos = ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos WHERE collection_id = ? AND sealed_id = ?', id, sid).map((p) => p.id);
@@ -205,16 +212,19 @@ export function sealedRoutes(app: FastifyInstance, ctx: Ctx) {
     deleteSealedPhotoFiles(ctx, photos);
     audit(ctx, req, 'sealed.deleted', id, { sealedId: sid });
     return { ok: true };
+    });
   });
 
   /** Marks an item opened (excluding it from value) without deleting its history. */
-  app.post('/api/collections/:id/sealed/:sid/open', async (req) => {
+  app.post('/api/collections/:id/sealed/:sid/open', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const { sid } = req.params as { sid: string };
     const row = ctx.db.get<SealedRow>('SELECT * FROM sealed WHERE collection_id = ? AND id = ?', id, sid);
     if (!row) throw notFound('Sealed item not found');
     ctx.db.run("UPDATE sealed SET status = 'opened', opened_at = ? WHERE collection_id = ? AND id = ?", now(), id, sid);
     return rowToSealed({ ...row, status: 'opened', opened_at: now() });
+    });
   });
 
   app.get('/api/collections/:id/sealed/:sid/photos', async (req) => {
@@ -222,13 +232,16 @@ export function sealedRoutes(app: FastifyInstance, ctx: Ctx) {
     return sealedPhotosFor(ctx, id, (req.params as { sid: string }).sid);
   });
 
-  app.post('/api/collections/:id/sealed/:sid/photos', async (req) => {
-    const { id } = need(ctx, req, 'write');
-    const { sid } = req.params as { sid: string };
-    if (!ctx.db.get('SELECT 1 FROM sealed WHERE collection_id = ? AND id = ?', id, sid)) throw notFound('Save the sealed item first');
-    const out = [];
-    for await (const part of req.files()) out.push(saveSealedPhoto(ctx, id, sid, await part.toBuffer()));
-    return out;
+  app.post('/api/collections/:id/sealed/:sid/photos', async (req, reply) => {
+    need(ctx, req, 'write');
+    const files: Buffer[] = [];
+    for await (const part of req.files()) files.push(await part.toBuffer());
+    return mutate(ctx, req, reply, () => {
+      const { id } = need(ctx, req, 'write');
+      const { sid } = req.params as { sid: string };
+      if (!ctx.db.get('SELECT 1 FROM sealed WHERE collection_id = ? AND id = ?', id, sid)) throw notFound('Save the sealed item first');
+      return files.map((buf) => saveSealedPhoto(ctx, id, sid, buf));
+    }, { fingerprint: sha256(JSON.stringify(files.map((buf) => sha256(buf)))) });
   });
 
   app.get('/api/collections/:id/photos/sealed/:pid', async (req, reply) => {
@@ -238,26 +251,30 @@ export function sealedRoutes(app: FastifyInstance, ctx: Ctx) {
     return reply.send(stream);
   });
 
-  app.delete('/api/collections/:id/photos/sealed/:pid', async (req) => {
+  app.delete('/api/collections/:id/photos/sealed/:pid', async (req, reply) => {
+    return mutate(ctx, req, reply, () => {
     const { id } = need(ctx, req, 'write');
     const { pid } = req.params as { pid: string };
     const res = ctx.db.run('DELETE FROM sealed_photos WHERE id = ? AND collection_id = ?', pid, id);
     if (res.changes) deleteSealedPhotoFiles(ctx, [pid]);
     return { ok: true };
+    });
   });
 
   /** Links a sealed item to a PriceCharting product and fetches its price straight away. */
-  app.post('/api/collections/:id/sealed/:sid/link', async (req) => {
-    const { id } = need(ctx, req, 'write');
-    const { sid } = req.params as { sid: string };
-    const row = ctx.db.get<SealedRow>('SELECT * FROM sealed WHERE collection_id = ? AND id = ?', id, sid);
-    if (!row) throw notFound('Sealed item not found');
+  app.post('/api/collections/:id/sealed/:sid/link', async (req, reply) => {
+    need(ctx, req, 'write');
     const pid = str((req.body as { pcProductId?: unknown })?.pcProductId, 64);
     if (!pid) throw bad('Pick a product to link');
     const product = await pcProduct(ctx, pid);
-    const price = pcSealedPrice(product);
-    const at = now();
-    ctx.db.run('UPDATE sealed SET pc_product_id = ?, pc_price = ?, pc_updated_at = ? WHERE collection_id = ? AND id = ?', pid, price ?? null, at, id, sid);
-    return rowToSealed({ ...row, pc_product_id: pid, pc_price: price ?? null, pc_updated_at: at });
+    return mutate(ctx, req, reply, () => {
+      const { id } = need(ctx, req, 'write');
+      const { sid } = req.params as { sid: string };
+      const row = ctx.db.get<SealedRow>('SELECT * FROM sealed WHERE collection_id = ? AND id = ?', id, sid);
+      if (!row) throw notFound('Sealed item not found');
+      const price = pcSealedPrice(product); const at = now();
+      ctx.db.run('UPDATE sealed SET pc_product_id = ?, pc_price = ?, pc_updated_at = ? WHERE collection_id = ? AND id = ?', pid, price ?? null, at, id, sid);
+      return rowToSealed({ ...row, pc_product_id: pid, pc_price: price ?? null, pc_updated_at: at });
+    });
   });
 }

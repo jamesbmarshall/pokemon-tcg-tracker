@@ -1,4 +1,4 @@
-import { acceptCollectionRevision, resetCollectionRevisions } from '../api/concurrency';
+import { acceptCollectionRevision, collectionRevision, resetCollectionRevisions } from '../api/concurrency';
 /**
  * Client-side cache of the active collection, with optimistic writes.
  *
@@ -397,9 +397,10 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const id = get().collectionId;
       if (!id) return get().load();
       if (get().pendingSaves) return;
+      const revision = collectionRevision(id);
       const data = await getBackend().state(id);
       // Discard if the user switched collection while this was in flight.
-      if (generation === loadSeq && id === get().collectionId && !get().pendingSaves) apply(data, id);
+      if (generation === loadSeq && id === get().collectionId && !get().pendingSaves && collectionRevision(id) === revision) apply(data, id);
     },
 
     show: (data) => {

@@ -159,6 +159,21 @@ export default function Layout() {
     window.scrollTo(0, 0);
   }, [pathname]);
 
+  useEffect(() => {
+    const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('pt:collections') : undefined;
+    const refresh = () => {
+      const state = useCollectionStore.getState();
+      const editing = document.querySelector('dialog[open], [role="dialog"]') || document.activeElement?.matches('input,textarea,select,[contenteditable]');
+      if (state.collectionId && !state.readOnly && !state.pendingSaves && !state.saveError && !editing && document.visibilityState !== 'hidden') void state.refresh().catch(() => undefined);
+    };
+    const saved = (event: Event) => channel?.postMessage((event as CustomEvent<string>).detail);
+    if (channel) channel.onmessage = (event: MessageEvent<string>) => { if (event.data === useCollectionStore.getState().collectionId) refresh(); };
+    window.addEventListener('pt:collection-saved', saved);
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 30_000);
+    return () => { channel?.close(); window.clearInterval(timer); window.removeEventListener('pt:collection-saved', saved); window.removeEventListener('focus', refresh); };
+  }, []);
+
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
   return (
@@ -261,6 +276,7 @@ export default function Layout() {
         {(pendingSaves > 0 || saveError || lastSavedAt) && (
           <div role={saveError ? 'alert' : 'status'} className={`mb-3 text-sm ${saveError ? 'text-loss' : 'text-muted'}`}>
             {pendingSaves > 0 ? `Saving ${pendingSaves} change${pendingSaves === 1 ? '' : 's'}…` : saveError ? `Could not save: ${saveError}. Review your change before trying again.` : 'Saved'}
+            {saveError && !pendingSaves && <button className="btn btn-ghost ml-2" onClick={() => void useCollectionStore.getState().refresh().then(() => useCollectionStore.setState({ saveError: null }))}>Reload saved collection</button>}
           </div>
         )}
         <Outlet />

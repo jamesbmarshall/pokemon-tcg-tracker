@@ -128,7 +128,7 @@ export const collectionsApi = {
   create: (name: string) => api<CollectionSummary>('/api/collections', { method: 'POST', body: { name } }),
   rename: (id: string, name: string) => api(`/api/collections/${enc(id)}`, { method: 'PATCH', body: { name } }),
   remove: (id: string) => api(`/api/collections/${enc(id)}`, { method: 'DELETE' }),
-  members: (id: string) => api<Member[]>(`/api/collections/${enc(id)}/members`),
+  members: (id: string) => api<Member[]>(`/api/collections/${enc(id)}/members`, { acceptRevision: true }),
   setMember: (id: string, userId: string, role: Member['role']) => api(`/api/collections/${enc(id)}/members/${enc(userId)}`, { method: 'PUT', body: { role } }),
   removeMember: (id: string, userId: string) => api(`/api/collections/${enc(id)}/members/${enc(userId)}`, { method: 'DELETE' }),
 };

@@ -40,8 +40,9 @@ export function mutate<T>(ctx: Ctx, req: FastifyRequest, reply: FastifyReply, fn
     if (!collection && !deletedReplay) throw new HttpError(404, 'Collection not found', 'not_found');
     if (collection && collection.owner_id !== user.id) {
       const member = ctx.db.get<{ role: string }>('SELECT role FROM collection_members WHERE collection_id = ? AND user_id = ?', id, user.id);
-      if (!member) throw new HttpError(404, 'Collection not found', 'not_found');
-      if (member.role !== 'editor') throw new HttpError(403, 'You cannot edit this collection', 'forbidden');
+      const selfLeave = req.method === 'DELETE' && req.routeOptions.url === '/api/collections/:id/members/:userId' && (req.params as { userId?: string }).userId === user.id;
+      if (!member && !(selfLeave && receipt)) throw new HttpError(404, 'Collection not found', 'not_found');
+      if (member?.role !== 'editor' && !selfLeave) throw new HttpError(403, 'You cannot edit this collection', 'forbidden');
     }
     if (receipt) {
       if (receipt.digest !== digest) throw new HttpError(409, 'This mutation key was already used for a different change.', 'mutation_key_reused');

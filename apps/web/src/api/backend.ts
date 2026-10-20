@@ -1,3 +1,4 @@
+import { acceptCollectionRevision, collectionRevision } from './concurrency';
 /**
  * Persistence contract for the collection store, plus the default HTTP implementation.
  *
@@ -52,6 +53,7 @@ export interface DeckSettings {
 
 /** One entry in the collection switcher: the user's personal collection or one shared with them. */
 export interface CollectionSummary {
+  revision?: number;
   id: string;
   name: string;
   kind: 'personal' | 'shared';
@@ -212,7 +214,11 @@ const enc = encodeURIComponent;
 const c = (id: string) => `/api/collections/${enc(id)}`;
 
 export const httpBackend: Backend = {
-  collections: () => api('/api/collections'),
+  collections: async () => {
+    const rows = await api<CollectionSummary[]>('/api/collections');
+    for (const row of rows) if (collectionRevision(row.id) === undefined) acceptCollectionRevision(row.id, row.revision);
+    return rows;
+  },
   state: (id) => api(`${c(id)}/state`),
   adjustEntry: (id, cardId, variant, delta) => api(`${c(id)}/entries/adjust`, { method: 'POST', body: { cardId, variant, delta } }),
   putEntries: async (id, entries) => void (await api(`${c(id)}/entries`, { method: 'PUT', body: { entries } })),
