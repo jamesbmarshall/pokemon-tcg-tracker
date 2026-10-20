@@ -31,6 +31,9 @@ export const ACTIVE_COLLECTION_KEY = 'poketracker-collection';
 
 interface CollectionState {
   isLoaded: boolean;
+  pendingSaves: number;
+  saveError: string | null;
+  lastSavedAt: string | null;
   /** Set when the collection couldn't be loaded */
   loadError: string | null;
   collectionId: string | null;
@@ -215,7 +218,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
   // Debounced so a burst of quantity clicks records one value point, not one per click.
   const scheduleValue = () => {
     clearTimeout(valueTimer);
-    valueTimer = setTimeout(() => void get().recordValue(), 1500);
+    const generation = loadSeq;
+    valueTimer = setTimeout(() => { if (generation === loadSeq) void get().recordValue(); }, 1500);
   };
   const commitEntries = (entries: Map<string, CollectionEntry>) => {
     const byCard = indexEntries(entries);
@@ -237,25 +241,49 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     return !readOnly && collectionId ? collectionId : undefined;
   };
 
-  /**
-   * Applies an optimistic change, persists it, and reverts if the server refuses.
-   *
-   * Rollback restores a snapshot of all editable state taken just before `apply`, then rebuilds
-   * the derived indexes from it. Callers prepare their new Map/array before calling, never
-   * mutating the current one, so the snapshot stays intact. Returns false on failure, after the
-   * user has already been shown an error toast.
-   */
+  // The queue serializes persistence, while the UI remains optimistic. Rollback is scoped
+  // to fields changed by this operation and never rewinds a newer operation's value.
+  let writes: Promise<unknown> = Promise.resolve();
   async function persist(apply: () => void, save: () => Promise<unknown>) {
+    const generation = loadSeq;
+    const cid = get().collectionId;
     const before = { entries: get().entries, graded: get().graded, sealed: get().sealed, wishlist: get().wishlist, notes: get().notes, lists: get().lists };
     apply();
+    const after = { entries: get().entries, graded: get().graded, sealed: get().sealed, wishlist: get().wishlist, notes: get().notes, lists: get().lists };
+    const current = () => generation === loadSeq && cid === get().collectionId;
+    set((s) => ({ pendingSaves: s.pendingSaves + 1, saveError: null }));
+    const pending = writes.catch(() => undefined).then(() => {
+      if (!current()) throw new Error('Collection changed before this edit could be saved');
+      return save();
+    });
+    writes = pending;
     try {
-      await save();
-      return true;
+      await pending;
+      if (current()) set({ lastSavedAt: new Date().toISOString() });
+      return current();
     } catch (err) {
-      const byCard = indexEntries(before.entries);
-      set({ ...before, byCard, gradedByCard: indexGraded(before.graded), holdings: indexHoldings(byCard, before.graded) });
+      if (!current()) return false;
+      // Comparing object identity prevents an old failure undoing a newer edit to the same row.
+      const rollbackMap = <K, V>(old: Map<K, V>, applied: Map<K, V>, live: Map<K, V>) => {
+        const result = new Map(live);
+        for (const key of new Set([...old.keys(), ...applied.keys()])) {
+          if (old.get(key) === applied.get(key) || live.get(key) !== applied.get(key) || live.has(key) !== applied.has(key)) continue;
+          if (old.has(key)) result.set(key, old.get(key)!);
+          else result.delete(key);
+        }
+        return result;
+      };
+      const entries = rollbackMap(before.entries, after.entries, get().entries);
+      const graded = rollbackMap(before.graded, after.graded, get().graded);
+      const byCard = indexEntries(entries);
+      const lists = rollbackMap(new Map(before.lists.map((l) => [l.id, l])), new Map(after.lists.map((l) => [l.id, l])), new Map(get().lists.map((l) => [l.id, l])));
+      set({ entries, graded, byCard, gradedByCard: indexGraded(graded), holdings: indexHoldings(byCard, graded),
+        sealed: rollbackMap(before.sealed, after.sealed, get().sealed), wishlist: rollbackMap(before.wishlist, after.wishlist, get().wishlist), notes: rollbackMap(before.notes, after.notes, get().notes), lists: [...lists.values()],
+        saveError: err instanceof Error ? err.message : 'Could not save your edit' });
       failed(err);
       return false;
+    } finally {
+      if (current()) set((s) => ({ pendingSaves: Math.max(0, s.pendingSaves - 1) }));
     }
   }
 
@@ -265,9 +293,12 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
    */
   const hydrate = (s: CardSnapshot) => {
     if (Object.keys(s.prices).length) return;
+    const generation = loadSeq;
+    const cid = get().collectionId;
     void getBackend()
       .hydrate([s.id])
       .then(async (full) => {
+        if (generation !== loadSeq || cid !== get().collectionId) return;
         await get().remember(full);
         scheduleValue();
       })
@@ -304,6 +335,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
 
   return {
     isLoaded: false,
+    pendingSaves: 0, saveError: null, lastSavedAt: null,
     loadError: null,
     collectionId: null,
     role: null,
@@ -332,7 +364,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         if (seq !== loadSeq) return;
         // Switching collection: clear the old data first so nothing from it lingers in fields
         // apply() doesn't overwrite.
-        if (pick.id !== get().collectionId) set({ ...EMPTY });
+        if (pick.id !== get().collectionId) { writes = Promise.resolve(); set({ ...EMPTY, pendingSaves: 0, saveError: null }); }
         set({ collections });
         apply(data, pick.id);
         // Only remember explicit choices, so a fallback pick (e.g. after losing access to a
@@ -346,31 +378,37 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       // Non-essential: the "prices last updated" label can wait and may fail without consequence.
       void backend
         .status()
-        .then((s) => set({ lastSync: s.lastPriceSync }))
+        .then((s) => { if (seq === loadSeq) set({ lastSync: s.lastPriceSync }); })
         .catch(() => undefined);
     },
 
     reset: () => {
       loadSeq++;
+      writes = Promise.resolve();
       clearTimeout(valueTimer);
-      set({ ...EMPTY, isLoaded: false, loadError: null, collectionId: null, role: null, readOnly: false, collections: [], cards: new Map(), setStats: new Map(), syncing: false, lastSync: null, syncError: null });
+      set({ ...EMPTY, pendingSaves: 0, saveError: null, lastSavedAt: null, isLoaded: false, loadError: null, collectionId: null, role: null, readOnly: false, collections: [], cards: new Map(), setStats: new Map(), syncing: false, lastSync: null, syncError: null });
     },
 
     refresh: async () => {
+      const generation = loadSeq;
       const id = get().collectionId;
       if (!id) return get().load();
       const data = await getBackend().state(id);
       // Discard if the user switched collection while this was in flight.
-      if (id === get().collectionId) apply(data, id);
+      if (generation === loadSeq && id === get().collectionId && !get().pendingSaves) apply(data, id);
     },
 
     show: (data) => {
+      loadSeq++;
+      writes = Promise.resolve();
+      clearTimeout(valueTimer);
       const entries = data.entries ?? new Map();
       const graded = data.graded ?? new Map();
       const byCard = indexEntries(entries);
       set({
         ...EMPTY,
         ...data,
+        pendingSaves: 0, saveError: null, lastSavedAt: null,
         isLoaded: true,
         loadError: null,
         role: 'viewer',
@@ -518,6 +556,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     syncPrices: async (force = false) => {
       // A sync is already running; don't queue another server-side price refresh.
       if (get().syncing) return 0;
+      const generation = loadSeq;
       set({ syncing: true, syncError: null });
       const backend = getBackend();
       try {
@@ -529,18 +568,20 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
             if (!(err instanceof ApiError && err.status === 403)) throw err;
           }
         }
+        if (generation !== loadSeq) return 0;
         await get().refresh();
         const status = await backend.status().catch(() => undefined);
-        if (status) set({ lastSync: status.lastPriceSync });
+        if (generation === loadSeq && status) set({ lastSync: status.lastPriceSync });
         return Array.from(get().cards.values()).filter((c) => Object.keys(c.prices).length).length;
       } catch (err) {
         console.warn('Price refresh failed', err);
         // An unreachable PokéTracker server and a failed upstream fetch need different advice,
         // and ApiError messages already say which (see api/http.ts and the 502 from the job route).
+        if (generation !== loadSeq) return -1;
         set({ syncError: err instanceof ApiError ? err.message : "Prices weren't refreshed. Try again in a minute." });
         return -1;
       } finally {
-        set({ syncing: false });
+        if (generation === loadSeq) set({ syncing: false });
       }
     },
 
@@ -548,7 +589,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const cid = writable();
       if (!cid) return;
       try {
+        const generation = loadSeq;
         const point = await getBackend().recordValue(cid);
+        if (generation !== loadSeq || cid !== get().collectionId) return;
         // One point per day: today's point replaces any earlier one for the same date.
         if (point) set((s) => ({ history: [...s.history.filter((p) => p.date !== point.date), point].sort((a, b) => a.date.localeCompare(b.date)) }));
       } catch {
@@ -571,7 +614,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const cid = writable();
       if (!cid) throw new Error("You can't import into a collection you can only view");
       if (!data || typeof data !== 'object') throw new Error('No collection entries found in file');
+      const generation = loadSeq;
       const result = await getBackend().importData(cid, data);
+      if (generation !== loadSeq || cid !== get().collectionId) return 0;
       // A file containing an empty wishlist array is a valid (if empty) backup, not a wrong file.
       if (!result.entries && !result.graded && !result.sealed && !result.wishlist && !result.notes && !result.lists && !result.decks && !result.history && !Array.isArray((data as { wishlist?: unknown }).wishlist)) {
         throw new Error('No collection entries found in file');
@@ -630,7 +675,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const copy = get().graded.get(id);
       if (!cid || !copy) return undefined;
       try {
+        const generation = loadSeq;
         const updated = await getBackend().linkGraded(cid, id, pcProductId);
+        if (generation !== loadSeq || cid !== get().collectionId) return undefined;
         commitGraded(new Map(get().graded).set(id, updated));
         return updated;
       } catch (err) {
@@ -675,7 +722,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const item = get().sealed.get(id);
       if (!cid || !item) return undefined;
       try {
+        const generation = loadSeq;
         const updated = await getBackend().openSealed(cid, id);
+        if (generation !== loadSeq || cid !== get().collectionId) return undefined;
         commitSealed(new Map(get().sealed).set(id, updated));
         return updated;
       } catch (err) {
@@ -689,7 +738,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const item = get().sealed.get(id);
       if (!cid || !item) return undefined;
       try {
+        const generation = loadSeq;
         const updated = await getBackend().linkSealed(cid, id, pcProductId);
+        if (generation !== loadSeq || cid !== get().collectionId) return undefined;
         commitSealed(new Map(get().sealed).set(id, updated));
         return updated;
       } catch (err) {
@@ -702,8 +753,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     clearAll: async () => {
       const cid = writable();
       if (!cid) return;
+      const generation = loadSeq;
       await getBackend().clear(cid);
-      set({ ...EMPTY });
+      if (generation === loadSeq && cid === get().collectionId) set({ ...EMPTY });
     },
 
     // Not optimistic: the list id comes from the server.
@@ -711,7 +763,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const cid = writable();
       if (!cid) return undefined;
       try {
+        const generation = loadSeq;
         const list = await getBackend().createList(cid, name, description, opts);
+        if (generation !== loadSeq || cid !== get().collectionId) return undefined;
         set((s) => ({ lists: [...s.lists, list] }));
         return list;
       } catch (err) {

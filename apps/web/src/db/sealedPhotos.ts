@@ -24,9 +24,12 @@ const collectionId = () => {
 /** Uploads photos to a sealed item in the active collection. The server rejects it if the user can't edit. */
 export async function addSealedPhotos(sealedId: string, files: Blob[]) {
   if (!files.length) return [];
+  const cid = collectionId();
+  const backend = getBackend();
   const prepared = await Promise.all(files.map(prepareImage));
-  const out = await getBackend().addSealedPhotos(collectionId(), sealedId, prepared);
-  usePhotoVersions.getState().bump(sealedId);
+  if (cid !== collectionId() || backend !== getBackend()) throw new Error('Collection changed before the photos could be uploaded');
+  const out = await backend.addSealedPhotos(cid, sealedId, prepared);
+  if (cid === useCollectionStore.getState().collectionId && backend === getBackend()) usePhotoVersions.getState().bump(sealedId);
   return out;
 }
 
