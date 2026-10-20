@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      fullRecovery:
+        description: Run the 50k-entry / 5 GiB resource-limited recovery profile
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -112,3 +117,9 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  recovery-profile:
+    if: github.event_name == 'workflow_dispatch' && inputs.fullRecovery
+    uses: ./.github/workflows/recovery-profile.yml
+    with:
+      ref: ${{ github.sha }}
