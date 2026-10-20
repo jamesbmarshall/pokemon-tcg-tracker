@@ -1,3 +1,4 @@
+import { assertStorage } from './resourceLimits.ts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,6 +55,7 @@ export function mutate<T>(ctx: Ctx, req: FastifyRequest, reply: FastifyReply, fn
     if (!options.delta && (typeof expected !== 'string' || !/^"\d+"$/.test(expected))) throw new HttpError(428, 'Reload the collection before saving. A revision is required.', 'revision_required');
     if (!options.delta && expected !== `"${collection!.revision}"`) throw new HttpError(409, 'This collection changed on another device. Reload and review your edit before saving again.', 'revision_conflict');
     // Persist the compatibility floor before accepting any new-protocol write.
+    assertStorage(ctx);
     protectRollback(ctx);
     const result = fn();
     if (result && typeof result === 'object' && 'then' in result) throw new Error('Mutation callbacks must be synchronous');

@@ -1,3 +1,4 @@
+import { boundedBody } from './resourceLimits.ts';
 import { catalogSets, getCatalogCard, getCatalogSet, readCatalogCards } from './printingCatalog.ts';
 import { setIdFromCardId } from '@poketracker/shared/catalog';
 import { LANGUAGES } from '@poketracker/shared/languages';
@@ -75,7 +76,7 @@ export async function cachedUpstream(ctx: Ctx, provider: string, key: string, ur
           if (r.status === 429 || r.status >= 500) throw new RetryableError(`Upstream returned ${r.status}`, retryAfterMs(r));
           return r;
         });
-        const body = Buffer.from(await res.arrayBuffer());
+        const body = await boundedBody(res, MAX_BODY);
         if (body.length > MAX_BODY) throw new Error('Upstream response too large');
         const type = res.headers.get('content-type') ?? 'application/json';
         // Cache successes and definitive 404s; retry everything else next time.
@@ -150,7 +151,7 @@ export function ensureImage(ctx: Ctx, url: string): Promise<{ key: string; mime:
         const mime = (res.headers.get('content-type') ?? '').split(';')[0].trim();
         // SVG can carry script, and we serve these from our own origin; raster images only.
         if (!res.ok || !mime.startsWith('image/') || mime.includes('svg')) return null;
-        const body = Buffer.from(await res.arrayBuffer());
+        const body = await boundedBody(res, MAX_IMAGE);
         if (body.length > MAX_IMAGE) return null;
         mkdirSync(imageDir(ctx), { recursive: true });
         writeFileSync(join(imageDir(ctx), key), body);
@@ -201,7 +202,7 @@ export function imageCacheStats(ctx: Ctx) {
 export async function refreshFx(ctx: Ctx) {
   const res = await fetch(ctx.config.fxUrl, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`FX provider returned ${res.status}`);
-  const body = (await res.json()) as { rates?: { GBP?: number; EUR?: number } };
+  const body = (JSON.parse((await boundedBody(res, MAX_BODY)).toString())) as { rates?: { GBP?: number; EUR?: number } };
   const { GBP, EUR } = body.rates ?? {};
   if (!(GBP! > 0 && EUR! > 0)) throw new Error('FX provider returned no rates');
   const value = { rates: { USD: 1, GBP, EUR }, at: Date.now() };

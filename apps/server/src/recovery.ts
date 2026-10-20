@@ -1,3 +1,4 @@
+import { assertStorage } from './resourceLimits.ts';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, writeFileSync, chmodSync, openSync, closeSync, fsyncSync, realpathSync } from 'node:fs';
 import { copyFile } from 'node:fs/promises';
@@ -47,6 +48,8 @@ export async function createRecoverySnapshot(ctx: Ctx) {
       ...ctx.db.all<{ id: string }>('SELECT id FROM graded_photos').map((p) => ({ kind: 'photos' as PhotoKind, id: p.id })),
       ...ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos').map((p) => ({ kind: 'sealed-photos' as PhotoKind, id: p.id })),
     ];
+    const copyBytes = lstatSync(ctx.db.file).size * 3 + photos.reduce((sum, p) => sum + lstatSync(join(ctx.config.dataDir, p.kind, p.id)).size, 0);
+    assertStorage(ctx, copyBytes);
     release = pinPhotos(ctx, photos);
     const capturedAt = new Date().toISOString();
     ctx.db.backupTo(join(staged, 'poketracker.db'));
