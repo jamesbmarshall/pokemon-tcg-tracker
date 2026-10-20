@@ -78,6 +78,9 @@ export function loadInstanceKey(file: string, fromEnv?: string): Buffer {
 export class Sealer {
   constructor(private key: Buffer) {}
 
+  /** Host-only recovery code. Never include this material in API responses or logs. */
+  recoveryKey(): Buffer { return Buffer.from(this.key); }
+
   seal(plain: string): string {
     // Fresh 96-bit IV per value: reusing an IV under the same GCM key would break confidentiality.
     const iv = randomBytes(12);
@@ -97,7 +100,7 @@ export class Sealer {
 }
 
 /** A valid-length but incorrect restore key must fail before the server accepts traffic. */
-export function validateInstanceSecrets(db: Db, sealer: Sealer) {
+export function validateInstanceSecrets(db: Pick<Db, 'all'>, sealer: Sealer) {
   const values = [
     ...db.all<{ value: string }>('SELECT totp_secret AS value FROM users WHERE totp_secret IS NOT NULL'),
     ...db.all<{ value: string }>('SELECT token_enc AS value FROM shares'),
