@@ -88,7 +88,7 @@ export function attachShare(ctx: Ctx, req: FastifyRequest) {
  * collection state later stays hidden from narrower shares until it is opted in here.
  */
 export function shareView(ctx: Ctx, s: ShareRow) {
-  const full = collectionState(ctx, s.collection_id, { hidePaid: !!s.hide_paid, hideValue: !!s.hide_value, hideNotes: !!s.hide_notes });
+  const full = collectionState(ctx, s.collection_id, { publicView: true, hidePaid: !!s.hide_paid, hideValue: !!s.hide_value, hideNotes: !!s.hide_notes });
   const pick = (ids: Set<string>) => full.cards.filter((c) => ids.has(c.id));
   const empty = { entries: [], graded: [], sealed: [], wishlist: [], notes: [], history: [], lists: [], cards: [], setStats: [] } as unknown as typeof full;
   switch (s.scope) {

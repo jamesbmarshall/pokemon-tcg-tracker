@@ -1,4 +1,5 @@
 import { getCatalogSet, readPrintingProfile } from './printingCatalog.ts';
+import { publicState } from './publicState.ts';
 import { POLICY_VERSION } from '@poketracker/shared/printingRules';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
@@ -199,6 +200,7 @@ export function listCollections(ctx: Ctx, userId: string) {
 }
 
 export interface StateOptions {
+  publicView?: boolean;
   hidePaid?: boolean;
   hideNotes?: boolean;
   hideValue?: boolean;
@@ -235,7 +237,8 @@ export function collectionState(ctx: Ctx, collectionId: string, opts: StateOptio
   if (opts.hideValue) cards = cards.map((c) => ({ ...c, prices: {} }));
   // Set totals are shared catalogue data, not per-collection, so there is nothing private to filter.
   const setStats = ctx.db.all<{ set_id: string; master_total: number; all_total: number; provisional: number; unresolved_total: number; additional_total: number; profile: string; printing_version: number; synced_at: string }>('SELECT s.* FROM set_stats s JOIN printing_catalogues c ON c.set_id = s.set_id AND c.profile IS NOT NULL WHERE s.printing_version = ? AND c.policy_version = ?', PRINTING_VERSION, POLICY_VERSION).map((s) => ({ setId: s.set_id, masterTotal: s.master_total, allTotal: s.all_total, provisional: !!s.provisional, unresolvedTotal: s.unresolved_total, additionalTotal: s.additional_total, profile: s.profile, printingVersion: s.printing_version, syncedAt: s.synced_at }));
-  return { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
+  const state = { entries, graded, sealed, wishlist, notes, history, cards, setStats, lists };
+  return opts.publicView ? publicState(state, opts) : state;
 }
 
 export function readLists(ctx: Ctx, collectionId: string) {
