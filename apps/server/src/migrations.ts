@@ -396,4 +396,18 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (collection_id, source_id)
   );
   `,
+  /* Collection CAS and durable idempotency receipts. Receipts survive collection deletion
+     so an acknowledged delete can be retried; account deletion removes its receipts. */ `
+  ALTER TABLE collections ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE mutation_receipts (
+    actor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    collection_id TEXT NOT NULL,
+    operation_key TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    response TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (actor_id, collection_id, operation_key)
+  );
+  `,
 ];

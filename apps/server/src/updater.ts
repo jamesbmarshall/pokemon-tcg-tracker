@@ -271,6 +271,19 @@ export function requestRollback(ctx: Ctx) {
   if (blocker) throw new HttpError(409, blocker, 'update_unavailable');
   const ls = readLauncherState(ctx);
   if (!ls.previous) throw new HttpError(409, 'There is no previous version to roll back to', 'no_previous');
+  const floorFile = join(appDir(ctx), 'write-protocol-floor.json');
+  if (existsSync(floorFile)) {
+    try {
+      const floor = JSON.parse(readFileSync(floorFile, 'utf8')).protocol;
+      const candidates = [join(appDir(ctx), ls.previous, 'manifest.json'), ...(process.env.BUNDLE_DIR ? [join(process.env.BUNDLE_DIR, 'manifest.json')] : [])];
+      const compatible = candidates.some((file) => {
+        if (!existsSync(file)) return false;
+        const manifest = JSON.parse(readFileSync(file, 'utf8'));
+        return manifest.version === ls.previous && Number.isSafeInteger(floor) && (manifest.writeProtocol ?? 0) >= floor;
+      });
+      if (!compatible) throw new Error('incompatible');
+    } catch { throw new HttpError(409, 'The previous version cannot safely use the current write protocol. Restore a separate pre-upgrade instance instead.', 'rollback_incompatible'); }
+  }
   writeFileSync(join(appDir(ctx), 'pending.json'), JSON.stringify({ rollback: true, from: ctx.config.version, at: new Date().toISOString() }));
   ctx.services.requestRestart?.(RESTART_CODE);
   return { version: ls.previous };

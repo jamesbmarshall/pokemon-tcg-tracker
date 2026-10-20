@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { compareVersions, writableBy } from './launcher.mjs';
+import { compareVersions, writableBy, supportsWriteProtocol } from './launcher.mjs';
 
 // A stand-in server bundle: serves /health with its manifest version, exits 75 on /restart.
 const FAKE_SERVER = `
@@ -82,7 +82,7 @@ test('compareVersions', () => {
 
 test('boots the image bundle and reports the launcher version', async () => {
   await runningVersion('1.0.0');
-  assert.equal((await health()).launcher, '1.0.0');
+  assert.equal((await health()).launcher, '1.1.0');
   assert.equal(state().image, '1.0.0');
 });
 
@@ -136,4 +136,11 @@ test('writableBy checks the owner, group and other write bits', () => {
   assert.equal(writableBy({ uid: 0, gid: 100, mode: 0o40755 }, t), false);
   assert.equal(writableBy({ uid: 0, gid: 0, mode: 0o40777 }, t), true);
   assert.equal(writableBy({ uid: 0, gid: 0, mode: 0o40755 }, t), false);
+});
+
+test('write protocol floor rejects old and malformed rollback targets', () => {
+  assert.equal(supportsWriteProtocol({}, 1), false);
+  assert.equal(supportsWriteProtocol({ writeProtocol: 1 }, 1), true);
+  assert.equal(supportsWriteProtocol({ writeProtocol: 1 }, 2), false);
+  assert.equal(supportsWriteProtocol({ writeProtocol: 1 }, undefined), false);
 });

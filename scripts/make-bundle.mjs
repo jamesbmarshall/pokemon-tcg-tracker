@@ -57,7 +57,7 @@ mkdirSync(stage, { recursive: true });
 cpSync(join(serverDist, 'server.mjs'), join(stage, 'server.mjs'));
 if (existsSync(join(serverDist, 'server.mjs.map'))) cpSync(join(serverDist, 'server.mjs.map'), join(stage, 'server.mjs.map'));
 cpSync(webDist, join(stage, 'web'), { recursive: true });
-const manifest = { version, minLauncher, ...(commit && { commit }), builtAt: new Date().toISOString() };
+const manifest = { version, minLauncher, writeProtocol: 1, ...(commit && { commit }), builtAt: new Date().toISOString() };
 writeFileSync(join(stage, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`make-bundle: staged ${version} in ${stage}`);
 // The image's bundle (--stage-only) needs no archive or signature: it is trusted by being in the image.
