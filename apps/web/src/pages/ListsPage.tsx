@@ -48,6 +48,7 @@ function ListForm({ list, kind = 'list', onClose }: { list?: CustomList; kind?: 
     } else {
       const created = await createList(name.trim(), description.trim() || undefined, isDeck ? { kind: 'deck', format } : undefined);
       if (created) onClose(created);
+      else throw new Error("Couldn’t save the list. Your input has been kept; try again when the server is available.");
     }
   });
   return (

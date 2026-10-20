@@ -20,8 +20,14 @@ export default function NativeDialog({ children, onClose, label, labelledBy, ini
     if (!dialogs.length) { priorOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
     dialogs.push(dialog);
     dialog.showModal();
-    (initialFocus?.current ?? dialog.querySelector<HTMLElement>('[autofocus],[data-autofocus]') ?? dialog.querySelector<HTMLElement>('button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex="0"]') ?? dialog).focus();
+    (initialFocus?.current ?? dialog.querySelector<HTMLElement>('[autofocus],[data-autofocus]') ?? dialog.querySelector<HTMLElement>('input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled])') ?? dialog.querySelector<HTMLElement>('button:not([disabled]),a[href],[tabindex="0"]') ?? dialog).focus();
     const key = (event: KeyboardEvent) => {
+      if (event.key === 'Tab' && dialogs.at(-1) === dialog) {
+        const focusable = [...dialog.querySelectorAll<HTMLElement>('button,input,select,textarea,a[href],[tabindex]')].filter(el => el.tabIndex >= 0 && !el.hasAttribute('disabled') && el.getClientRects().length);
+        const at = focusable.indexOf(document.activeElement as HTMLElement);
+        if (!focusable.length) { event.preventDefault(); dialog.focus(); }
+        else { event.preventDefault(); focusable[(at + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length].focus(); }
+      }
       if (event.key === 'Escape' && dialogs.at(-1) === dialog) { event.preventDefault(); close.current(); }
     };
     window.addEventListener('keydown', key);

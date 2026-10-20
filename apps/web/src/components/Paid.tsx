@@ -75,7 +75,7 @@ export function Gain({ valueUsd, costUsd, className = '', icon, percent = true }
       {icon && !flat && <Icon size={12} />}
       {flat ? '±' : up ? '+' : '−'}
       {money(Math.abs(diff))}
-      {percent && costUsd > 0 && !flat && <span className="opacity-70">({`${up ? '+' : '−'}${Math.abs((diff / costUsd) * 100).toFixed(0)}%`})</span>}
+      {percent && costUsd > 0 && !flat && <span className="">({`${up ? '+' : '−'}${Math.abs((diff / costUsd) * 100).toFixed(0)}%`})</span>}
     </span>
   );
 }

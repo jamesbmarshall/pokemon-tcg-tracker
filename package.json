@@ -19,10 +19,13 @@
     "lint": "eslint .",
     "typecheck": "tsc -b apps/web && tsc -p apps/server --noEmit && tsc -p packages/shared --noEmit",
     "test": "npm test -w @poketracker/shared -w @poketracker/server -w @poketracker/launcher -w @poketracker/web",
-    "audit:printings": "tsx scripts/audit-printings.ts"
+    "audit:printings": "tsx scripts/audit-printings.ts",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.1-d1531a9.0.sha-d1531a9",
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.65.0-alpha-2026-10-13",
     "@types/node": "^24.12.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
