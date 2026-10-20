@@ -67,6 +67,7 @@ export interface CollectionSummary {
  * without a round trip per card.
  */
 export interface CollectionData {
+  revision?: number;
   role: CollectionRole;
   entries: CollectionEntry[];
   graded: GradedCopy[];
@@ -141,6 +142,7 @@ export interface ProviderHealthReport {
  * read-only one.
  */
 export interface Backend {
+  adjustEntry?: (id: string, cardId: string, variant: string, delta: number) => Promise<{ entry: CollectionEntry | null }>;
   /** When set, the store skips writes up front instead of attempting them and rolling back. */
   readonly readOnly?: boolean;
   collections(): Promise<CollectionSummary[]>;
@@ -212,6 +214,7 @@ const c = (id: string) => `/api/collections/${enc(id)}`;
 export const httpBackend: Backend = {
   collections: () => api('/api/collections'),
   state: (id) => api(`${c(id)}/state`),
+  adjustEntry: (id, cardId, variant, delta) => api(`${c(id)}/entries/adjust`, { method: 'POST', body: { cardId, variant, delta } }),
   putEntries: async (id, entries) => void (await api(`${c(id)}/entries`, { method: 'PUT', body: { entries } })),
   reassignEntry: async (id, cardId, from, to) => void (await api(`${c(id)}/entries/reassign`, { method: 'POST', body: { cardId, from, to } })),
   deleteEntries: async (id, ids) => void (await api(`${c(id)}/entries/delete`, { method: 'POST', body: { ids } })),

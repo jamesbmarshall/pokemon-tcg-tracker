@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -51,6 +52,12 @@ export class Client {
   constructor(private app: FastifyInstance) {}
 
   async req(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<LightMyRequestResponse> {
+    const collection = /^\/api\/collections\/([^/]+)(?:\/|$)/.exec(url)?.[1];
+    if (collection && !['GET', 'HEAD'].includes(method)) {
+      const state = await this.app.inject({ method: 'GET', url: `/api/collections/${collection}/state`, headers: { cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ') } });
+      const revision = state.statusCode === 200 ? state.json().revision : 0;
+      headers = { 'idempotency-key': randomUUID(), 'if-match': `"${revision}"`, ...headers };
+    }
     const res = await this.app.inject({
       method: method as 'GET',
       url,

@@ -1,3 +1,4 @@
+import { acceptCollectionRevision, resetCollectionRevisions } from '../api/concurrency';
 /**
  * Client-side cache of the active collection, with optimistic writes.
  *
@@ -306,6 +307,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
   };
 
   const apply = (data: Awaited<ReturnType<ReturnType<typeof getBackend>['state']>>, collectionId: string) => {
+    acceptCollectionRevision(collectionId, data.revision);
     const entries = new Map(data.entries.map((e) => [e.id, e]));
     const byCard = indexEntries(entries);
     const graded = new Map(data.graded.map((g) => [g.id, g]));
@@ -383,6 +385,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
     },
 
     reset: () => {
+      resetCollectionRevisions();
       loadSeq++;
       writes = Promise.resolve();
       clearTimeout(valueTimer);
@@ -393,6 +396,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       const generation = loadSeq;
       const id = get().collectionId;
       if (!id) return get().load();
+      if (get().pendingSaves) return;
       const data = await getBackend().state(id);
       // Discard if the user switched collection while this was in flight.
       if (generation === loadSeq && id === get().collectionId && !get().pendingSaves) apply(data, id);
@@ -442,7 +446,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       if (quantity === 0) {
         if (!existing) return;
         entries.delete(key);
-        await persist(() => commitEntries(entries), () => getBackend().deleteEntries(cid, [key]));
+        const backend = getBackend();
+        const ok = await persist(() => commitEntries(entries), () => backend.adjustEntry ? backend.adjustEntry(cid, s.id, variant, delta) : backend.deleteEntries(cid, [key]));
+        if (ok && backend.adjustEntry && !get().pendingSaves) await get().refresh();
         return;
       }
       const now = new Date().toISOString();
@@ -450,7 +456,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
         ? { ...existing, quantity, updatedAt: now }
         : { id: key, cardId: s.id, setId: s.setId, variant, quantity, addedAt: now, condition: 'NM' };
       entries.set(key, entry);
-      const ok = await persist(() => commitEntries(entries), () => getBackend().putEntries(cid, [entry]));
+      const backend = getBackend();
+      const ok = await persist(() => commitEntries(entries), () => backend.adjustEntry ? backend.adjustEntry(cid, s.id, variant, delta) : backend.putEntries(cid, [entry]));
+      if (ok && backend.adjustEntry && !get().pendingSaves) await get().refresh();
       if (ok && !existing) hydrate(get().cards.get(s.id) ?? s);
     },
 
