@@ -38,8 +38,8 @@ The browser suite blocks service workers so intercepted fault-injection requests
 a separate Chromium journey enables service workers to check that an update waits while a form is being edited. Offline editing remains unsupported.
 
 The host backup scripts have failure-injection tests. The encrypted recovery script uses real
-Restic and restores after deleting the source directory. The full-profile result records the
-actual local platform and timings. It does not establish Azure network/provisioning performance.
+Restic and restores after deleting the source directory. The full-profile results record the actual local and hosted Linux platforms and timings.
+The hosted Linux run passed with enforced 2 CPU / 4 GiB limits. It does not establish Azure network/provisioning performance.
 A resource-limited release rehearsal is enforced separately in release CI.
 
 Before relying on a deployment, complete the [fresh-host acceptance checklist](../recovery.md#release-and-deployment-acceptance).

@@ -1,0 +1,10 @@
+{
+  "profile": "50000 entries / 5 GiB photos",
+  "restic": "restic 0.14.0 compiled with go1.19.8 on linux/amd64",
+  "snapshotMs": 50838,
+  "restoreAndAuthenticationMs": 105951,
+  "totalMs": 213086,
+  "platform": "linux",
+  "architecture": "x64",
+  "note": "Local encrypted repository rehearsal; cloud bandwidth and fresh-host provisioning are not measured."
+}
