@@ -1,3 +1,4 @@
+import { reconcilePhotos } from './photoStorage.ts';
 import { discoverSets, syncPrintingCatalogues } from './printingCatalog.ts';
 /**
  * In-process job scheduler. Each job runs on a cron schedule, can be triggered from the admin
@@ -148,7 +149,7 @@ export const JOBS: JobDef[] = [
       ctx.db.run('DELETE FROM invites WHERE expires_at < ? AND used_at IS NULL', weekAgo);
       ctx.db.run('DELETE FROM password_resets WHERE expires_at < ?', weekAgo);
       ctx.db.run('DELETE FROM audit_log WHERE at < ?', new Date(Date.now() - 400 * 24 * H).toISOString());
-      return { graded: old.length, photos, sessions, httpCache: pruneHttpCache(ctx), versions: pruneVersions(ctx), priceHistory: prunePriceHistory(ctx.db, ctx.config.priceHistoryDays) };
+      return { graded: old.length, photos, files: reconcilePhotos(ctx), sessions, httpCache: pruneHttpCache(ctx), versions: pruneVersions(ctx), priceHistory: prunePriceHistory(ctx.db, ctx.config.priceHistoryDays) };
     },
   },
   {

@@ -1,3 +1,4 @@
+import { publishPhoto } from './photoStorage.ts';
 import { mutate } from './mutations.ts';
 import { sha256 } from './security.ts';
 /**
@@ -10,7 +11,7 @@ import { sha256 } from './security.ts';
  * graded_photos. Opened items are kept (for history) but excluded from collection value.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { createReadStream, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isPaid, NOTE_MAX } from '@poketracker/shared/value';
 import type { SealedItem, SealedProductType } from '@poketracker/shared/types';
@@ -140,14 +141,14 @@ export function saveSealedPhoto(ctx: Ctx, collectionId: string, sealedId: string
   const mime = sniffImage(buf);
   if (!mime) throw bad('That file is not a supported image');
   const id = newId();
-  mkdirSync(photoDir(ctx), { recursive: true });
-  writeFileSync(join(photoDir(ctx), id), buf);
+  publishPhoto(ctx, 'sealed-photos', id, buf);
   ctx.db.run('INSERT INTO sealed_photos (id, collection_id, sealed_id, mime, size, added_at) VALUES (?, ?, ?, ?, ?, ?)', id, collectionId, sealedId, mime, buf.length, now());
   return { id, mime };
 }
 
 export function deleteSealedPhotoFiles(ctx: Ctx, ids: string[]) {
-  for (const id of ids) rmSync(join(photoDir(ctx), id), { force: true });
+  ctx.log.debug({ files: ids.length }, 'Photo file deletion deferred to reconciliation');
+  // Reconciliation removes unreferenced files after the grace period, never during a transaction.
 }
 
 export function streamSealedPhoto(ctx: Ctx, collectionId: string, photoId: string) {
