@@ -573,11 +573,12 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       if (!data || typeof data !== 'object') throw new Error('No collection entries found in file');
       const result = await getBackend().importData(cid, data);
       // A file containing an empty wishlist array is a valid (if empty) backup, not a wrong file.
-      if (!result.entries && !result.graded && !result.sealed && !result.wishlist && !result.notes && !Array.isArray((data as { wishlist?: unknown }).wishlist)) {
+      if (!result.entries && !result.graded && !result.sealed && !result.wishlist && !result.notes && !result.lists && !result.decks && !result.history && !Array.isArray((data as { wishlist?: unknown }).wishlist)) {
         throw new Error('No collection entries found in file');
       }
       await get().refresh();
-      return result.entries + result.graded + result.sealed;
+      if (result.warnings?.length) toast(`Import warnings: ${result.warnings.map((w) => `${w.skipped} ${w.entity}: ${w.reason}`).join('; ')}`, { tone: 'error' });
+      return result.entries + result.graded + result.sealed + (result.lists ?? 0) + (result.decks ?? 0);
     },
 
     saveGraded: async (card, input) => {

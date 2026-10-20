@@ -65,7 +65,7 @@ export default function SettingsPage() {
   const exportJson = () => {
     const payload = {
       app: 'poketracker',
-      version: 4,
+      version: 6,
       exportedAt: new Date().toISOString(),
       collection: Array.from(entries.values()),
       wishlist: Array.from(wishlist.values()),
@@ -101,7 +101,7 @@ export default function SettingsPage() {
     if (!file) return;
     try {
       const n = await importData(JSON.parse(await file.text()));
-      toast(`Imported ${n} entries`, { tone: 'success' });
+      toast(`Imported ${n} items`, { tone: 'success' });
     } catch (err) {
       toast(`Import failed: ${(err as Error).message}`, { tone: 'error' });
     }
