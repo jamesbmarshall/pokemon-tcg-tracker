@@ -1,0 +1,63 @@
+#cloud-config
+package_update: true
+packages: [docker.io, docker-compose-v2, restic, ca-certificates]
+write_files:
+  - path: /usr/local/sbin/poketracker-bootstrap
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      image=$(echo '__IMAGE_B64__' | base64 -d)
+      domain=$(echo '__DOMAIN_B64__' | base64 -d)
+      [[ "$image" =~ ^[a-zA-Z0-9./_-]+@sha256:[a-f0-9]{64}$ ]] || { echo 'Application image must be pinned by digest'; exit 1; }
+      device=/dev/disk/azure/scsi1/lun0
+      for attempt in $(seq 1 60); do [ -b "$device" ] && break; sleep 2; done
+      [ -b "$device" ] || { echo 'Required managed data disk is missing'; exit 1; }
+      if ! blkid "$device" >/dev/null; then
+        [ "$(lsblk -nr -o TYPE "$device" | wc -l)" -eq 1 ] || { echo 'Refusing to format a partitioned disk'; exit 1; }
+        mkfs.ext4 "$device"
+      fi
+      [ "$(blkid -s TYPE -o value "$device")" = ext4 ] || { echo 'Expected an ext4 data disk'; exit 1; }
+      mkdir -p /srv/poketracker /opt/poketracker
+      uuid=$(blkid -s UUID -o value "$device")
+      grep -q "UUID=$uuid " /etc/fstab || echo "UUID=$uuid /srv/poketracker ext4 defaults 0 2" >> /etc/fstab
+      mountpoint -q /srv/poketracker || mount /srv/poketracker
+      mountpoint -q /srv/poketracker
+      chmod 0750 /srv/poketracker
+      mkdir -p /srv/poketracker/data /srv/poketracker/caddy-data /srv/poketracker/caddy-config
+      chown 1000:1000 /srv/poketracker/data
+      printf 'POKETRACKER_IMAGE=%s\nDOMAIN=%s\n' "$image" "$domain" > /opt/poketracker/.env
+      cat > /opt/poketracker/compose.yaml <<'COMPOSE'
+      services:
+        poketracker:
+          image: ${POKETRACKER_IMAGE:?Set a published image digest}
+          restart: unless-stopped
+          stop_grace_period: 40s
+          environment:
+            PUBLIC_URL: https://${DOMAIN}
+            TRUST_PROXY: "1"
+          volumes:
+            - type: bind
+              source: /srv/poketracker/data
+              target: /data
+              bind: {create_host_path: false}
+        caddy:
+          image: caddy:2-alpine
+          restart: unless-stopped
+          environment: {DOMAIN: "${DOMAIN}"}
+          ports: ["80:80", "443:443"]
+          volumes:
+            - ./Caddyfile:/etc/caddy/Caddyfile:ro
+            - /srv/poketracker/caddy-data:/data
+            - /srv/poketracker/caddy-config:/config
+      COMPOSE
+      printf '{$DOMAIN} {\n reverse_proxy poketracker:3000\n}\n' > /opt/poketracker/Caddyfile
+      mkdir -p /etc/systemd/system/docker.service.d
+      printf '[Unit]\nRequiresMountsFor=/srv/poketracker\n' > /etc/systemd/system/docker.service.d/poketracker-storage.conf
+      systemctl daemon-reload
+      systemctl enable --now docker
+      cd /opt/poketracker
+      docker compose pull
+      docker compose up -d
+runcmd:
+  - [/usr/local/sbin/poketracker-bootstrap]

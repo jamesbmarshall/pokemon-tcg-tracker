@@ -69,8 +69,7 @@ PokéTracker is one container with a `/data` volume. Pick whichever home suits y
 | Where | Best for | HTTPS |
 | --- | --- | --- |
 | [VPS with Docker](#a-vps-with-docker) | A cheap Linux server with your own domain | Let's Encrypt, automatic |
-| [Azure Container Apps](#azure) | Hands-off hosting in Azure | Built in |
-| [Azure App Service](#azure) | Azure, on a fixed monthly price | Built in |
+| [Azure VM](#azure) | One server with a managed local data disk | Automatic HTTPS |
 | [Unraid, Synology, Portainer](#nas-and-home-servers) | A box you already run at home | Your reverse proxy, if you want it |
 
 Whichever you choose, the first visit asks for a **setup token** before it will create the owner account. That stops a stranger who finds your new instance before you do from claiming it. You can choose the token yourself at deploy time (`SETUP_TOKEN`), or leave it blank and read a random one from the container log:
@@ -102,26 +101,19 @@ Browsers will warn about the staging certificate. Remove that line and run `dock
 
 Prefer to do it by hand? Copy [`deploy/docker/docker-compose.yml`](deploy/docker/docker-compose.yml) and [`Caddyfile`](deploy/docker/Caddyfile) to the server, create a `.env` with `DOMAIN=cards.example.com`, and run `docker compose up -d`.
 
-**No domain, or already have a reverse proxy?** [`docker-compose.local.yml`](deploy/docker/docker-compose.local.yml) runs plain HTTP on port 3000, which is fine on a home network or behind Nginx Proxy Manager, Traefik or a Cloudflare Tunnel. Set `PUBLIC_URL` to the address people actually use so invite and share links point at it.
+**No domain, or already have a reverse proxy?** [`docker-compose.local.yml`](deploy/docker/docker-compose.local.yml) runs plain HTTP on port 3000, for use behind Nginx Proxy Manager, Traefik or a Cloudflare Tunnel. Use HTTPS even on a home network and set `PUBLIC_URL` to that address so credentials, sessions and share links are protected.
 
 ### Azure
 
-[![Deploy to Azure Container Apps](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjamesbmarshall%2Fpokemon-tcg-tracker%2Fmain%2Fdeploy%2Fazure%2Fcontainerapps.json)
-&nbsp; **Container Apps**: about the cheapest way to run it in Azure. Data lives on an Azure Files share.
+Use the [Azure VM deployment and migration guide](deploy/azure/README.md). It runs one
+container host with a separate managed data disk and automatic HTTPS. Application images
+must be pinned by digest. Deployment parameters include your SSH public key and a restricted
+administrator source CIDR.
 
-[![Deploy to Azure App Service](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjamesbmarshall%2Fpokemon-tcg-tracker%2Fmain%2Fdeploy%2Fazure%2Fappservice.json)
-&nbsp; **App Service**: a B1 plan, a fixed monthly price, data on App Service's persistent storage.
-
-Both ask for an app name and a setup token, and print the web address when they finish. Open it, enter the token and you're in. Azure handles HTTPS for the `azurecontainerapps.io` or `azurewebsites.net` address, and you can add your own domain in the portal later (set `PUBLIC_URL` to match).
-
-From the command line instead:
-
-```bash
-az group create -n poketracker -l uksouth
-az deployment group create -g poketracker -f deploy/azure/containerapps.bicep -p setupToken='choose-a-long-phrase'
-```
-
-Both templates pin PokéTracker to **one instance**. Don't scale it out: SQLite allows a single writer, and the background jobs and updater assume they're the only copy running. Because Azure's storage is a network share, the templates also switch SQLite from WAL to rollback-journal mode (`SQLITE_JOURNAL_MODE=delete`), which behaves itself on SMB.
+The older Container Apps/Azure Files and App Service network-storage templates are retained
+as legacy references only. They are not recommended for new SQLite instances: a single-replica
+setting does not prove that deployments cannot overlap writers, and rollback journaling does
+not repair network filesystem locking. Rehearse a complete migration before moving an instance.
 
 ### NAS and home servers
 

@@ -1,3 +1,5 @@
+// LEGACY: not recommended for collector data. Use vm.bicep and README.md instead.
+// Network storage and overlapping deployments do not provide the required writer guarantee.
 // PokéTracker on Azure Container Apps.
 //
 // Creates: a Log Analytics workspace, a storage account with an Azure Files share for /data, a
@@ -5,7 +7,7 @@
 //
 // SQLite and Azure Files: SMB shares don't support the byte-range locks SQLite normally relies on.
 // So the share is mounted with `nobrl` (locks are handled locally) and SQLite runs in rollback-
-// journal mode instead of WAL. That's safe only because exactly one replica ever runs. Never
+// journal mode instead of WAL. This does not establish network-locking safety. Never
 // raise maxReplicas: two copies writing to the same database file would corrupt it.
 //
 // Build the portal template with: az bicep build -f containerapps.bicep --outfile containerapps.json
