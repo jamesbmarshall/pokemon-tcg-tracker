@@ -399,8 +399,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
       if (get().pendingSaves) return;
       const revision = collectionRevision(id);
       const data = await getBackend().state(id);
-      // Discard if the user switched collection while this was in flight.
-      if (generation === loadSeq && id === get().collectionId && !get().pendingSaves && collectionRevision(id) === revision) apply(data, id);
+      // Recheck editing after the response: a form can open while an idle refresh is in flight.
+      const editing = typeof document !== 'undefined' && (document.querySelector('dialog[open], [role="dialog"]') || document.activeElement?.matches('input,textarea,select,[contenteditable]'));
+      if (!editing && generation === loadSeq && id === get().collectionId && !get().pendingSaves && collectionRevision(id) === revision) apply(data, id);
     },
 
     show: (data) => {

@@ -8,7 +8,7 @@ Azure testing deployment as migrated or recovery-certified.
 | Shared domain tests | 119 passed |
 | Server tests | 202 passed, including real local recovery-control socket |
 | Launcher tests | 8 passed |
-| Web unit/component tests | 782 passed |
+| Web unit/component tests | 783 passed |
 | Host backup failure-injection tests | 2 passed |
 | Built-app browsers | 16 passed; 2 intentional skips of the Chromium-only PWA lifecycle test |
 | Browsers exercised | Desktop Chromium, desktop WebKit, mobile WebKit |
