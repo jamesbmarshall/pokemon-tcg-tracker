@@ -47,7 +47,7 @@ async function until(fn, ms = 15_000) {
     try {
       const v = await fn();
       if (v) return v;
-    } catch {}
+    } catch { /* The child may still be starting. */ }
     if (Date.now() > end) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 150));
   }

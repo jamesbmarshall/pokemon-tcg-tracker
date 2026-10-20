@@ -40,12 +40,13 @@ const webDist = join(root, 'apps/web/dist');
 if (!existsSync(join(serverDist, 'server.mjs'))) fail('apps/server/dist/server.mjs is missing. Run `npm run build` first.');
 if (!existsSync(join(webDist, 'index.html'))) fail('apps/web/dist is missing. Run `npm run build` first.');
 
-let commit = process.env.GITHUB_SHA ?? '';
+// The checked-out source identifies a bundle, including workflow_dispatch of an older tag.
+let commit = ''; 
 if (!commit) {
   try {
     commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
-    /* not a git checkout */
+    commit = process.env.GITHUB_SHA ?? ''; // Docker receives the checked-out source SHA as a build argument.
   }
 }
 
