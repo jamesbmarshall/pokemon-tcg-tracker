@@ -1,3 +1,4 @@
+import { publishPhoto } from './photoStorage.ts';
 import { getCatalogSet, readPrintingProfile } from './printingCatalog.ts';
 import { mutate, revisionOf } from './mutations.ts';
 import { publicState } from './publicState.ts';
@@ -16,7 +17,7 @@ import { setProgress } from '@poketracker/shared/completion';
  * photo storage, and JSON import/export for backups and migration from the old browser-only app.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { createReadStream, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getCardsByIds, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot } from '@poketracker/shared/catalog';
 import { buildCodeIndex, setIdsForCode, SUBSET_PREFIXES } from '@poketracker/shared/setCodes';
@@ -289,8 +290,7 @@ export function savePhoto(ctx: Ctx, collectionId: string, gradedId: string, side
   const mime = sniffImage(buf);
   if (!mime) throw bad('That file is not a supported image');
   const id = newId();
-  mkdirSync(photoDir(ctx), { recursive: true });
-  writeFileSync(join(photoDir(ctx), id), buf);
+  publishPhoto(ctx, 'photos', id, buf);
   const s = ['front', 'back', 'other'].includes(side) ? side : 'other';
   ctx.db.run('INSERT INTO graded_photos (id, collection_id, graded_id, side, mime, size, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)', id, collectionId, gradedId, s, mime, buf.length, now());
   return { id, side: s, mime };
@@ -298,7 +298,8 @@ export function savePhoto(ctx: Ctx, collectionId: string, gradedId: string, side
 
 /** Best effort: `force` makes already-missing files a no-op so cleanup can be retried safely. */
 export function deletePhotoFiles(ctx: Ctx, ids: string[]) {
-  for (const id of ids) rmSync(join(photoDir(ctx), id), { force: true });
+  ctx.log.debug({ files: ids.length }, 'Photo file deletion deferred to reconciliation');
+  // Physical deletion is deferred to reference-aware housekeeping after transaction commit.
 }
 
 /**
