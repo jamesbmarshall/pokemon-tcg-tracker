@@ -38,7 +38,12 @@ ARG GIT_SHA=""
 RUN npm run build \
  && GITHUB_SHA="$GIT_SHA" node scripts/make-bundle.mjs --stage-only ${VERSION:+--version "$VERSION"}
 
-FROM mirror.gcr.io/library/node:${NODE_VERSION}-bookworm-slim
+FROM mirror.gcr.io/library/node:${NODE_VERSION}-alpine
+# Keep only runtime packages and current Alpine security updates; npm/yarn/corepack are
+# build tools and do not belong in the shipped image. Application code is already bundled.
+RUN apk upgrade --no-cache \
+ && rm -rf /usr/local/lib/node_modules /opt/yarn* \
+ && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/corepack
 # The runtime stage has no node_modules: server.mjs is a self-contained esbuild bundle and the
 # launcher has no dependencies.
 ARG VERSION=""
