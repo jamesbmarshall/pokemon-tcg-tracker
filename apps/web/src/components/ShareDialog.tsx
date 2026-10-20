@@ -187,6 +187,8 @@ export default function ShareDialog({ scope, target, what, onClose }: { scope: S
           <Toggle label="Hide notes" hint="Your private notes on each card" checked={hideNotes} onChange={setHideNotes} />
         </div>
 
+        <p className="text-xs text-muted">Privacy switches do not hide information visible in uploaded photos. Review your photos before sharing.</p>
+
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label htmlFor="share-expiry" className="mb-1.5 block text-sm font-medium">

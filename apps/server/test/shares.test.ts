@@ -32,6 +32,24 @@ async function seeded() {
 
 const tokenOf = (url: string) => url.split('/s/')[1];
 
+describe('public privacy contract', () => {
+  it.each(['collection', 'graded', 'set', 'list'] as const)('removes every direct slab value in %s shares', async (scope) => {
+    const { owner, id } = await seeded();
+    await owner.put(`/api/collections/${id}/graded/g1`, { cardId: 'sv1-001', variant: 'normal', company: 'PSA', grade: '10', valueUsd: 500, pcPrice: 432.1, pcProductId: '123', paid: { amount: 100, currency: 'USD' }, notes: 'private' });
+    const list = (await owner.post(`/api/collections/${id}/lists`, { name: 'Audit' })).json();
+    await owner.put(`/api/collections/${id}/lists/${list.id}/cards/sv1-001`);
+    const share = (await owner.post('/api/shares', { collectionId: id, scope, target: scope === 'list' ? list.id : 'sv1', audience: 'public', hideValue: true, hidePaid: true, hideNotes: true })).json();
+    const body = (await new Client(s.app).get(`/api/public/${tokenOf(share.url)}`)).json();
+    expect(body.graded).toHaveLength(1);
+    expect(body.graded[0]).not.toHaveProperty('pcPrice');
+    expect(body.graded[0]).not.toHaveProperty('pcProductId');
+    expect(body.graded[0]).not.toHaveProperty('valueUsd');
+    expect(body.graded[0]).not.toHaveProperty('paid');
+    expect(body.graded[0]).not.toHaveProperty('notes');
+    expect(body.history).toEqual([]);
+  });
+});
+
 describe('sharing', () => {
   it('public links are redacted on the server by default', async () => {
     const { owner, id } = await seeded();
