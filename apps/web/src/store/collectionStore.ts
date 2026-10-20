@@ -128,7 +128,7 @@ interface CollectionState {
   importData: (data: unknown) => Promise<number>;
   clearAll: () => Promise<void>;
   createList: (name: string, description?: string, opts?: { kind?: 'list' | 'deck'; format?: DeckFormat }) => Promise<CustomList | undefined>;
-  updateList: (id: string, patch: { name?: string; description?: string; order?: string[]; format?: DeckFormat }) => Promise<void>;
+  updateList: (id: string, patch: { name?: string; description?: string; order?: string[]; format?: DeckFormat }) => Promise<boolean>;
   deleteList: (id: string) => Promise<void>;
   /** Adds the card to the list, or removes it if it's already there. Returns whether it's now in the list. */
   toggleInList: (listId: string, card: CardLike) => Promise<boolean>;
@@ -785,7 +785,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
 
     updateList: async (id, patch) => {
       const cid = writable();
-      if (!cid) return;
+      if (!cid) return false;
       const lists = get().lists.map((l) =>
         l.id === id
           ? {
@@ -800,7 +800,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => {
             }
           : l,
       );
-      await persist(() => set({ lists }), () => getBackend().updateList(cid, id, patch));
+      return persist(() => set({ lists }), () => getBackend().updateList(cid, id, patch));
     },
 
     deleteList: async (id) => {

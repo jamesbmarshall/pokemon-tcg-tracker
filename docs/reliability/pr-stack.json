@@ -1,0 +1,135 @@
+[
+  {
+    "stage": 1,
+    "branch": "reliability/01-share-privacy",
+    "base": "fix/mobile-navigation-single-row",
+    "title": "Close public-share privacy leaks",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/24"
+  },
+  {
+    "stage": 2,
+    "branch": "reliability/02-account-and-secret-safety",
+    "base": "reliability/01-share-privacy",
+    "title": "Make account transitions and instance secrets fail safely",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/25"
+  },
+  {
+    "stage": 3,
+    "branch": "reliability/03-portable-roundtrip",
+    "base": "reliability/02-account-and-secret-safety",
+    "title": "Preserve lists and decks in portable round trips",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/26"
+  },
+  {
+    "stage": 4,
+    "branch": "reliability/04-isolated-optimistic-writes",
+    "base": "reliability/03-portable-roundtrip",
+    "title": "Isolate optimistic rollback and asynchronous collection work",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/27"
+  },
+  {
+    "stage": 5,
+    "branch": "reliability/05-durable-process-lifecycle",
+    "base": "reliability/04-isolated-optimistic-writes",
+    "title": "Enforce one durable writer and drain shutdown",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/28"
+  },
+  {
+    "stage": 6,
+    "branch": "reliability/06-mutation-protocol",
+    "base": "reliability/05-durable-process-lifecycle",
+    "title": "Commit mutation receipts with revisions and rollback protection",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/29"
+  },
+  {
+    "stage": 7,
+    "branch": "reliability/07-conflict-safe-card-edits",
+    "base": "reliability/06-mutation-protocol",
+    "title": "Make card quantity edits atomic and conflict aware",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/30"
+  },
+  {
+    "stage": 8,
+    "branch": "reliability/08-guard-all-collection-edits",
+    "base": "reliability/07-conflict-safe-card-edits",
+    "title": "Protect the remaining collection mutations",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/31"
+  },
+  {
+    "stage": 9,
+    "branch": "reliability/09-azure-local-disk",
+    "base": "reliability/08-guard-all-collection-edits",
+    "title": "Deploy SQLite on a single Azure VM with local managed storage",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/32"
+  },
+  {
+    "stage": 10,
+    "branch": "reliability/10-photo-lifecycle",
+    "base": "reliability/09-azure-local-disk",
+    "title": "Publish immutable photos and reconcile them safely",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/33"
+  },
+  {
+    "stage": 11,
+    "branch": "reliability/11-complete-instance-recovery",
+    "base": "reliability/10-photo-lifecycle",
+    "title": "Add complete validated instance snapshots and restore",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/34"
+  },
+  {
+    "stage": 12,
+    "branch": "reliability/12-encrypted-offhost-backups",
+    "base": "reliability/11-complete-instance-recovery",
+    "title": "Automate encrypted off-host backup and verification",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/35"
+  },
+  {
+    "stage": 13,
+    "branch": "reliability/13-operational-diagnostics",
+    "base": "reliability/12-encrypted-offhost-backups",
+    "title": "Expose owner recovery diagnostics and write readiness",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/36"
+  },
+  {
+    "stage": 14,
+    "branch": "reliability/14-accessible-core-controls",
+    "base": "reliability/13-operational-diagnostics",
+    "title": "Make core dialogs and controls keyboard accessible",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/37"
+  },
+  {
+    "stage": 15,
+    "branch": "reliability/15-valuation-honesty",
+    "base": "reliability/14-accessible-core-controls",
+    "title": "Disclose valuation coverage and quote limitations",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/38"
+  },
+  {
+    "stage": 16,
+    "branch": "reliability/16-browser-verification",
+    "base": "reliability/15-valuation-honesty",
+    "title": "Verify the built application in real browsers",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/39"
+  },
+  {
+    "stage": 17,
+    "branch": "reliability/17-resource-bounds",
+    "base": "reliability/16-browser-verification",
+    "title": "Bound imports, upstream responses and storage admission",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/40"
+  },
+  {
+    "stage": 18,
+    "branch": "reliability/18-release-and-supply-chain",
+    "base": "reliability/17-resource-bounds",
+    "title": "Gate releases and fix dependency vulnerabilities",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/41"
+  },
+  {
+    "stage": 19,
+    "branch": "reliability/19-recovery-acceptance",
+    "base": "reliability/18-release-and-supply-chain",
+    "title": "Complete recovery acceptance and release readiness",
+    "url": "https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/42"
+  }
+]

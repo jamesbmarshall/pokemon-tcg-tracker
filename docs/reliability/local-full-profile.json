@@ -1,0 +1,11 @@
+{
+  "profile": "50000 entries / 5 GiB photos",
+  "restic": "restic 0.19.1 compiled with go1.26.4 on darwin/arm64",
+  "snapshotMs": 73911,
+  "restoreAndAuthenticationMs": 487542,
+  "totalMs": 804464,
+  "platform": "darwin",
+  "architecture": "arm64",
+  "note": "Local encrypted repository rehearsal; cloud bandwidth and fresh-host provisioning are not measured.",
+  "resourceLimits": "Local macOS run; not constrained to the target 2 CPUs / 4 GiB RAM."
+}

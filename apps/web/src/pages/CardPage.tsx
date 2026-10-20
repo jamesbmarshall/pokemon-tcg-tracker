@@ -7,7 +7,7 @@ import { useCard, usePrintings, useSetCards } from '../api/hooks';
 import { langOf } from '../api/languages';
 import { LanguageBadge } from '../components/Language';
 import { cardVariants, compareCardNumber, toSnapshot, usdPrices } from '../api/client';
-import { costBasis, entryValue, ownedTotal, priceOf, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
+import { costBasis, entryValue, gradedValue, ownedTotal, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
 import AddToList from '../components/AddToList';
 import { useFx, useMoney, useRates } from '../hooks/useMoney';
 import { useCardArtworkSize } from '../hooks/useCardArtworkSize';
@@ -255,7 +255,7 @@ export default function CardPage() {
   // Each owned variant's contribution uses its manual override (entryValue) when set, else market price.
   const ownedValue =
     cardEntries.reduce((s, e) => s + (entryValue(e, cardsMap) ?? 0) * e.quantity, 0) +
-    slabs.reduce((s, g) => s + (g.valueUsd ?? priceOf(snap, g.variant) ?? 0), 0);
+    slabs.reduce((s, g) => s + gradedValue(g, cardsMap), 0);
   const cost = rates ? costBasis(cardEntries, cardsMap, slabs, rates) : undefined;
   const hasManualValue = cardEntries.some((e) => e.valueUsd != null) || slabs.some((g) => g.valueUsd != null);
   const foilish = /holo|rare|ex|illustration|secret|ultra|gx|vmax|vstar/i.test(card.rarity ?? '') || variants.some(isFoil);

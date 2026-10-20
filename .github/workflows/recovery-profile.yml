@@ -1,0 +1,39 @@
+name: Full recovery profile
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Source ref to rehearse
+        default: main
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Require space for independent encrypted recovery copies
+        run: test "$(df --output=avail -B1 . | tail -1)" -ge 26843545600
+      - name: Rehearse 50k entries and 5 GiB photos on 2 CPUs and 4 GiB RAM
+        run: |
+          docker run --rm --cpus=2 --memory=4g --memory-swap=4g \
+            -v "$PWD:/work" -w /work \
+            -e FULL_REHEARSAL=1 -e REHEARSAL_REPORT=/work/ci-full-profile.json \
+            node:24-bookworm sh -ec \
+            'apt-get update && apt-get install -y --no-install-recommends restic && npm ci && npm run test:recovery'
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: full-recovery-profile
+          path: ci-full-profile.json
+          if-no-files-found: warn
+          retention-days: 30

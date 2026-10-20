@@ -45,3 +45,39 @@ Verify accounts, TOTP, sharing, list quantities, collection counts and photo has
 users to the restored instance. The recovery-point target concerns the capture time of the most
 recent **completed remote backup**, not the last local snapshot or job start. A backup failure
 can invalidate the target; it never becomes a zero-loss storage guarantee.
+
+## Release and deployment acceptance
+
+Run `npm run build`, `npm run test:crash` and, with Restic installed,
+`npm run test:recovery`. The recovery rehearsal creates synthetic data, captures a complete
+snapshot, backs it up using actual Restic encryption, checks all repository data, deletes the
+source instance, restores to a new directory, and checks TOTP sign-in, shares, deck data, photos,
+provider-secret decryption and mutation receipts. It never targets your configured instance.
+
+`FULL_REHEARSAL=1 REHEARSAL_REPORT=/tmp/recovery-result.json npm run test:recovery` uses
+50,000 entries and 5 GiB of independent random photo bytes. Reserve at least 25 GiB free space
+for the source, snapshot, repository and restored copies. Temporary files are removed after
+completion. Run this on the target resource profile (2 CPUs / 4 GiB RAM), with the actual remote
+repository and expected bandwidth, to establish performance. A local repository benchmark
+proves neither cloud upload time nor fresh-VM provisioning time.
+
+Before promoting a real instance:
+
+1. Preserve a stopped, complete copy of the old volume and its effective key.
+2. Deploy one pinned application image and Caddy proxy to the managed local disk. Verify TLS,
+   mount identity, non-root application UID, write readiness and duplicate-writer rejection.
+3. Configure independent off-host repository credentials/password custody, run backup and
+   verification, and inspect the capture/upload/check/restore timestamps in owner Settings.
+4. Stop the test instance, restore the latest remote snapshot on a new host, restore configuration
+   and DNS/TLS, and time the entire outage. Verify TOTP/recovery-code sign-in, existing share
+   links, counts, list/deck quantities, photos and a new write. Record the capture age and outage.
+5. Rehearse failed uploads, unavailable storage and a filled data disk. Confirm failures remain
+   visible and do not advance the reported successful recovery point.
+6. Promote only when remote capture age is within one hour and complete fresh-host recovery
+   is within two hours. If it fails, keep the instance in testing and record the actual limits.
+
+The supported launcher is 1.1.0 or newer and write protocol is 1. Application startup rejects
+unknown future schema/protocol floors. Do not roll an external image back to a pre-protocol
+launcher: an old binary cannot enforce a guard that did not exist in its code. Use a compatible
+newer image or restore a complete pre-upgrade snapshot to a separate host. Database-only
+rollback can discard newer writes and is not a recovery strategy for the active collection.

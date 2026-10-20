@@ -49,3 +49,14 @@ describe('guarded collection edits', () => {
     expect((await c.get(`/api/collections/${id}/state`)).json().entries[0].quantity).toBe(1);
   });
 });
+
+it('invalidates stale edits when catalogue aliases rewrite a held printing', async () => {
+  const { saveSnapshots } = await import('../src/cards.ts');
+  const c = await setupOwner(s.app); const id = await personalId(c);
+  await c.put(`/api/collections/${id}/entries`, { entries: [{ cardId: 'sv1-001', variant: 'normal', quantity: 1 }] });
+  const before = (await c.get(`/api/collections/${id}/state`)).json().revision;
+  saveSnapshots(s.ctx.db, [{ id: 'sv1-001', setId: 'sv1', prices: {}, variants: ['canonical'], printings: [{ id: 'canonical', label: 'Canonical', legacyAliases: ['normal'] }], syncedAt: new Date().toISOString() } as unknown as import('@poketracker/shared/types').CardSnapshot]);
+  const state = (await c.get(`/api/collections/${id}/state`)).json();
+  expect(state.revision).toBe(before + 1); expect(state.entries[0].variant).toBe('canonical');
+  expect((await c.req('PUT', `/api/collections/${id}/entries`, { entries: [] }, { 'if-match': `"${before}"` })).statusCode).toBe(409);
+});

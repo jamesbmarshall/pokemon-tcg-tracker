@@ -43,7 +43,8 @@ function ListForm({ list, kind = 'list', onClose }: { list?: CustomList; kind?: 
   const { busy, error, onSubmit } = useSubmit(async () => {
     if (!name.trim()) throw new Error(`Give the ${isDeck ? 'deck' : 'list'} a name`);
     if (list) {
-      await updateList(list.id, { name: name.trim(), description: description.trim(), ...(isDeck ? { format } : {}) });
+      const saved = await updateList(list.id, { name: name.trim(), description: description.trim(), ...(isDeck ? { format } : {}) });
+      if (!saved) throw new Error(useCollectionStore.getState().saveError ?? 'Couldn’t save the list. Your input has been kept.');
       onClose();
     } else {
       const created = await createList(name.trim(), description.trim() || undefined, isDeck ? { kind: 'deck', format } : undefined);

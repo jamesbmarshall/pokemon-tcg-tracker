@@ -1,3 +1,4 @@
+import { assertWriteProtocol } from './mutations.ts';
 import { startRecoveryControl } from './recoveryControl.ts';
 /**
  * Server entry point (bundled by esbuild into server.mjs). Opens and migrates the database,
@@ -21,6 +22,7 @@ import { seedDemo } from './demo.ts';
 async function main() {
   const config = loadConfig();
   const releaseLock = acquireInstanceLock(config.dataDir);
+  assertWriteProtocol(config.dataDir);
   const db = new Db(join(config.dataDir, 'poketracker.db'), config.journalMode);
   // Migrate before anything reads the schema. A failure here exits non-zero before /health is
   // up, which is what lets the launcher roll a bad update back.

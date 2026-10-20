@@ -14,7 +14,7 @@ export class Db {
   /** Prepared statements keyed by SQL text. Callers pass constant SQL, so this stays small. */
   private stmts = new Map<string, ReturnType<DatabaseSync['prepare']>>();
 
-  /** See Config.journalMode for why network shares need 'delete'. */
+  /** One connection on local disk; network shares are unsupported in every journal mode. */
   constructor(readonly file: string, journalMode: 'wal' | 'delete' = 'wal') {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);
@@ -76,6 +76,7 @@ export class Db {
    */
   migrate(): number {
     this.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+    if (this.schemaVersion > MIGRATIONS.length) throw new Error('This database requires a newer application schema. Refusing to migrate or serve it.');
     if (this.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'")) {
       const owners = this.get<{ n: number }>("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'")!.n;
       if (owners > 1) throw new Error('Multiple owner accounts detected. Preserve a backup and choose one owner before upgrading; no accounts were changed.');
