@@ -34,3 +34,7 @@ release/
 
 # Release signing key (never commit)
 update-signing-key.pem
+
+# Browser test artifacts
+/playwright-report
+/test-results
