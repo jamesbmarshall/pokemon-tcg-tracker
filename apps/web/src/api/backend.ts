@@ -143,7 +143,16 @@ export interface ProviderHealthReport {
  * tests use an in-memory implementation with the same semantics; public share pages use a
  * read-only one.
  */
+export interface SystemDiagnostics {
+  ready: boolean;
+  build: { version: string; commit: string | null; builtAt: string | null; image: string | null; launcherVersion: string | null; schemaVersion: number };
+  runtime: { uid: number | null; gid: number | null; rootOverride: boolean };
+  storage: { availableBytes: number; totalBytes: number } | null;
+  recovery: { configured: boolean; state: string; capturedAt: string | null; uploadedAt: string | null; checkedAt: string | null; verifiedAt: string | null; verificationOverdue: boolean; error: string | null; verificationError: string | null; snapshotRunning: boolean; targetRecoveryPointMinutes: number; targetRestoreMinutes: number };
+}
+
 export interface Backend {
+  diagnostics?: () => Promise<SystemDiagnostics>;
   adjustEntry?: (id: string, cardId: string, variant: string, delta: number) => Promise<{ entry: CollectionEntry | null }>;
   /** When set, the store skips writes up front instead of attempting them and rolling back. */
   readonly readOnly?: boolean;
@@ -214,6 +223,7 @@ const enc = encodeURIComponent;
 const c = (id: string) => `/api/collections/${enc(id)}`;
 
 export const httpBackend: Backend = {
+  diagnostics: () => api('/api/admin/diagnostics'),
   collections: async () => {
     const rows = await api<CollectionSummary[]>('/api/collections');
     for (const row of rows) if (collectionRevision(row.id) === undefined) acceptCollectionRevision(row.id, row.revision);

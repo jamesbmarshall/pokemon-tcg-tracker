@@ -1,3 +1,4 @@
+import { readiness } from './diagnostics.ts';
 import { initCatalog } from './cards.ts';
 /**
  * Builds the Fastify instance: security headers, CSRF and session hooks, the API routes and
@@ -119,6 +120,10 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
   // The launcher health-gates updates on this and compares the version, so it must stay
   // unauthenticated and keep returning { version }.
   app.get('/health', async () => ({ ok: true, version: ctx.config.version }));
+  app.get('/ready', async (_req, reply) => {
+    const ok = readiness(ctx);
+    return reply.header('cache-control', 'no-store').code(ok ? 200 : 503).send({ ok });
+  });
 
   authRoutes(app, ctx);
   collectionRoutes(app, ctx);
