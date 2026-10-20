@@ -169,7 +169,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
       // Vite puts content-hashed files under assets/, so they can be cached forever. Everything
       // else (index.html, icons, manifest) must revalidate so a new version shows up at once.
       setHeaders: (res, path) => {
-        res.setHeader('cache-control', path.includes(`${join(web, 'assets')}`) ? 'public, max-age=31536000, immutable' : 'no-cache');
+        res.header('cache-control', path.includes(`${join(web, 'assets')}`) ? 'public, max-age=31536000, immutable' : 'no-cache');
       },
     });
     // Client-side routes all get the SPA shell.

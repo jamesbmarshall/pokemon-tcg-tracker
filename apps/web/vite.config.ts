@@ -1,11 +1,12 @@
 /// <reference types="vitest/config" />
 import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { copyFileSync, createReadStream, mkdirSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { viteStaticCopy } from 'vite-plugin-static-copy'
+import type { Plugin } from 'vite'
 
 // Resolved via require.resolve rather than a relative node_modules path: in this npm workspaces
 // monorepo these packages are hoisted to the repo root, not apps/web/node_modules.
@@ -13,6 +14,38 @@ const require = createRequire(import.meta.url)
 const tesseractDist = dirname(require.resolve('tesseract.js/dist/worker.min.js'))
 const tesseractCoreDir = dirname(require.resolve('tesseract.js-core/package.json'))
 const engLangDir = dirname(require.resolve('@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz'))
+
+// Exact asset map: no glob watcher or arbitrary filesystem path is exposed in development.
+function selfHostedOcr(): Plugin {
+  const files = new Map<string, string>([
+    ['/tesseract/worker.min.js', join(tesseractDist, 'worker.min.js')],
+    ['/tesseract/lang/eng.traineddata.gz', join(engLangDir, 'eng.traineddata.gz')],
+    ...['tesseract-core-lstm.wasm.js', 'tesseract-core-lstm.wasm', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm', 'tesseract-core-relaxedsimd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm'].map(name => [`/tesseract/core/${name}`, join(tesseractCoreDir, name)] as [string, string]),
+  ])
+  let outDir = ''
+  let building = false
+  return {
+    name: 'self-hosted-ocr',
+    configResolved(config) { outDir = config.build.outDir; building = config.command === 'build' },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = (req.url ?? '').split('?')[0]
+        const source = files.get(url)
+        if (!source) return next()
+        res.setHeader('Content-Type', url.endsWith('.js') ? 'text/javascript' : url.endsWith('.wasm') ? 'application/wasm' : 'application/gzip')
+        createReadStream(source).on('error', next).pipe(res)
+      })
+    },
+    closeBundle() {
+      if (!building) return
+      for (const [url, source] of files) {
+        const target = join(outDir, url.slice(1))
+        mkdirSync(dirname(target), { recursive: true })
+        copyFileSync(source, target)
+      }
+    },
+  }
+}
 
 export default defineConfig({
   plugins: [
@@ -22,24 +55,7 @@ export default defineConfig({
     // node_modules at build time, so nothing is ever fetched from a CDN (the CSP wouldn't allow
     // it anyway). Only the LSTM-only core variants are copied, matching tesseract.js's default
     // OEM, which is all the scan page asks for.
-    viteStaticCopy({
-      targets: [
-        { src: `${tesseractDist}/worker.min.js`, dest: 'tesseract', rename: { stripBase: true } },
-        {
-          src: [
-            `${tesseractCoreDir}/tesseract-core-lstm.wasm.js`,
-            `${tesseractCoreDir}/tesseract-core-lstm.wasm`,
-            `${tesseractCoreDir}/tesseract-core-simd-lstm.wasm.js`,
-            `${tesseractCoreDir}/tesseract-core-simd-lstm.wasm`,
-            `${tesseractCoreDir}/tesseract-core-relaxedsimd-lstm.wasm.js`,
-            `${tesseractCoreDir}/tesseract-core-relaxedsimd-lstm.wasm`,
-          ],
-          dest: 'tesseract/core',
-          rename: { stripBase: true },
-        },
-        { src: `${engLangDir}/eng.traineddata.gz`, dest: 'tesseract/lang', rename: { stripBase: true } },
-      ],
-    }),
+    selfHostedOcr(),
     VitePWA({
       // 'prompt', not 'autoUpdate': a silent reload could drop in-progress edits. The user
       // confirms via the toast wired up in main.tsx (see onNeedRefresh there).

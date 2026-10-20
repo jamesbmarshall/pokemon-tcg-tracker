@@ -20,7 +20,8 @@
     "typecheck": "tsc -b apps/web && tsc -p apps/server --noEmit && tsc -p packages/shared --noEmit",
     "test": "npm test -w @poketracker/shared -w @poketracker/server -w @poketracker/launcher -w @poketracker/web",
     "audit:printings": "tsx scripts/audit-printings.ts",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.1-d1531a9.0.sha-d1531a9",

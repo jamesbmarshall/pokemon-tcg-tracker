@@ -17,6 +17,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 
 const yamlFiles = [
   ...globSync('deploy/**/*.yml', { cwd: root }),
+  ...globSync('.github/**/*.yml', { cwd: root }),
   ...globSync('deploy/**/*.yaml', { cwd: root }),
 ].sort();
 
