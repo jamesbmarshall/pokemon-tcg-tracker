@@ -12,9 +12,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@fastify/cookie": "^11.0.2",
+    "@fastify/cookie": "^11.1.3",
     "@fastify/helmet": "^13.0.1",
-    "@fastify/multipart": "^9.0.3",
+    "@fastify/multipart": "^10.1.4",
     "@fastify/static": "^10.1.6",
     "@poketracker/shared": "*",
     "croner": "^9.1.0",
@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.5",
-    "esbuild": "^0.25.8",
+    "esbuild": "^0.28.2",
     "tsx": "^4.20.3"
   }
 }
