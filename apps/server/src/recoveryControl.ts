@@ -1,3 +1,4 @@
+import { runtimeDirectory } from './storage.ts';
 import { createServer } from 'node:net';
 import { chmodSync, existsSync, lstatSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,7 +16,7 @@ export function recoveryStatus(ctx: Ctx) {
 
 /** Local OS authority only: no listener on TCP and no cloud credentials in the application. */
 export async function startRecoveryControl(ctx: Ctx) {
-  const path = join(ctx.config.dataDir, 'control.sock');
+  const path = join(runtimeDirectory(ctx.config.dataDir), 'control.sock');
   if (existsSync(path)) {
     if (!lstatSync(path).isSocket()) throw new Error('control.sock exists and is not a socket; refusing to replace it');
     unlinkSync(path);

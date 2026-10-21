@@ -32,9 +32,8 @@ export interface Config {
   imageCacheMb: number;
   backupsToKeep: number;
   /**
-   * 'wal' on local disks. 'delete' is retained for local compatibility. Network storage is unsupported: WAL relies on a
-   * memory-mapped -shm file and byte-range locks that SMB does not honour reliably, which can
-   * corrupt the database. Changing journal mode does not make a shared filesystem a supported durable deployment.
+   * WAL on local disks; DELETE on network shares. Startup automatically selects DELETE
+   * for recognised network filesystems. Network storage requires a single instance.
    */
   journalMode: 'wal' | 'delete';
   logLevel: string;

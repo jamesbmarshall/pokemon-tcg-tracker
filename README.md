@@ -69,7 +69,7 @@ PokéTracker is one container with a `/data` volume. Pick whichever home suits y
 | Where | Best for | HTTPS |
 | --- | --- | --- |
 | [VPS with Docker](#a-vps-with-docker) | A cheap Linux server with your own domain | Let's Encrypt, automatic |
-| [Azure VM](#azure) | One server with a managed local data disk | Automatic HTTPS |
+| [Azure Container Apps](#azure) | Managed hosting with Azure Files; no VM to maintain | Included |
 | [Unraid, Synology, Portainer](#nas-and-home-servers) | A box you already run at home | Your reverse proxy, if you want it |
 
 Whichever you choose, the first visit asks for a **setup token** before it will create the owner account. That stops a stranger who finds your new instance before you do from claiming it. You can choose the token yourself at deploy time (`SETUP_TOKEN`), or leave it blank and read a random one from the container log:
@@ -105,15 +105,15 @@ Prefer to do it by hand? Copy [`deploy/docker/docker-compose.yml`](deploy/docker
 
 ### Azure
 
-Use the [Azure VM deployment and migration guide](deploy/azure/README.md). It runs one
-container host with a separate managed data disk and automatic HTTPS. Application images
-must be pinned by digest. Deployment parameters include your SSH public key and a restricted
-administrator source CIDR.
+Use the [Azure Container Apps guide](deploy/azure/README.md) for a single container with
+Azure Files persistence and built-in HTTPS. No VM or separate database service is required.
+Keep exactly one instance, use rollback journaling, and stop existing revisions before
+replacing the container image. Prefer in-app updates for routine releases.
 
-The older Container Apps/Azure Files and App Service network-storage templates are retained
-as legacy references only. They are not recommended for new SQLite instances: a single-replica
-setting does not prove that deployments cannot overlap writers, and rollback journaling does
-not repair network filesystem locking. Rehearse a complete migration before moving an instance.
+Network storage carries additional SQLite locking and recovery risks. The app warns about
+these without blocking startup, and automatically selects rollback journaling for recognised
+network mounts. Nightly database backups remain enabled; keep independent copies of the
+complete instance, including photos and the instance key, for recovery after storage loss.
 
 ### NAS and home servers
 
@@ -204,7 +204,7 @@ These are the settings you're most likely to touch:
 | `BACKUPS_TO_KEEP` | `7` | Nightly database backups to keep. |
 | `PRICE_HISTORY_DAYS` | `730` | How many days of daily per-card price history to keep before the cleanup job prunes older rows. |
 | `TRUST_PROXY` | `false` | Trust `X-Forwarded-*` headers from a reverse proxy. Use a hop count (`1` for one proxy, as the bundled Caddy and Azure deploys do) or the proxy's IP/CIDR. Avoid `true`: it lets clients pick their own IP and get round rate limits. |
-| `SQLITE_JOURNAL_MODE` | `wal` | Local disk only. `delete` is a local compatibility option, not permission to use SMB/NFS; known network filesystems are rejected on Linux. |
+| `SQLITE_JOURNAL_MODE` | `wal` | WAL on local disk; recognised network mounts automatically use `delete` and show a storage warning. Run one instance only. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `JOBS` | `true` | Enables scheduled refreshes, backups and cleanup. Set `false` for isolated development or tests. |
 | `DEMO_MODE` | `false` | Seeds a sample collection with one-click read-only sign-in. Allows catalogue-cache writes, blocks collection edits, sign-up and updates, and resets nightly when jobs are enabled. See [Demo mode](#demo-mode). |

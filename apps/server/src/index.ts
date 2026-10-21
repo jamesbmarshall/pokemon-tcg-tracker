@@ -7,6 +7,7 @@ import { startRecoveryControl } from './recoveryControl.ts';
  */
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { storagePolicy } from './storage.ts';
 import { acquireInstanceLock } from './instanceLock.ts';
 import { loadConfig } from './config.ts';
 import { Db } from './db.ts';
@@ -23,6 +24,9 @@ async function main() {
   const config = loadConfig();
   const releaseLock = acquireInstanceLock(config.dataDir);
   assertWriteProtocol(config.dataDir);
+  const storage = storagePolicy(config.dataDir, config.journalMode);
+  config.journalMode = storage.journalMode;
+  if (storage.warning) console.warn(storage.warning);
   const db = new Db(join(config.dataDir, 'poketracker.db'), config.journalMode);
   // Migrate before anything reads the schema. A failure here exits non-zero before /health is
   // up, which is what lets the launcher roll a bad update back.

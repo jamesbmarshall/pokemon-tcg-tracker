@@ -148,6 +148,7 @@ export interface SystemDiagnostics {
   ready: boolean;
   build: { version: string; commit: string | null; builtAt: string | null; image: string | null; launcherVersion: string | null; schemaVersion: number };
   runtime: { uid: number | null; gid: number | null; rootOverride: boolean };
+  storageWarning?: string | null;
   storage: { availableBytes: number; totalBytes: number } | null;
   recovery: { configured: boolean; state: string; capturedAt: string | null; uploadedAt: string | null; checkedAt: string | null; verifiedAt: string | null; verificationOverdue: boolean; error: string | null; verificationError: string | null; snapshotRunning: boolean; targetRecoveryPointMinutes: number; targetRestoreMinutes: number };
 }

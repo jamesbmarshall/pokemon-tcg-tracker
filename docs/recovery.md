@@ -18,7 +18,9 @@ directories are incomplete and must never be uploaded as successful recovery poi
 Snapshots contain **plaintext secrets** locally and are restricted to the host/container owner.
 Copy them off-host only through encrypted backup tooling. Keep the backup-repository password
 outside the app and preserve an independent copy: losing it makes encrypted backups unusable.
-The control interface is a permission-0600 Unix socket, never a public HTTP endpoint. Anyone
+The control interface is a permission-0600 Unix socket, never a public HTTP endpoint.
+On network mounts it lives in a private local temporary directory; the packaged CLI resolves
+the same location automatically when run inside the app container. Anyone
 with host root or Docker access already has authority over the live database and its key.
 
 To validate or restore using a compatible published image's packaged CLI:
@@ -45,6 +47,12 @@ Verify accounts, TOTP, sharing, list quantities, collection counts and photo has
 users to the restored instance. The recovery-point target concerns the capture time of the most
 recent **completed remote backup**, not the last local snapshot or job start. A backup failure
 can invalidate the target; it never becomes a zero-loss storage guarantee.
+
+## Optional stronger recovery targets
+
+The following host-tooling checks target installations seeking measured recovery times.
+They are not prerequisites for the low-cost Container Apps setup; see the
+[Azure guide](../deploy/azure/README.md) for its simpler backup and update procedure.
 
 ## Release and deployment acceptance
 

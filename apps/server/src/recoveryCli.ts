@@ -1,10 +1,11 @@
+import { runtimeDirectory } from './storage.ts';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { restoreRecoverySnapshot, validateRecoverySnapshot } from './recovery.ts';
 
 async function control(command: string) {
   return new Promise<unknown>((accept, reject) => {
-    const socket = createConnection(join(process.env.DATA_DIR ?? '/data', 'control.sock'));
+    const socket = createConnection(join(runtimeDirectory(process.env.DATA_DIR ?? '/data'), 'control.sock'));
     let input = '';
     socket.setTimeout(30 * 60_000, () => { socket.destroy(); reject(new Error('Recovery operation timed out')); });
     socket.on('connect', () => socket.write(JSON.stringify({ command }) + '\n'));

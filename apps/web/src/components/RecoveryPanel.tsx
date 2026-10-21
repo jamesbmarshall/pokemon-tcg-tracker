@@ -8,6 +8,7 @@ export default function RecoveryPanel() {
   if (!data) return <p className="text-sm text-muted">{query.isError ? 'Cannot verify backup protection. Check the server and host backup jobs.' : 'Backup protection has not been verified.'}</p>;
   const recovery = data.recovery;
   return <div className="space-y-3 text-sm">
+    {data.storageWarning && <p role="status" className="text-muted">{data.storageWarning}</p>}
     <p role="status" className={recovery.state === 'current' ? 'text-gain' : 'text-loss'}>
       {recovery.state === 'current' ? 'Off-host recovery point is within the one-hour target.' : recovery.state === 'not_configured' ? 'No off-host backup has been reported. Configure host backups before relying on recovery.' : 'Backup protection needs attention. The one-hour recovery target may not be met.'}
     </p>
@@ -24,7 +25,7 @@ export default function RecoveryPanel() {
     </dl>
     {(recovery.verificationOverdue || recovery.verificationError) && <p className="text-loss">No recent successful restore verification is available. A completed upload alone does not prove recovery.</p>}
     {data.runtime.uid === 0 && <p className="text-loss">The server is running as root{data.runtime.rootOverride ? ' with an explicit host override' : ''}. Review the container user and volume ownership.</p>}
-    <p className="text-xs text-muted">Recovery targets: at most one hour of lost changes after storage destruction, and restoration within two hours. A fresh-host rehearsal is required to establish actual recovery time.</p>
+    <p className="text-xs text-muted">Optional host backup targets: a recovery point within one hour and restoration within two hours. These depend on separately configured backups and a successful restore rehearsal.</p>
     <a className="underline" href="https://github.com/jamesbmarshall/pokemon-tcg-tracker/blob/main/deploy/backup/README.md" target="_blank" rel="noreferrer">Host backup setup and verification</a>
   </div>;
 }
