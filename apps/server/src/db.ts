@@ -14,7 +14,7 @@ export class Db {
   /** Prepared statements keyed by SQL text. Callers pass constant SQL, so this stays small. */
   private stmts = new Map<string, ReturnType<DatabaseSync['prepare']>>();
 
-  /** One connection on local disk; network shares are unsupported in every journal mode. */
+  /** One shared connection. Startup selects rollback journaling for known network shares. */
   constructor(readonly file: string, journalMode: 'wal' | 'delete' = 'wal') {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);

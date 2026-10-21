@@ -1,14 +1,13 @@
-// LEGACY: not recommended for collector data. Use vm.bicep and README.md instead.
-// Network storage and overlapping deployments do not provide the required writer guarantee.
 // PokéTracker on Azure Container Apps.
 //
 // Creates: a Log Analytics workspace, a storage account with an Azure Files share for /data, a
 // Container Apps environment and the app itself, with HTTPS on its *.azurecontainerapps.io address.
 //
-// SQLite and Azure Files: SMB shares don't support the byte-range locks SQLite normally relies on.
-// So the share is mounted with `nobrl` (locks are handled locally) and SQLite runs in rollback-
-// journal mode instead of WAL. This does not establish network-locking safety. Never
-// raise maxReplicas: two copies writing to the same database file would corrupt it.
+// Azure Files uses SMB. Run SQLite in rollback-journal mode with nobrl for compatibility.
+// The host-local process lock cannot coordinate separate replicas. Keep one replica and stop
+// every active revision before replacing the image; Single revision mode alone can overlap
+// old and new containers during rollout. See README.md for the update procedure and backups.
+// Network storage has residual locking/flush risks; it is not a zero-data-loss guarantee.
 //
 // Build the portal template with: az bicep build -f containerapps.bicep --outfile containerapps.json
 
@@ -151,7 +150,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'data'
           storageType: 'AzureFile'
           storageName: envStorage.name
-          // nobrl: SQLite's locks stay in-process (safe with one replica). uid/gid 1000 is the
+          // nobrl disables remote byte-range locks; never allow concurrent replicas. uid/gid 1000 is the
           // image's non-root "node" user, so it can write to the share.
           mountOptions: 'nobrl,mfsymlinks,cache=strict,uid=1000,gid=1000,dir_mode=0750,file_mode=0640'
         }

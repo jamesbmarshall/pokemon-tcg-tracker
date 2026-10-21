@@ -1,5 +1,5 @@
-// LEGACY: not recommended for collector data. Use vm.bicep and README.md instead.
-// Network storage and overlapping deployments do not provide the required writer guarantee.
+// Network-share compatibility requires rollback journaling and stop-before-start updates.
+// See README.md for backup requirements and limitations.
 // PokéTracker on Azure App Service (Linux, custom container).
 //
 // Creates: a Linux App Service plan (B1 by default) and a web app running the PokéTracker image,
