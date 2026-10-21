@@ -235,8 +235,15 @@ describe('custom lists', () => {
     await c.put(`/api/collections/${id}/lists/${list.id}/cards/sv1-001`);
     await c.put(`/api/collections/${id}/lists/${list.id}/cards/sv1-002`);
     await c.patch(`/api/collections/${id}/lists/${list.id}`, { order: ['sv1-002', 'sv1-001'] });
+    const other = (await c.post(`/api/collections/${id}/lists`, { name: 'Deck' })).json();
+    await c.put(`/api/collections/${id}/lists/${other.id}/cards/sv1-003`, { qty: 3 });
+    const all = vi.spyOn(s.ctx.db, 'all');
     const st = (await c.get(`/api/collections/${id}/state`)).json();
-    expect(st.lists).toEqual([expect.objectContaining({ name: 'Trade binder', cards: ['sv1-002', 'sv1-001'] })]);
+    expect(all.mock.calls.filter(([query]) => String(query).includes('FROM list_cards'))).toHaveLength(1);
+    expect(st.lists).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Trade binder', cards: ['sv1-002', 'sv1-001'], cardQtys: { 'sv1-002': 1, 'sv1-001': 1 } }),
+      expect.objectContaining({ name: 'Deck', cards: ['sv1-003'], cardQtys: { 'sv1-003': 3 } }),
+    ]));
   });
 });
 

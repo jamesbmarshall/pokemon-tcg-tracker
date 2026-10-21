@@ -250,8 +250,20 @@ export function readLists(ctx: Ctx, collectionId: string) {
     'SELECT * FROM lists WHERE collection_id = ? ORDER BY created_at',
     collectionId,
   );
+  const cardsByList = new Map<string, { cardId: string; qty: number }[]>();
+  if (lists.length) {
+    const rows = ctx.db.all<{ list_id: string; card_id: string; qty: number }>(
+      `SELECT list_id, card_id, qty FROM list_cards WHERE list_id IN (${lists.map(() => '?').join(',')}) ORDER BY list_id, position, added_at`,
+      ...lists.map((l) => l.id),
+    );
+    for (const row of rows) {
+      const cards = cardsByList.get(row.list_id) ?? [];
+      cards.push({ cardId: row.card_id, qty: row.qty });
+      cardsByList.set(row.list_id, cards);
+    }
+  }
   return lists.map((l) => {
-    const rows = ctx.db.all<{ card_id: string; qty: number }>('SELECT card_id, qty FROM list_cards WHERE list_id = ? ORDER BY position, added_at', l.id);
+    const cards = cardsByList.get(l.id) ?? [];
     return {
       id: l.id,
       name: l.name,
@@ -260,8 +272,8 @@ export function readLists(ctx: Ctx, collectionId: string) {
       format: l.format ?? undefined,
       createdAt: l.created_at,
       updatedAt: l.updated_at,
-      cards: rows.map((r) => r.card_id),
-      cardQtys: Object.fromEntries(rows.map((r) => [r.card_id, r.qty])),
+      cards: cards.map((r) => r.cardId),
+      cardQtys: Object.fromEntries(cards.map((r) => [r.cardId, r.qty])),
     };
   });
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cardVariants, getSet, getSets } from './catalog';
+import { cardVariants, getSet, getSetCards, getSets } from './catalog';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -22,6 +22,33 @@ describe('set catalogue', () => {
       id: 'new-set', name: 'New set', abbreviation: { official: 'NEW' },
     }))));
     expect(await getSet('new-set')).toMatchObject({ ptcgoCode: 'NEW' });
+  });
+
+  it('fetches set cards with a bounded pool of twelve concurrent requests', async () => {
+    const id = 'parallel-test';
+    const cards = Array.from({ length: 24 }, (_, i) => ({
+      id: `${id}-${i + 1}`,
+      localId: String(i + 1),
+      name: `Card ${i + 1}`,
+      category: 'Pokemon',
+      variants: { normal: true },
+      set: { id, name: 'Parallel Test' },
+    }));
+    const set = { id, name: 'Parallel Test', releaseDate: '2026-10-01', cardCount: { official: cards.length, total: cards.length } };
+    let active = 0;
+    let maxActive = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ data: { cards: cards.map(({ id: cardId }) => ({ id: cardId })) } });
+      if (String(url).includes('/sets/')) return Response.json(set);
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active--;
+      return Response.json(cards.find((card) => String(url).endsWith(`/cards/${card.id}`)));
+    }));
+
+    expect(await getSetCards(id)).toHaveLength(cards.length);
+    expect(maxActive).toBe(12);
   });
 });
 

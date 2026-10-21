@@ -484,7 +484,7 @@ async function getCardsBrief(ids: string[], signal?: AbortSignal): Promise<Pokem
 /** Full cards (with prices) for owned / wishlisted ids. Individual failures are skipped. */
 export async function getCardsByIds(ids: string[]): Promise<PokemonCard[]> {
   await Promise.all(Array.from(new Set(ids.map((id) => splitId(id).lang)), (l) => ensureSets(l).catch(() => undefined)));
-  const results = await pool(ids, 6, getCard);
+  const results = await pool(ids, 12, getCard);
   const ok = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
   // Partial failures are tolerated (that card just keeps its old snapshot). Only when everything
   // failed, for a reason other than ids TCGdex no longer knows, is it treated as an outage.
@@ -533,7 +533,7 @@ export async function getSetCards(setId: string): Promise<PokemonCard[]> {
     if (cards.length < 250) { exhausted = true; break; }
   }
   if (!exhausted || !ids.size || (set.total > 0 && ids.size !== set.total)) throw new Error('Set import is incomplete; retaining the previous catalogue');
-  const results = await pool([...ids], 6, async (id) => toCard(await getRawCard(id, lang), true, lang));
+  const results = await pool([...ids], 12, async (id) => toCard(await getRawCard(id, lang), true, lang));
   const failed = results.find((r) => r.status === 'rejected');
   if (failed?.status === 'rejected') throw failed.reason;
   const cards = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
