@@ -1,6 +1,6 @@
 import { dirname } from 'node:path';
 import { protectWriteProtocol } from './mutations.ts';
-import { classifyPrintings } from '@poketracker/shared/printingRules';
+import { classifyPrintings, POLICY_VERSION } from '@poketracker/shared/printingRules';
 import { readPrintingProfile } from './printingCatalog.ts';
 import { PRINTING_VERSION, resolvePrintings } from '@poketracker/shared/printings';
 /**
@@ -41,7 +41,6 @@ export function initCatalog(ctx: Ctx) {
 /** Reads stored snapshots by id. Missing or corrupt rows are simply absent from the map. */
 export function readCards(db: Db, ids: Iterable<string>, classify = true): Map<string, CardSnapshot> {
   const out = new Map<string, CardSnapshot>();
-  const profiles = new Map<string, ReturnType<typeof readPrintingProfile>>();
   const list = Array.from(new Set(ids));
   // Chunked to stay well under SQLite's bound-parameter limit.
   for (let i = 0; i < list.length; i += 500) {
@@ -49,19 +48,34 @@ export function readCards(db: Db, ids: Iterable<string>, classify = true): Map<s
     const rows = db.all<{ data: string }>(`SELECT data FROM cards WHERE id IN (${chunk.map(() => '?').join(',')})`, ...chunk);
     for (const r of rows) {
       const c = json<CardSnapshot | null>(r.data, null);
-      if (c) {
-        if (classify && !profiles.has(c.setId)) profiles.set(c.setId, readPrintingProfile(db, c.setId));
-        const profile = profiles.get(c.setId);
-        // Re-evaluate old snapshots without changing identity, prices or holdings.
-        if (classify && (c.printingVersion !== PRINTING_VERSION || (profile && c.printingProfile !== profile.fingerprint))) {
-          const observed = profile?.cards[c.id];
-          const printings = observed?.printings ?? c.printings ?? resolvePrintings(c.id, c.variants);
-          c.printings = classifyPrintings(c.id, printings.map((p) => ({ ...p, dataQuality: p.dataQuality ?? (p.raw ? p.providerId === 'generated' ? 'generated' : 'detailed' : 'flags') })), observed?.context ?? c.printingContext, profile);
-          if (observed) c.variants = c.printings.map((p) => p.id);
-          c.printingProfile = profile?.fingerprint;
-          c.printingCoverage = profile?.complete && observed ? 'complete' : 'partial';
-        }
-        out.set(c.id, c);
+      if (c) out.set(c.id, c);
+    }
+  }
+  if (classify && out.size) {
+    // The fingerprint is stored with the totals in the same transaction as the catalogue.
+    // Most snapshots already match it: don't load/parse every set's full profile to return
+    // a collection, especially when SQLite lives on a network filesystem.
+    const setIds = [...new Set([...out.values()].map((c) => c.setId))];
+    const fingerprints = new Map<string, string | null>();
+    for (let i = 0; i < setIds.length; i += 500) {
+      const chunk = setIds.slice(i, i + 500);
+      const rows = db.all<{ set_id: string; profile: string | null }>(`SELECT c.set_id, s.profile FROM printing_catalogues c LEFT JOIN set_stats s ON s.set_id = c.set_id AND s.printing_version = c.printing_version WHERE c.printing_version = ? AND c.policy_version = ? AND c.set_id IN (${chunk.map(() => '?').join(',')})`, PRINTING_VERSION, POLICY_VERSION, ...chunk);
+      for (const row of rows) fingerprints.set(row.set_id, row.profile);
+    }
+    const profiles = new Map<string, ReturnType<typeof readPrintingProfile>>();
+    for (const c of out.values()) {
+      const fingerprint = fingerprints.get(c.setId);
+      if (c.printingVersion === PRINTING_VERSION && (fingerprint === undefined || (fingerprint !== null && c.printingProfile === fingerprint))) continue;
+      if (!profiles.has(c.setId)) profiles.set(c.setId, readPrintingProfile(db, c.setId));
+      const profile = profiles.get(c.setId);
+      // Re-evaluate old snapshots without changing identity, prices or holdings.
+      if (c.printingVersion !== PRINTING_VERSION || (profile && c.printingProfile !== profile.fingerprint)) {
+        const observed = profile?.cards[c.id];
+        const printings = observed?.printings ?? c.printings ?? resolvePrintings(c.id, c.variants);
+        c.printings = classifyPrintings(c.id, printings.map((p) => ({ ...p, dataQuality: p.dataQuality ?? (p.raw ? p.providerId === 'generated' ? 'generated' : 'detailed' : 'flags') })), observed?.context ?? c.printingContext, profile);
+        if (observed) c.variants = c.printings.map((p) => p.id);
+        c.printingProfile = profile?.fingerprint;
+        c.printingCoverage = profile?.complete && observed ? 'complete' : 'partial';
       }
     }
   }

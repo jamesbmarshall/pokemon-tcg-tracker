@@ -1,5 +1,5 @@
 import { boundedBody } from './resourceLimits.ts';
-import { catalogSets, getCatalogCard, getCatalogSet, readCatalogCards } from './printingCatalog.ts';
+import { catalogSets, getCatalogCard, getCatalogSetForDisplay, readCatalogCards } from './printingCatalog.ts';
 import { setIdFromCardId } from '@poketracker/shared/catalog';
 import { LANGUAGES } from '@poketracker/shared/languages';
 /**
@@ -229,7 +229,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
   app.get('/api/catalog/set/:setId', async (req, reply) => {
     requireReader(req);
     imports.check(req.user?.id ?? req.ip, reply);
-    return getCatalogSet(ctx, catalogId((req.params as { setId: string }).setId));
+    return getCatalogSetForDisplay(ctx, catalogId((req.params as { setId: string }).setId));
   });
   app.get('/api/catalog/card/:cardId', async (req, reply) => {
     requireReader(req);

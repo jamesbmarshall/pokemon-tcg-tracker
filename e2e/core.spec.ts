@@ -16,6 +16,17 @@ test('built application is accessible, stays within the viewport and survives re
   await page.reload();
   await expect(page.getByRole('main').getByText('Collection value', { exact: true })).toBeVisible();
 });
+test('opens an owned card immediately while its detail request is blocked', async ({ page }) => {
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/catalog/card/**', async route => { await blocked; await route.abort(); });
+  await page.route('**/api/catalog/set/**', route => route.fulfill({ json: [] }));
+  await page.goto('/collection');
+  try {
+    await page.getByRole('link', { name: /^Browser fixture card 001/ }).first().click();
+    await expect(page.getByRole('heading', { name: 'Browser fixture card', exact: true })).toBeVisible({ timeout: 1000 });
+  } finally { release(); }
+});
 test('native dialog contains keyboard focus and restores its opener', async ({ page }) => {
   await page.goto('/lists');
   const opener = page.getByRole('button', { name: 'New list', exact: true });

@@ -37,7 +37,7 @@ export function configureCatalog(opts: { base?: string; headers?: () => Record<s
     API = opts.base.replace(/\/$/, '');
     GRAPHQL = `${API}/graphql`;
   }
-  if ('storage' in opts) storage = opts.storage ?? undefined;
+  if ('storage' in opts) { storage = opts.storage ?? undefined; profiles.clear(); }
   if (opts.headers) extraHeaders = opts.headers;
   if (opts.eurPerUsd) eurRate = opts.eurPerUsd;
 }
@@ -461,9 +461,15 @@ const LIST_FIELDS = 'id localId name image category rarity illustrator types hp 
 
 /** A card with full text and prices. */
 export async function getCard(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
-  const { lang, raw } = splitId(cardId);
+  const { lang } = splitId(cardId);
   // Best effort: the set list adds release dates, but a card should still load without it.
   await ensureSets(lang).catch(() => undefined);
+  return getCardDetails(cardId, signal);
+}
+
+/** Fetch only this card. Page requests already have set metadata and must not load every set. */
+export async function getCardDetails(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
+  const { lang, raw } = splitId(cardId);
   return toCard(await getRawCard(raw, lang, signal), true, lang);
 }
 
@@ -509,10 +515,11 @@ async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal): Prom
 /** Lightweight lookup candidates; not a complete printing catalogue. */
 export async function getSetCardsBrief(setId: string): Promise<PokemonCard[]> {
   const { lang, raw: rawSetId } = splitId(setId);
-  await ensureSets(lang).catch(() => undefined);
+  // A targeted metadata request avoids loading the entire language's set index on first open.
+  const metadata = getSet(setId);
   const found = new Map<string, PokemonCard>();
   for (let page = 1; page < 20; page++) {
-    const { cards } = await gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`);
+    const [{ cards }] = await Promise.all([gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`), metadata]);
     for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) found.set(c.id, toCard(c, false, lang));
     if (cards.length < 250) return [...found.values()].sort(compareCardNumber);
   }

@@ -3,7 +3,7 @@
  * profile and completion totals together; an incomplete refresh must not replace a catalogue.
  * See docs/printings.md for refresh schedules and the identity-preserving migration policy.
  */
-import { getSetCards, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
+import { getCardDetails, getSet, getSetCards, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
 import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type PrintingProfile } from '@poketracker/shared/printingRules';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
@@ -68,10 +68,63 @@ export async function getCatalogSet(ctx: Ctx, setId: string, force = false): Pro
   try { return await job; }
   catch (err) { if (previous && !force) return previous; throw err; }
 }
+// Browsing must never wait for a complete printing import. Keep that atomic operation in
+// getCatalogSet() for the scheduled job, and retain partial coverage on lightweight responses.
+const displayRequests = new WeakMap<Db, Map<string, Promise<unknown>>>();
+function queueCatalogue(ctx: Ctx, setId: string) {
+  ctx.db.run('INSERT OR IGNORE INTO printing_sync_queue (set_id, release_date, next_at) VALUES (?, ?, 0)', setId, '');
+}
+function refreshCatalogueInBackground(ctx: Ctx, setId: string, hasCatalogue = false) {
+  if (hasCatalogue) {
+    const row = ctx.db.get<{ synced_at: number }>('SELECT synced_at FROM printing_catalogues WHERE set_id = ?', setId);
+    if (row && Date.now() - row.synced_at < 6 * HOUR) return;
+  }
+  queueCatalogue(ctx, setId);
+  const retry = ctx.db.get<{ next_at: number; last_error: string | null }>('SELECT next_at, last_error FROM printing_sync_queue WHERE set_id = ?', setId);
+  if (retry?.last_error && retry.next_at > Date.now()) return;
+  void getCatalogSet(ctx, setId).catch((err) => ctx.log.warn({ err, setId }, 'Background catalogue import will retry'));
+}
+function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
+  const row = ctx.db.get<{ body: Uint8Array; fetched_at: number }>('SELECT body, fetched_at FROM http_cache WHERE key = ?', key);
+  const previous = row ? json<T | undefined>(Buffer.from(row.body).toString(), undefined) : undefined;
+  if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve(previous);
+  let requests = displayRequests.get(ctx.db);
+  if (!requests) { requests = new Map(); displayRequests.set(ctx.db, requests); }
+  let request = requests.get(key) as Promise<T> | undefined;
+  if (!request) {
+    request = load().then((data) => {
+      ctx.db.run('INSERT OR REPLACE INTO http_cache (key, status, content_type, body, fetched_at) VALUES (?, 200, ?, ?, ?)', key, 'application/json', Buffer.from(JSON.stringify(data)), Date.now());
+      return data;
+    }).finally(() => requests!.delete(key));
+    requests.set(key, request);
+  }
+  if (previous !== undefined) {
+    void request.catch((err) => ctx.log.warn({ err }, 'Background catalogue display refresh failed'));
+    return Promise.resolve(previous);
+  }
+  return request;
+}
+export async function getCatalogSetForDisplay(ctx: Ctx, setId: string): Promise<PokemonCard[]> {
+  const previous = readCatalogCards(ctx.db, setId);
+  if (previous) { refreshCatalogueInBackground(ctx, setId, true); return previous; }
+  const cards = await displayCached(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set:${setId}`, () => getSetCardsBrief(setId));
+  refreshCatalogueInBackground(ctx, setId);
+  return cards;
+}
 export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonCard> {
-  const cards = await getCatalogSet(ctx, setIdFromCardId(cardId));
-  const card = cards.find((c) => c.id === cardId);
-  if (!card) throw notFound('Card not found in this set');
+  const setId = setIdFromCardId(cardId);
+  const previous = readCatalogCards(ctx.db, setId);
+  if (previous) {
+    refreshCatalogueInBackground(ctx, setId, true);
+    const card = previous.find((c) => c.id === cardId);
+    if (!card) throw notFound('Card not found in this set');
+    return card;
+  }
+  const card = await displayCached(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:card:${cardId}`, async () => {
+    const [card, set] = await Promise.all([getCardDetails(cardId), getSet(setId)]);
+    return { ...card, set };
+  });
+  refreshCatalogueInBackground(ctx, setId);
   return card;
 }
 export async function discoverSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
