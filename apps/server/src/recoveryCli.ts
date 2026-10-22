@@ -1,3 +1,6 @@
+import { unpackPackage } from './backupPackages.ts';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { runtimeDirectory } from './storage.ts';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
@@ -23,11 +26,19 @@ async function control(command: string) {
 async function main() {
   const [command, source, destination] = process.argv.slice(2);
   if (command === 'snapshot' || command === 'status') return control(command);
-  if (command === 'verify' && source) {
-    const manifest = await validateRecoverySnapshot(source);
-    return { verified: true, capturedAt: manifest.capturedAt, files: manifest.files.length };
-  }
-  if (command === 'restore' && source && destination) return restoreRecoverySnapshot(source, destination);
-  throw new Error('Usage: recovery.mjs snapshot | status | verify SOURCE | restore SOURCE NEW_DESTINATION');
+  let extracted: string | undefined;
+  let snapshot = source;
+  try {
+    if ((command === 'verify' || command === 'restore') && source && statSync(source).isFile()) {
+      extracted = mkdtempSync(join(tmpdir(), 'poketracker-restore-'));
+      await unpackPackage(source, extracted); snapshot = extracted;
+    }
+    if (command === 'verify' && snapshot) {
+      const manifest = await validateRecoverySnapshot(snapshot);
+      return { verified: true, capturedAt: manifest.capturedAt, files: manifest.files.length };
+    }
+    if (command === 'restore' && snapshot && destination) return await restoreRecoverySnapshot(snapshot, destination);
+    throw new Error('Usage: recovery.mjs snapshot | status | verify PACKAGE_OR_DIRECTORY | restore PACKAGE_OR_DIRECTORY NEW_DESTINATION');
+  } finally { if (extracted) rmSync(extracted, { recursive: true, force: true }); }
 }
 main().then((result) => process.stdout.write(JSON.stringify(result) + '\n'), (error: Error) => { process.stderr.write(error.message + '\n'); process.exitCode = 1; });

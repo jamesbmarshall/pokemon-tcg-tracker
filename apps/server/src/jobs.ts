@@ -1,3 +1,4 @@
+import { createPackage } from './backupPackages.ts';
 import { reconcilePhotos } from './photoStorage.ts';
 import { discoverSets, syncPrintingCatalogues } from './printingCatalog.ts';
 /**
@@ -118,12 +119,12 @@ export const JOBS: JobDef[] = [
   },
   {
     name: 'backup',
-    label: 'Database backup',
+    label: 'Complete backup',
     schedule: '0 3 * * *',
     staleMs: 24 * H,
     run: async (ctx) => {
-      const file = backupNow(ctx, 'daily');
-      return { file: file.split('/').pop(), pruned: pruneBackups(ctx) };
+      const result = await createPackage(ctx, 'daily');
+      return { ...result, pruned: pruneBackups(ctx) };
     },
   },
   {

@@ -7,7 +7,7 @@ import { recoveryStatus } from './recoveryControl.ts';
 const HOUR = 3_600_000;
 export function readiness(ctx: Ctx) {
   try {
-    if (ctx.services.isStopping?.()) return false;
+    if (ctx.services.isStopping?.() || existsSync(join(ctx.config.dataDir, 'pending-restore.json'))) return false;
     ctx.db.get('SELECT 1');
     if (ctx.db.file !== ':memory:') {
       accessSync(ctx.db.file, constants.W_OK);

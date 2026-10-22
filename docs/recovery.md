@@ -89,3 +89,60 @@ unknown future schema/protocol floors. Do not roll an external image back to a p
 launcher: an old binary cannot enforce a guard that did not exist in its code. Use a compatible
 newer image or restore a complete pre-upgrade snapshot to a separate host. Database-only
 rollback can discard newer writes and is not a recovery strategy for the active collection.
+
+## Daily backup packages in Settings
+
+Open **Settings → Backups and restore** as the instance owner. **Back up now** creates
+one `.tar.gz` package containing the database, all referenced photos, accounts, settings,
+and the encryption key. Use **Download** to save it to your computer or cloud drive.
+Keep these packages private: anyone who has one has the data and its recovery key.
+Catalogue/image caches and other backups are excluded.
+
+With scheduled jobs enabled (the default), complete packages are created daily at 03:00
+in the server's timezone. Overdue jobs catch up after startup. Retention keeps the union
+of the most recent 14 distinct daily, 3 monthly and 1 yearly recovery points; a package
+can satisfy several periods. Manual and before-restore packages are retained. Packages
+are stored in `DATA_DIR/backup-packages`; completed packages appear only after an atomic
+rename. Old `.db` backups remain available in Admin and for update rollback, but don't
+include photos or keys.
+
+**Restore** on a saved package, or **Choose backup package** for a downloaded file,
+checks the manifest, database and photo hashes before staging any replacement. Type
+`RESTORE` to confirm. The app saves a complete before-restore backup, restarts through
+the launcher, finishes installing the staged data before opening SQLite, and signs
+everyone out. Sign in using credentials from the restored backup. Interrupted installs
+resume on startup. The current app address, hosting configuration and launcher are kept.
+If a server has an environment-supplied `SECRET_KEY` that differs from the package's
+key, use offline restore with the package's original key instead.
+
+For a standalone server without the launcher, stop it and restore the package into a
+new empty data directory using the included recovery executable:
+
+```sh
+node recovery.mjs verify /path/to/poketracker-backup.tar.gz
+node recovery.mjs restore /path/to/poketracker-backup.tar.gz /path/to/new-data
+```
+
+Start the server with `DATA_DIR` pointing at the new directory. Preserve the original
+folder until the restored accounts and collections have been checked. Follow the key
+and runtime-configuration instructions above when moving to a different host.
+
+### Automatic copies to OneDrive or Google Drive
+
+This option uses a folder already synced or mounted by the server host. It does not
+sign users into Google or Microsoft from PokéTracker.
+
+1. Connect the destination using your host's supported OneDrive/Google Drive sync or
+   mount tool. Use a dedicated folder outside PokéTracker's data directory.
+2. Make that existing folder writable by the app user (and mount it into the app container
+   if applicable). Set `BACKUP_SYNC_DIR` to its **server/container path** and restart.
+3. In **Settings → Backups and restore**, enable **Copy new backups to the connected
+   folder**, then select **Back up now** to test it.
+4. Check the storage service to confirm it has uploaded the package. PokéTracker can
+   report only that the folder copy finished, not that the cloud upload succeeded.
+
+Copies use a separate `poketracker-<instance-id>` subfolder, with the same retention
+policy. Other files are untouched. The destination folder must already exist, so a
+missing mount isn't silently replaced with a new directory. If copying fails, the local
+package remains downloadable and Settings shows the failure. A synced folder on the
+same disk provides no independent recovery until the storage service has uploaded it.
