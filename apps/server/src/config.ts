@@ -31,6 +31,8 @@ export interface Config {
   setupToken: string;
   imageCacheMb: number;
   backupsToKeep: number;
+  /** Existing folder synced by the host to OneDrive/Google Drive (never a browser path). */
+  backupSyncDir: string;
   /**
    * WAL on local disks; DELETE on network shares. Startup automatically selects DELETE
    * for recognised network filesystems. Network storage requires a single instance.
@@ -116,6 +118,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     setupToken: env.SETUP_TOKEN ?? '',
     imageCacheMb: Number(env.IMAGE_CACHE_MB ?? 2048),
     backupsToKeep: Number(env.BACKUPS_TO_KEEP ?? 7),
+    backupSyncDir: env.BACKUP_SYNC_DIR?.trim() ?? '',
     // Anything other than an explicit 'delete' means WAL, so a typo can't produce an invalid PRAGMA.
     journalMode: env.SQLITE_JOURNAL_MODE === 'delete' ? 'delete' : 'wal',
     logLevel: env.LOG_LEVEL ?? 'info',

@@ -78,7 +78,7 @@ export function loadInstanceKey(file: string, fromEnv?: string): Buffer {
 export class Sealer {
   constructor(private key: Buffer) {}
 
-  /** Host-only recovery code. Never include this material in API responses or logs. */
+  /** Complete owner-only recovery packages include this key; never log or return it as JSON. */
   recoveryKey(): Buffer { return Buffer.from(this.key); }
 
   seal(plain: string): string {

@@ -542,7 +542,7 @@ function BackupsTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-xl text-sm text-muted">
-          The server backs up everything nightly and before each update. Download one now and then and keep it somewhere else, in case the server's disk dies.
+          These older backups contain only the database. Use Settings → Backups and restore for complete packages including photos, accounts and encryption keys.
         </p>
         <button className="btn btn-primary" disabled={create.busy} onClick={() => void create.onSubmit()}>
           <Database size={15} /> {create.busy ? 'Backing up…' : 'Back up now'}

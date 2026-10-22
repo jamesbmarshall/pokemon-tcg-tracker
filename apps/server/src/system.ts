@@ -1,3 +1,4 @@
+import { createPackage, packagePath, packageStatus, setPackageSync, stageRestore } from './backupPackages.ts';
 import { diagnostics } from './diagnostics.ts';
 /**
  * Admin and status routes: job control, storage figures, backups and in-app updates.
@@ -91,6 +92,40 @@ export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
       /* in-memory test db */
     }
     return { dbBytes: db, images: imageCacheStats(ctx), backups: listBackups(ctx).length };
+  });
+
+  // Complete instance packages (database, accounts, photos, settings and encryption key).
+  app.get('/api/admin/backup-packages', async (req) => { requireRole(req, 'owner'); return packageStatus(ctx); });
+  app.post('/api/admin/backup-packages', async (req) => {
+    requireRole(req, 'owner');
+    const result = await createPackage(ctx); audit(ctx, req, 'backup.package_created', result.name); return result;
+  });
+  app.put('/api/admin/backup-packages/sync', async (req) => {
+    requireRole(req, 'owner'); const { enabled } = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof enabled !== 'boolean') throw bad('Choose whether to copy backups.');
+    setPackageSync(ctx, enabled); audit(ctx, req, 'backup.sync_changed', undefined, { enabled }); return packageStatus(ctx);
+  });
+  app.get('/api/admin/backup-packages/:name', async (req, reply) => {
+    requireRole(req, 'owner'); const { name } = req.params as { name: string };
+    const file = packagePath(ctx, name); if (!file) throw notFound('Backup package not found');
+    audit(ctx, req, 'backup.package_downloaded', name);
+    return reply.header('content-disposition', `attachment; filename="${name}"`).header('content-length', statSync(file).size).type('application/gzip').send(createReadStream(file));
+  });
+  app.post('/api/admin/backup-packages/restore', async (req, reply) => {
+    requireRole(req, 'owner');
+    if (req.isMultipart()) {
+      const upload = await req.file({ limits: { files: 1, fileSize: 10 * 1024 ** 3, fields: 0 } });
+      if (!upload) throw bad('Choose a complete backup package.');
+      try { await stageRestore(ctx, { stream: upload.file }); }
+      catch (error) { if (error instanceof HttpError) throw error; throw bad('The package could not be restored. Check it is a complete, undamaged PokéTracker backup and that there is enough free space.'); }
+    } else {
+      const { name, confirm } = (req.body ?? {}) as { name?: unknown; confirm?: unknown };
+      if (confirm !== 'RESTORE' || typeof name !== 'string') throw bad('Confirm the restore and choose a backup.');
+      await stageRestore(ctx, { name });
+    }
+    audit(ctx, req, 'backup.restore_requested');
+    reply.raw.once('finish', () => ctx.services.requestRestart?.());
+    return { restarting: true };
   });
 
   // ------------------------------------------------------------ backups (owner)

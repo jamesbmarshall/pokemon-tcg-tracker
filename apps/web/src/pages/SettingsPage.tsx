@@ -209,7 +209,7 @@ export default function SettingsPage() {
         )}
       </Section>
 
-      {user?.role === 'owner' && <Section title="Recovery protection" description="Host backups, verified recovery points and storage health."><RecoveryPanel /></Section>}
+      {user?.role === 'owner' && <Section title="Backups and restore" description="Daily backups, downloads and recovery in one place."><RecoveryPanel /></Section>}
 
       {user?.role === 'owner' && (
         <Section title="Updates" description="Install new versions of PokéTracker from here. Your data is backed up first, and a version that won't start is undone automatically.">

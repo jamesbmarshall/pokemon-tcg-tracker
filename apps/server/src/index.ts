@@ -1,3 +1,4 @@
+import { applyPendingRestore } from './backupPackages.ts';
 import { assertWriteProtocol } from './mutations.ts';
 import { startRecoveryControl } from './recoveryControl.ts';
 /**
@@ -23,6 +24,7 @@ import { seedDemo } from './demo.ts';
 async function main() {
   const config = loadConfig();
   const releaseLock = acquireInstanceLock(config.dataDir);
+  applyPendingRestore(config.dataDir);
   assertWriteProtocol(config.dataDir);
   const storage = storagePolicy(config.dataDir, config.journalMode);
   config.journalMode = storage.journalMode;
