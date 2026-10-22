@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { makeCard, makeSet } from '../test/fixtures';
+import { makeCard, makeSet, makeSnapshot } from '../test/fixtures';
 
 const c = vi.hoisted(() => ({
   getSets: vi.fn(),
@@ -71,7 +71,7 @@ describe('useSets', () => {
 
 describe('useSetCards', () => {
   it('records the master-set total from the card variants', async () => {
-    c.getSetCards.mockResolvedValue([makeCard({ variants: ['normal', 'reverseHolofoil'] }), makeCard({ id: 'sv03-002', variants: [] })]);
+    c.getSetCards.mockResolvedValue([makeCard({ variants: ['normal', 'reverseHolofoil'], printingCoverage: 'complete' }), makeCard({ id: 'sv03-002', variants: [], printingCoverage: 'complete' })]);
     const { result } = renderHook(() => h.useSetCards('sv03'), { wrapper });
     await waitFor(() => expect(result.current.data).toHaveLength(2));
     await waitFor(() => expect(store.useCollectionStore.getState().setStats.get('sv03')?.masterTotal).toBe(2));
@@ -81,9 +81,41 @@ describe('useSetCards', () => {
     renderHook(() => h.useSetCards(''), { wrapper });
     expect(c.getSetCards).not.toHaveBeenCalled();
   });
+
+  it('does not trigger a full import to count a lightweight set listing', async () => {
+    const record = vi.spyOn(store.useCollectionStore.getState(), 'recordSetStat');
+    c.getSetCards.mockResolvedValue([makeCard({ printingCoverage: 'partial' })]);
+    const { result } = renderHook(() => h.useSetCards('sv03'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(record).not.toHaveBeenCalled();
+  });
 });
 
 describe('simple queries', () => {
+  it('shows a search result immediately while card details are blocked', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const brief = makeCard({ id: 'sv03-002', name: 'Search destination' });
+    client.setQueryData(['search', { name: 'Search' }], { pages: [{ data: [brief] }], pageParams: [1] });
+    c.getCard.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => h.useCard(brief.id), {
+      wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+    expect(result.current.data).toEqual(brief);
+    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('shows an owned card immediately while card details are blocked', () => {
+    const snapshot = makeSnapshot({ id: 'sv03-002', name: 'Owned destination' });
+    store.useCollectionStore.setState({ cards: new Map([[snapshot.id, snapshot]]) });
+    c.getCard.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => h.useCard(snapshot.id), { wrapper });
+    expect(result.current.data).toMatchObject({ id: snapshot.id, name: snapshot.name, detailed: false,
+      images: { small: snapshot.image, large: snapshot.imageLarge }, set: { id: snapshot.setId } });
+    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it('shows the destination listing card immediately while full details load', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const brief = makeCard({ id: 'sv03-002', name: 'Destination' });

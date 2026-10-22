@@ -14,7 +14,9 @@ Policy v2 fixes small rarity groups: a single ordinary Normal/Holo takes precede
 
 ## Automatic lifecycle
 
-The server discovers sets in every supported language every six hours and catches up after restarts. Discovery persists a queue independent of collection ownership. Every 15 minutes it processes up to eight due sets, with at most two concurrent full-set imports and six card fetches per import. Newly discovered sets are ordered by release date. Opening an uncached set or card also triggers its import.
+The server discovers sets in every supported language every six hours and catches up after restarts. Discovery persists a queue independent of collection ownership. Every 15 minutes it processes up to eight due sets, with at most two concurrent full-set imports and twelve card fetches per import. Newly discovered sets are ordered by release date. Opening an uncached set or card also triggers its import in the background.
+
+Page requests do not wait for a complete import. A cold set uses a paginated lightweight listing; a cold card fetches only its own details and set metadata. These display responses are cached in SQLite, with expired copies served immediately during refresh. Existing complete catalogues are also returned immediately during refresh. Pages poll while coverage is partial and pick up the complete catalogue once published. Lightweight results do not publish authoritative completion totals or trigger a recount. Navigation from a set, search, or collection displays the known card while its details load.
 
 Each import validates pagination and card count, fetches every full REST card record, builds the profile from source observations, then publishes the classified catalogue, card snapshots and completion totals in one SQLite transaction. Successful card downloads are saved individually so a failed import can resume. Set and card pages, known search results and collection snapshots share this result; lightweight listings cannot downgrade complete stored classifications.
 

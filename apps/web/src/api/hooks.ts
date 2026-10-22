@@ -6,13 +6,13 @@
  * configureForServer() has run.
  */
 import { useEffect } from 'react';
-import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { getCard, getPrintings, getRarities, getSet, getSetCards, getSets, primeSets, searchCards, setIdFromCardId, type SearchFilters } from './client';
 import { LANGUAGES, type Lang } from './languages';
 import { useCollectionStore } from '../store/collectionStore';
 import { setProgress } from '@poketracker/shared/completion';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
-import type { CardSet, PokemonCard } from './types';
+import type { ApiResponse, CardSet, PokemonCard } from './types';
 
 const HOUR = 1000 * 60 * 60;
 
@@ -69,9 +69,10 @@ export function useSetCards(setId: string) {
     queryFn: () => getSetCards(setId),
     staleTime: HOUR,
     enabled: !!setId,
+    refetchInterval: (query) => query.state.data?.some((c) => c.printingCoverage !== 'complete') ? 5_000 : false,
   });
   useEffect(() => {
-    if (q.data?.length) {
+    if (q.data?.length && q.data.every((c) => c.printingCoverage === 'complete')) {
       const p = setProgress(q.data, new Map());
       void recordSetStat(setId, p.master.total, { allTotal: p.all.total, provisional: p.provisional, unresolvedTotal: p.unresolved, additionalTotal: p.additional, profile: q.data[0]?.printingProfile, printingVersion: PRINTING_VERSION });
     }
@@ -81,11 +82,26 @@ export function useSetCards(setId: string) {
 
 export function useCard(cardId: string) {
   const client = useQueryClient();
+  const snapshot = useCollectionStore((s) => s.cards.get(cardId));
   return useQuery<PokemonCard>({
     queryKey: ['card', cardId], queryFn: ({ signal }) => getCard(cardId, signal), staleTime: HOUR, enabled: !!cardId,
+    refetchInterval: (query) => query.state.data?.printingCoverage === 'partial' ? 5_000 : false,
     // Set listings already contain artwork and numbering. Show the destination immediately
     // while its full text/prices load, without caching the brief card as a full response.
-    placeholderData: () => client.getQueryData<PokemonCard[]>(['setCards', setIdFromCardId(cardId)])?.find((c) => c.id === cardId),
+    placeholderData: () => {
+      const listed = client.getQueryData<PokemonCard[]>(['setCards', setIdFromCardId(cardId)])?.find((c) => c.id === cardId)
+        ?? client.getQueriesData<InfiniteData<ApiResponse<PokemonCard[]>>>({ queryKey: ['search'] })
+          .flatMap(([, result]) => result?.pages.flatMap((page) => page.data) ?? []).find((c) => c.id === cardId);
+      if (listed) return listed;
+      if (!snapshot) return undefined;
+      return {
+        ...snapshot, detailed: false,
+        images: { small: snapshot.image, large: snapshot.imageLarge },
+        set: { id: snapshot.setId, name: snapshot.setName, series: snapshot.series, printedTotal: snapshot.printedTotal,
+          total: snapshot.printedTotal, releaseDate: snapshot.releaseDate, updatedAt: '', ptcgoCode: snapshot.setCode,
+          images: { logo: '', symbol: '' } },
+      };
+    },
   });
 }
 

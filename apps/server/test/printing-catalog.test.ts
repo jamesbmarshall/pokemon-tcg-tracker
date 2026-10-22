@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POLICY_VERSION } from '@poketracker/shared/printingRules';
 import { configureCatalog, type RawCard } from '@poketracker/shared/catalog';
 import { readCards, saveSnapshots } from '../src/cards.ts';
-import { catalogSets, discoverSets, getCatalogSet, readPrintingProfile, syncPrintingCatalogues } from '../src/printingCatalog.ts';
+import { catalogSets, discoverSets, getCatalogSet, getCatalogSetForDisplay, readPrintingProfile, syncPrintingCatalogues } from '../src/printingCatalog.ts';
 import { personalId, setupOwner, startServer, type TestServer } from './helpers.ts';
 
 let server: TestServer;
 let cards: RawCard[];
 let omitted: string | undefined;
 let missingDetail: string | undefined;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: ReturnType<typeof vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>>;
 const setId = 'future-policy-test';
 beforeEach(async () => {
   omitted = missingDetail = undefined;
@@ -20,7 +20,7 @@ beforeEach(async () => {
   ] }));
   const set = { id: setId, name: 'New release', releaseDate: '2026-10-14', cardCount: { official: 12, total: 12 }, serie: { id: 'future', name: 'Future' } };
   fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-    if (init?.method === 'POST') return Response.json({ data: { sets: [set], cards: cards.filter((c) => c.id !== omitted).map(({ id }) => ({ id })) } });
+    if (init?.method === 'POST') return Response.json({ data: { sets: [set], cards: cards.filter((c) => c.id !== omitted).map((card) => init.body?.toString().includes('localId') ? card : { id: card.id }) } });
     if (String(url).includes('/sets/')) return Response.json(set);
     const card = cards.find((c) => String(url).endsWith(`/cards/${c.id}`));
     return card && card.id !== missingDetail ? Response.json(card) : new Response('', { status: 404 });
@@ -31,6 +31,65 @@ beforeEach(async () => {
 afterEach(async () => { await server.close(); configureCatalog({ storage: null }); vi.unstubAllGlobals(); });
 
 describe('automatic catalogue lifecycle', () => {
+  it('opens a cold set and card while the rest of the printing import is blocked', async () => {
+    const client = await setupOwner(server.app);
+    const original = fetchMock.getMockImplementation()!;
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    fetchMock.mockImplementation(async (url, init) => {
+      if (String(url).includes('/cards/') && !String(url).endsWith(`/cards/${cards[0].id}`)) await blocked;
+      return original(url, init);
+    });
+    try {
+      const responses: Awaited<ReturnType<typeof client.get>>[] = [];
+      void Promise.all([client.get(`/api/catalog/set/${setId}`), client.get(`/api/catalog/card/${cards[0].id}`)])
+        .then((result) => responses.push(...result));
+      await vi.waitFor(() => expect(responses).toHaveLength(2), { timeout: 1000 });
+      expect(responses.map((res) => res.statusCode)).toEqual([200, 200]);
+      expect(responses[0].json()).toHaveLength(cards.length);
+      expect(responses[1].json()).toMatchObject({ id: cards[0].id, detailed: true, printingCoverage: 'partial' });
+      expect(readPrintingProfile(server.ctx.db, setId)).toBeUndefined();
+      expect(server.ctx.db.get('SELECT master_total FROM set_stats WHERE set_id = ?', setId)).toBeUndefined();
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.body?.toString().includes('sets {'))).toHaveLength(0);
+    } finally {
+      release();
+      await getCatalogSet(server.ctx, setId);
+    }
+    expect(readPrintingProfile(server.ctx.db, setId)?.complete).toBe(true);
+    expect((await getCatalogSetForDisplay(server.ctx, setId))[0].printingCoverage).toBe('complete');
+  });
+
+  it('reclassifies a stale collection snapshot and preserves its prices', async () => {
+    await getCatalogSet(server.ctx, setId);
+    const original = readCards(server.ctx.db, [cards[0].id]).get(cards[0].id)!;
+    const stale = { ...original, printingProfile: 'previous-profile', printings: [], variants: [], prices: { normal: 12 } };
+    server.ctx.db.run('UPDATE cards SET data = ? WHERE id = ?', JSON.stringify(stale), stale.id);
+    const refreshed = readCards(server.ctx.db, [stale.id]).get(stale.id)!;
+    expect(refreshed).toMatchObject({
+      printingProfile: original.printingProfile,
+      printingCoverage: 'complete', prices: { normal: 12 },
+    });
+    expect(refreshed.variants.toSorted()).toEqual(original.variants.toSorted());
+    expect(refreshed.printings?.map((p) => [p.id, p.role]).sort()).toEqual(original.printings?.map((p) => [p.id, p.role]).sort());
+  });
+
+  it('serves an expired complete catalogue immediately while its refresh is blocked', async () => {
+    const initial = await getCatalogSet(server.ctx, setId);
+    server.ctx.db.run('UPDATE printing_catalogues SET synced_at = 0');
+    const original = fetchMock.getMockImplementation()!;
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    fetchMock.mockImplementation(async (url, init) => { await blocked; return original(url, init); });
+    try {
+      let result: unknown;
+      void getCatalogSetForDisplay(server.ctx, setId).then((cards) => { result = cards; });
+      await vi.waitFor(() => expect(result).toEqual(initial), { timeout: 1000 });
+    } finally {
+      release();
+      await getCatalogSet(server.ctx, setId);
+    }
+  });
+
   it('discovers an unseen set, imports it without holdings, and serves one classification everywhere', async () => {
     await discoverSets(server.ctx, 'en');
     expect(await syncPrintingCatalogues(server.ctx)).toMatchObject({ imported: 1, failed: 0 });
