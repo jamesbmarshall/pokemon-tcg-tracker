@@ -81,10 +81,15 @@ function LeafFace({ children, back, fade }: { children: ReactNode; back?: boolea
 }
 
 export default function BinderView({ slots, pocketSize = 9 }: { slots: BinderSlot[]; pocketSize?: 9 | 12 }) {
+  return <BinderBook slots={slots} pocketSize={pocketSize} renderPocket={slot => <Pocket slot={slot} />} />;
+}
+
+/** Shared binder presentation; each game supplies its own card pocket. */
+export function BinderBook<T>({ slots, pocketSize = 9, renderPocket }: { slots: T[]; pocketSize?: 9 | 12; renderPocket: (slot?: T) => ReactNode }) {
   const wide = useIsWide();
   const perView = wide ? 2 : 1;
   const pages = useMemo(() => {
-    const out: BinderSlot[][] = [];
+    const out: T[][] = [];
     for (let i = 0; i < slots.length; i += pocketSize) out.push(slots.slice(i, i + pocketSize));
     return out.length ? out : [[]];
   }, [slots, pocketSize]);
@@ -127,7 +132,7 @@ export default function BinderView({ slots, pocketSize = 9 }: { slots: BinderSlo
       <div className={pad(col)}>
         <div className={`grid ${cols} gap-2 sm:gap-2.5`}>
           {Array.from({ length: pocketSize }, (_, k) => (
-            <Pocket key={k} slot={pages[index][k]} />
+            <div key={k}>{renderPocket(pages[index][k])}</div>
           ))}
         </div>
         <p className="mt-2 text-center font-mono text-[10px] text-faint">p. {index + 1}</p>

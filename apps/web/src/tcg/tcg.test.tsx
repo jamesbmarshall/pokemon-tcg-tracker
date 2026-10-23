@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../test/render';
 import { GameContext, type GameContextValue } from './context';
 import { magicModule } from '@poketracker/shared/tcg/registry';
 import { fromScryfall } from '@poketracker/shared/tcg/scryfall';
-import { TcgCardTile } from './Cards';
+import { TcgCardTile, HoldingForm } from './Cards';
+import { GameSearch } from './Views';
+import { gameApi } from './api';
 import { DecksPage } from './Decks';
 import { GamePublicView } from './GamePage';
 import type { GameState } from '@poketracker/shared/tcg/types';
@@ -111,10 +113,10 @@ describe('shared game UI', () => {
       </GameContext.Provider>,
     );
     expect(
-      screen.getByRole('button', { name: 'Create list' }),
+      screen.getByRole('button', { name: 'New list' }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /Create.*deck/ }),
+      screen.queryByRole('button', { name: /New.*deck/ }),
     ).not.toBeInTheDocument();
   });
   it('saves an incomplete Commander deck instead of blocking it on legality', async () => {
@@ -123,6 +125,9 @@ describe('shared game UI', () => {
       <GameContext.Provider value={ctx}>
         <DecksPage />
       </GameContext.Provider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'New Commander deck' }),
     );
     await userEvent.type(screen.getByLabelText('List or deck name'), 'Draft');
     await userEvent.click(
@@ -134,6 +139,83 @@ describe('shared game UI', () => {
           name: 'Draft',
           format: 'commander',
           items: [],
+        }),
+      }),
+    ]);
+  });
+  it('keeps copy details in the dialog when a save fails', async () => {
+    const ctx = context({ save: vi.fn().mockResolvedValue(false) });
+    renderWithProviders(
+      <GameContext.Provider value={ctx}>
+        <HoldingForm card={card} finish="foil" />
+      </GameContext.Provider>,
+    );
+    expect(screen.queryByLabelText('Paid per copy')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Edit details/ }));
+    await userEvent.type(screen.getByLabelText('Paid per copy'), '12.50');
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('Paid per copy')).toHaveValue(12.5);
+  });
+  it('does not remove a wishlist card if collecting it fails', async () => {
+    const ctx = context({ save: vi.fn().mockResolvedValue(false) });
+    renderWithProviders(
+      <GameContext.Provider value={ctx}>
+        <TcgCardTile card={card} wishlist />
+      </GameContext.Provider>,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Got it · add to collection' }),
+    );
+    expect(ctx.save).toHaveBeenCalled();
+    expect(ctx.remove).not.toHaveBeenCalled();
+  });
+  it('searches after typing and retains the query in the URL', async () => {
+    const search = vi
+      .spyOn(gameApi, 'search')
+      .mockResolvedValue({ cards: [card], hasMore: false, total: 1 });
+    renderWithProviders(
+      <GameContext.Provider value={context()}>
+        <GameSearch />
+      </GameContext.Provider>,
+    );
+    expect(search).not.toHaveBeenCalled();
+    await userEvent.type(screen.getByLabelText('Name or query'), 'Sol Ring');
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(
+        'mtg',
+        expect.objectContaining({ q: 'Sol Ring', language: 'en', page: 1 }),
+      ),
+    );
+    expect(screen.getByTestId('location')).toHaveTextContent('q=Sol+Ring');
+    search.mockRestore();
+  });
+  it('saves a deck quantity once the field loses focus', async () => {
+    const list = {
+      id: 'draft',
+      game: 'mtg',
+      name: 'Draft',
+      kind: 'deck' as const,
+      format: 'commander',
+      items: [{ cardId: card.id, zone: 'main' as const, quantity: 1 }],
+      addedAt: '',
+    };
+    const ctx = context({ state: { ...state, lists: [list] } });
+    renderWithProviders(
+      <GameContext.Provider value={ctx}>
+        <DecksPage listId="draft" />
+      </GameContext.Provider>,
+    );
+    const input = screen.getByLabelText('Quantity of Card');
+    await userEvent.clear(input);
+    await userEvent.type(input, '12');
+    expect(ctx.save).not.toHaveBeenCalled();
+    await userEvent.tab();
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(ctx.save).toHaveBeenCalledWith([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: [expect.objectContaining({ quantity: 12 })],
         }),
       }),
     ]);

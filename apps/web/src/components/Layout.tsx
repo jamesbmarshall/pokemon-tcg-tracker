@@ -262,14 +262,14 @@ export default function Layout() {
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur-md lg:hidden">
         <Link to="/" aria-label="PokéTracker home" className="flex min-w-0 items-center gap-2">
           <Logo size={26} />
-          {/* The wordmark plus five 40px icon buttons doesn't fit under ~360px; the logo mark alone
-              stays recognisable and tappable, so drop the text rather than shrink touch targets. */}
-          <span className="hidden truncate font-display text-lg font-medium tracking-tight min-[400px]:inline">
+          {/* Keep touch targets full size; additional games also have a lists shortcut. */}
+          <span className={`hidden truncate font-display text-lg font-medium tracking-tight ${game === 'pokemon' ? 'min-[400px]:inline' : 'min-[480px]:inline'}`}>
             Poké<span className="holo-text">Tracker</span>
           </span>
         </Link>
         <div className="flex items-center">
           <ThemeToggle className="!h-10 !w-10" />
+          {game !== 'pokemon' && <Link to={path('/lists')} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Lists & decks"><ListChecks size={19}/></Link>}
           <button onClick={() => game === 'pokemon' ? setPalette(true) : navigate(path('/search'))} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
             <Search size={19} />
           </button>

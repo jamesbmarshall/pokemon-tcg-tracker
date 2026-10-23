@@ -86,6 +86,20 @@ Camera OCR runs on-device. Set-code/collector-number lookup is best for modern
 cards. Older cards need manual lookup or name search, and finish is always chosen
 by the user.
 
+## Browsing and editing
+
+Additional games share Pokémon's page headers, dialogs, charts, artwork renderer
+and animated binder. Binder pocket size follows the existing display preference.
+Grid/binder choices are remembered separately per game and page. Collection and
+wishlist toolbars support name, set and value sorting; set checklists filter owned
+and missing printings. Search waits for input, debounces changes and preserves
+filters in the URL for reloads and bookmarks.
+
+Copy details, slabs, sealed products and list/deck editing use dialogs. Failed
+saves retain entered values. Deck quantities save on blur or Enter; Escape
+restores the saved quantity. Import still requires printing resolution and preview.
+Lists and decks are reachable from the desktop sidebar and the mobile header.
+
 ## Sharing, exports and recovery
 
 Every new share records its game and reuses expiry, revocation, audiences and

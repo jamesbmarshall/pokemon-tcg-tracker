@@ -157,33 +157,32 @@ export default function GamePage({ game }: { game: string }) {
         reload,
       }}
     >
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-accent">{module.name}</p>
-        {module.capabilities.decks && (
-          <Link className="btn btn-ghost lg:hidden" to={`/${module.id}/lists`}>
-            Lists & decks
-          </Link>
-        )}
-        <label className="flex items-center gap-2 text-sm">
-          Card language
-          <select
-            className="input"
-            value={language}
-            onChange={(e) => {
-              setLanguage(e.target.value);
-              localStorage.setItem(`tcg-language:${game}`, e.target.value);
-            }}
-          >
-            {module.languages.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {['sets', 'search', 'scan'].includes(section) && (
+        <div className="mb-5 flex justify-end">
+          <label className="flex items-center gap-2 whitespace-nowrap text-xs text-muted">
+            Card language
+            <select
+              className="input !h-8 !w-auto max-w-48 !py-1 !text-xs"
+              value={language}
+              onChange={(e) => {
+                setLanguage(e.target.value);
+                localStorage.setItem(`tcg-language:${game}`, e.target.value);
+              }}
+            >
+              {module.languages.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
       {busy && (
-        <p role="status" className="mb-3 text-sm text-muted">
+        <p
+          role="status"
+          className="fixed bottom-20 right-5 z-30 rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-muted shadow-sm"
+        >
           Saving…
         </p>
       )}

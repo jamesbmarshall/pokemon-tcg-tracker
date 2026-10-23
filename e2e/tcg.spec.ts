@@ -44,6 +44,14 @@ test('switches games, collects a printing, and keeps the Magic view after reload
     .withTags(['wcag2a', 'wcag2aa'])
     .analyze();
   expect(axe.violations).toEqual([]);
+  await page.route('**/api/games/mtg/cards/**', () => {});
+  await page
+    .getByRole('link', { name: 'Fixture Commander', exact: true })
+    .last()
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Fixture Commander', exact: true }),
+  ).toBeVisible();
   await page
     .getByLabel('Trading card game')
     .filter({ visible: true })
@@ -85,6 +93,9 @@ test('imports a Commander deck through preview, validates it, and shares a read-
   );
   await page.goto('/mtg/lists');
   const name = `Commander ${Date.now()}`;
+  await page
+    .getByRole('button', { name: 'New Commander deck', exact: true })
+    .click();
   await page.getByLabel('List or deck name').fill(name);
   await page
     .getByRole('button', { name: 'Create Commander deck', exact: true })
@@ -109,6 +120,9 @@ test('imports a Commander deck through preview, validates it, and shares a read-
   ).toBeVisible();
   await page.goto('/mtg/sharing');
   await page
+    .getByRole('button', { name: 'New share link', exact: true })
+    .click();
+  await page
     .getByRole('combobox', { name: 'What to share', exact: true })
     .selectOption('list');
   await page
@@ -117,7 +131,7 @@ test('imports a Commander deck through preview, validates it, and shares a read-
   await page
     .getByRole('button', { name: 'Create share link', exact: true })
     .click();
-  const link = page.getByRole('link').filter({ hasText: '/s/' }).first();
+  const link = page.getByRole('link', { name: 'Open shared view →' });
   await expect(link).toBeVisible();
   await page.goto((await link.getAttribute('href'))!);
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();

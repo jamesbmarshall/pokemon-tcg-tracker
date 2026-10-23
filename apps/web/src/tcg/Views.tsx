@@ -1,5 +1,17 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Search, SlidersHorizontal, Layers, ArrowRight } from 'lucide-react';
+import {
+  PageHeader,
+  EmptyState,
+  ErrorState,
+  CardSkeletonGrid,
+  Segmented,
+  ProgressBar,
+} from '../components/ui';
+import { useDebounced } from '../hooks/useDebounced';
+import { useViewPref } from '../hooks/useViewPrefs';
+import HoloCard from '../components/HoloCard';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { TcgSearch } from '@poketracker/shared/tcg/types';
 import { collectionValue, cardValue } from '@poketracker/shared/tcg/collection';
@@ -56,21 +68,26 @@ export function GameDashboard() {
   });
   return (
     <div className="space-y-8">
-      <div>
-        <p className="eyebrow">Your collection</p>
-        <h1 className="mt-2 font-display text-3xl font-semibold">
-          {module.name}
-        </h1>
-      </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <PageHeader
+        eyebrow="Your collection"
+        title={module.name}
+        actions={
+          <Link className="btn btn-primary" to={`/${module.id}/search`}>
+            Find cards <ArrowRight size={14} />
+          </Link>
+        }
+      >
+        Your cards, sets and decks, all in one place.
+      </PageHeader>
+      <div className="grid grid-cols-2 gap-6 border-b border-line pb-8 md:grid-cols-4">
         {[
           [money(value.valueUsd), 'Collection value'],
           [String(value.cards), 'Cards & slabs'],
           [String(sets.length), 'Sets collected'],
           [String(state.wishlist.length), 'Wishlist cards'],
         ].map(([n, label]) => (
-          <div key={label} className="rounded-xl border border-line p-4">
-            <p className="font-display text-2xl font-semibold">{n}</p>
+          <div key={label} className="space-y-2">
+            <p className="font-display text-3xl font-medium">{n}</p>
             <p className="mt-1 text-sm text-muted">{label}</p>
           </div>
         ))}
@@ -78,26 +95,11 @@ export function GameDashboard() {
       {state.history.length > 0 && (
         <section>
           <h2 className="mb-3 font-semibold">Value history</h2>
-          <div
-            className="flex h-40 items-end gap-1 rounded-xl border border-line p-3"
-            role="img"
-            aria-label="Daily collection value history"
-          >
-            {state.history.slice(-60).map((p) => (
-              <div
-                key={p.date}
-                title={`${p.date}: ${money(p.valueUsd)}`}
-                className="min-w-1 flex-1 rounded-t bg-accent/70"
-                style={{
-                  height: `${Math.max(1, (100 * p.valueUsd) / Math.max(1, ...state.history.slice(-60).map((p) => p.valueUsd)))}%`,
-                }}
-              />
-            ))}
-          </div>
-          <p className="mt-1 text-xs text-muted">
-            {state.history.at(-60)?.date ?? state.history[0].date} –{' '}
-            {state.history.at(-1)?.date}
-          </p>
+          <ValueChart
+            points={state.history}
+            value={(p) => p.valueUsd}
+            format={money}
+          />
         </section>
       )}
       {!owned.size && (
@@ -159,99 +161,157 @@ export function GameDashboard() {
 }
 export function GameSearch() {
   const { module, language } = useGame();
-  const [fields, setFields] = useState<Record<string, string>>({}),
-    [query, setQuery] = useState<TcgSearch>({ language, q: '' }),
-    [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const fields = Object.fromEntries(params.entries());
+  const [filters, setFilters] = useState(false);
+  const debounced = useDebounced(params.toString(), 350);
+  const query = Object.fromEntries(new URLSearchParams(debounced)) as TcgSearch;
+  const page = Number(fields.page) || 1;
+  const active = Object.entries(query).some(([k, v]) => k !== 'page' && !!v);
   const q = useQuery({
-    queryKey: ['tcg-search', module.id, query, page],
-    queryFn: () => gameApi.search(module.id, { ...query, language, page }),
+    queryKey: ['tcg-search', module.id, language, debounced],
+    queryFn: () =>
+      gameApi.search(module.id, {
+        ...query,
+        language,
+        page: Number(query.page) || 1,
+      }),
+    enabled: active,
   });
+  const update = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    next.delete('page');
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
+  const count = Object.entries(fields).filter(
+    ([k, v]) => k !== 'q' && k !== 'page' && v,
+  ).length;
   return (
-    <div className="space-y-5">
-      <h1 className="font-display text-3xl font-semibold">
-        Search {module.shortName}
-      </h1>
+    <div className="space-y-6">
+      <PageHeader eyebrow={module.shortName} title="Search cards">
+        Find a particular printing, or explore the catalogue.
+      </PageHeader>
       <form
-        className="grid gap-3 sm:grid-cols-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setPage(1);
-          setQuery({ ...fields, language });
-        }}
+        onSubmit={(e) => e.preventDefault()}
+        className="sticky top-0 z-10 space-y-3 bg-canvas/95 py-3 backdrop-blur"
       >
-        <label className="sm:col-span-3">
-          Name or query
-          <input
-            className="input mt-1 w-full"
-            value={fields.q ?? ''}
-            onChange={(e) => setFields({ ...fields, q: e.target.value })}
-            placeholder={module.searchHint ?? 'Card name'}
-            maxLength={500}
-          />
-        </label>
-        {[
-          { key: 'set', label: 'Set code' },
-          { key: 'number', label: 'Collector number' },
-          ...module.searchFields,
-        ].map((f) => (
-          <label className="text-sm" key={f.key}>
-            {f.label}
-            {'options' in f && f.options ? (
-              <select
-                className="input mt-1 w-full"
-                value={fields[f.key] ?? ''}
-                onChange={(e) =>
-                  setFields({ ...fields, [f.key]: e.target.value })
-                }
-              >
-                <option value="">Any</option>
-                {f.options.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className="input mt-1 w-full"
-                value={fields[f.key] ?? ''}
-                onChange={(e) =>
-                  setFields({ ...fields, [f.key]: e.target.value })
-                }
-                maxLength={200}
-              />
-            )}
+        <div className="flex gap-2">
+          <label className="relative min-w-0 flex-1">
+            <Search size={18} className="absolute left-3 top-3.5 text-muted" />
+            <span className="sr-only">Name or query</span>
+            <input
+              className="input w-full !pl-10"
+              value={fields.q ?? ''}
+              onChange={(e) => update('q', e.target.value)}
+              placeholder={module.searchHint ?? 'Card name'}
+              maxLength={500}
+            />
           </label>
-        ))}
-        <button className="btn btn-primary self-end" disabled={q.isFetching}>
-          Search
-        </button>
-      </form>
-      {q.isPending && <p role="status">Searching…</p>}
-      {q.error && <p role="alert">{q.error.message}</p>}
-      {q.data && (
-        <>
-          <p className="text-sm text-muted">
-            {q.data.total.toLocaleString()} printings
-          </p>
-          <TcgGrid cards={q.data.cards} />
-          <div className="flex gap-3">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-expanded={filters}
+            onClick={() => setFilters(!filters)}
+          >
+            <SlidersHorizontal size={16} />
+            <span className="hidden sm:inline">Filters</span>
+            {count > 0 && <span>{count}</span>}
+          </button>
+          {active && (
             <button
+              type="button"
               className="btn btn-ghost"
-              disabled={page === 1 || q.isFetching}
-              onClick={() => setPage(page - 1)}
+              onClick={() => setParams({})}
             >
-              Previous results
+              Clear
             </button>
-            <button
-              className="btn btn-ghost"
-              disabled={!q.data.hasMore || q.isFetching}
-              onClick={() => setPage(page + 1)}
-            >
-              Next results
-            </button>
+          )}
+        </div>
+        {filters && (
+          <div className="grid gap-4 rounded-lg border border-line bg-surface p-4 sm:grid-cols-3">
+            {[
+              { key: 'set', label: 'Set code' },
+              { key: 'number', label: 'Collector number' },
+              ...module.searchFields,
+            ].map((f) => (
+              <label className="text-xs text-muted" key={f.key}>
+                {f.label}
+                {'options' in f && f.options ? (
+                  <select
+                    className="input mt-1 w-full"
+                    value={fields[f.key] ?? ''}
+                    onChange={(e) => update(f.key, e.target.value)}
+                  >
+                    <option value="">Any</option>
+                    {f.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="input mt-1 w-full"
+                    value={fields[f.key] ?? ''}
+                    onChange={(e) => update(f.key, e.target.value)}
+                    maxLength={200}
+                  />
+                )}
+              </label>
+            ))}
           </div>
-        </>
+        )}
+      </form>
+      {!active ? (
+        <EmptyState
+          icon={<Search size={28} />}
+          title="What are you looking for?"
+        >
+          Search by name, set, collector number or card characteristics.
+        </EmptyState>
+      ) : q.isPending ? (
+        <CardSkeletonGrid count={12} />
+      ) : q.error ? (
+        <ErrorState
+          title="Couldn't search cards"
+          error={q.error}
+          onRetry={() => void q.refetch()}
+        />
+      ) : (
+        q.data && (
+          <>
+            <p role="status" className="eyebrow">
+              {q.data.total.toLocaleString()} printings{' '}
+              {q.isFetching ? '· Updating…' : ''}
+            </p>
+            {q.data.cards.length ? (
+              <TcgGrid cards={q.data.cards} />
+            ) : (
+              <EmptyState icon={<Search size={28} />} title="No cards found">
+                Try a different name or remove a filter.
+              </EmptyState>
+            )}
+            <div className="flex items-center justify-center gap-4">
+              <button
+                className="btn btn-ghost"
+                disabled={page === 1 || q.isFetching}
+                onClick={() => setParams({ ...fields, page: String(page - 1) })}
+              >
+                Previous results
+              </button>
+              <span className="font-mono text-xs">Page {page}</span>
+              <button
+                className="btn btn-ghost"
+                disabled={!q.data.hasMore || q.isFetching}
+                onClick={() => setParams({ ...fields, page: String(page + 1) })}
+              >
+                Next results
+              </button>
+            </div>
+          </>
+        )
       )}
     </div>
   );
@@ -259,6 +319,9 @@ export function GameSearch() {
 export function GameSets({ id }: { id?: string }) {
   const { module, state, language } = useGame();
   const [filter, setFilter] = useState('');
+  const [setStatus, setSetStatus] = useState('all');
+  const [checklist, setChecklist] = useState('');
+  const [ownership, setOwnership] = useState('all');
   const sets = useQuery({
     queryKey: ['tcg-sets', module.id],
     queryFn: () => gameApi.sets(module.id),
@@ -269,11 +332,26 @@ export function GameSets({ id }: { id?: string }) {
     queryFn: () => gameApi.set(module.id, id!, language),
     enabled: !!id,
   });
-  const [binder, setBinder] = useState(false);
+  const [view, setView] = useViewPref<'grid' | 'binder'>(
+    `${module.id}.set`,
+    'grid',
+    ['grid', 'binder'],
+  );
+  const binder = view === 'binder';
   if (!id)
     return (
       <div className="space-y-5">
-        <h1 className="font-display text-3xl font-semibold">Sets</h1>
+        <PageHeader eyebrow={module.shortName} title="Sets">
+          Explore releases and build your checklists.
+        </PageHeader>
+        <Segmented
+          value={setStatus}
+          onChange={setSetStatus}
+          options={[
+            { value: 'all', label: 'All sets' },
+            { value: 'started', label: 'Started' },
+          ]}
+        />
         <label className="block">
           Filter sets
           <input
@@ -286,7 +364,23 @@ export function GameSets({ id }: { id?: string }) {
         {sets.error && <p role="alert">{sets.error.message}</p>}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {sets.data
-            ?.filter((s) =>
+            ?.filter(
+              (s) =>
+                setStatus === 'all' ||
+                state.entries.some(
+                  (e) =>
+                    e.quantity > 0 &&
+                    state.cards.some(
+                      (c) => c.id === e.cardId && c.setId === s.id,
+                    ),
+                ) ||
+                state.graded.some((g) =>
+                  state.cards.some(
+                    (c) => c.id === g.cardId && c.setId === s.id,
+                  ),
+                ),
+            )
+            .filter((s) =>
               `${s.name} ${s.code}`
                 .toLowerCase()
                 .includes(filter.toLowerCase()),
@@ -295,17 +389,22 @@ export function GameSets({ id }: { id?: string }) {
             .map((s) => (
               <Link
                 key={s.id}
-                className="rounded-xl border border-line p-4 hover:border-accent"
+                className="group flex items-center gap-4 rounded-lg border border-line bg-surface p-5 transition-colors hover:border-accent"
                 to={`/${module.id}/sets/${encodeURIComponent(s.id)}`}
               >
-                <h2 className="font-semibold">{s.name}</h2>
-                <p className="mt-1 text-sm text-muted">
-                  {s.code.toUpperCase()} · {s.releaseDate} · {s.total}{' '}
-                  catalogued cards
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {s.type.replaceAll('_', ' ')}
-                </p>
+                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-surface-2 font-mono text-xs uppercase text-muted group-hover:text-accent">
+                  {s.code}
+                </span>
+                <div className="min-w-0">
+                  <h2 className="font-display text-lg font-medium">{s.name}</h2>
+                  <p className="mt-1 text-sm text-muted">
+                    {s.code.toUpperCase()} · {s.releaseDate} · {s.total}{' '}
+                    catalogued cards
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {s.type.replaceAll('_', ' ')}
+                  </p>
+                </div>
               </Link>
             ))}
         </div>
@@ -325,9 +424,22 @@ export function GameSets({ id }: { id?: string }) {
       <Link className="text-accent" to={`/${module.id}/sets`}>
         ← Sets
       </Link>
-      <h1 className="font-display text-3xl font-semibold">
-        {sets.data?.find((s) => s.id === id)?.name ?? id}
-      </h1>
+      <PageHeader
+        eyebrow="Set checklist"
+        title={sets.data?.find((s) => s.id === id)?.name ?? id}
+        actions={
+          <Segmented
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'grid', label: 'Grid' },
+              { value: 'binder', label: 'Binder' },
+            ]}
+          />
+        }
+      >
+        {regular.length} printings · {language.toUpperCase()}
+      </PageHeader>
       {detail.isPending && (
         <p role="status">Loading the complete language checklist…</p>
       )}
@@ -338,7 +450,7 @@ export function GameSets({ id }: { id?: string }) {
           .map(([k, v]) => {
             const p = v as { owned: number; total: number };
             return (
-              <div className="rounded-lg border border-line p-4" key={k}>
+              <div className="space-y-2 border-b border-line py-4" key={k}>
                 <p className="font-semibold">
                   {k === 'cards'
                     ? 'Distinct cards'
@@ -350,11 +462,7 @@ export function GameSets({ id }: { id?: string }) {
                   {p.owned}/{p.total} ·{' '}
                   {p.total ? Math.round((100 * p.owned) / p.total) : 0}%
                 </p>
-                <progress
-                  className="mt-2 w-full"
-                  value={p.owned}
-                  max={p.total || 1}
-                />
+                <ProgressBar value={p.owned} total={p.total} />
               </div>
             );
           })}
@@ -365,10 +473,41 @@ export function GameSets({ id }: { id?: string }) {
           refers only to the current catalogue.
         </p>
       )}
-      <button className="btn btn-ghost" onClick={() => setBinder(!binder)}>
-        {binder ? 'Grid view' : 'Binder view'}
-      </button>
-      <TcgGrid cards={regular} binder={binder} />
+      <div className="sticky top-0 z-10 flex flex-wrap gap-2 border-b border-line bg-canvas/95 py-3 backdrop-blur">
+        <label className="min-w-40 flex-1">
+          <span className="sr-only">Filter checklist</span>
+          <input
+            className="input w-full"
+            placeholder="Filter checklist…"
+            value={checklist}
+            onChange={(e) => setChecklist(e.target.value)}
+          />
+        </label>
+        <Segmented
+          label="Ownership"
+          value={ownership}
+          onChange={setOwnership}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'owned', label: 'Owned' },
+            { value: 'missing', label: 'Missing' },
+          ]}
+        />
+      </div>
+      <TcgGrid
+        cards={regular.filter((c) => {
+          const owned =
+            state.entries.some((e) => e.cardId === c.id && e.quantity > 0) ||
+            state.graded.some((g) => g.cardId === c.id && g.countsTowardSet);
+          return (
+            `${c.name} ${c.number}`
+              .toLowerCase()
+              .includes(checklist.toLowerCase()) &&
+            (ownership === 'all' || (ownership === 'owned' ? owned : !owned))
+          );
+        })}
+        binder={binder}
+      />
       {!!extras.length && (
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">Tokens & extras</h2>
@@ -379,10 +518,16 @@ export function GameSets({ id }: { id?: string }) {
   );
 }
 export function GameCollection({ wishlist = false }: { wishlist?: boolean }) {
-  const { state, save, remove, busy, readOnly } = useGame();
+  const { module, state } = useGame();
   const money = useMoney();
-  const [binder, setBinder] = useState(false),
-    [filter, setFilter] = useState('');
+  const [view, setView] = useViewPref<'grid' | 'binder'>(
+    `${module.id}.${wishlist ? 'wishlist' : 'collection'}`,
+    'grid',
+    ['grid', 'binder'],
+  );
+  const [filter, setFilter] = useState('');
+  const [sort, setSort] = useState('name');
+  const [set, setSet] = useState('');
   const ids = new Set(
     wishlist
       ? state.wishlist
@@ -391,77 +536,119 @@ export function GameCollection({ wishlist = false }: { wishlist?: boolean }) {
           ...state.graded.map((g) => g.cardId),
         ],
   );
-  const cards = state.cards.filter(
-    (c) => ids.has(c.id) && c.name.toLowerCase().includes(filter.toLowerCase()),
-  );
-  const cost = cards.reduce(
+  const all = state.cards.filter((c) => ids.has(c.id));
+  const cards = all
+    .filter(
+      (c) =>
+        (!set || c.setId === set) &&
+        `${c.name} ${c.number} ${c.setName}`
+          .toLowerCase()
+          .includes(filter.toLowerCase()),
+    )
+    .sort((a, b) =>
+      sort === 'value'
+        ? (cardValue(b, b.finishes[0], currentRates().EUR) ?? 0) -
+          (cardValue(a, a.finishes[0], currentRates().EUR) ?? 0)
+        : sort === 'set'
+          ? a.setName.localeCompare(b.setName) ||
+            a.number.localeCompare(b.number, undefined, { numeric: true })
+          : a.name.localeCompare(b.name),
+    );
+  const cost = all.reduce(
     (n, c) => n + (cardValue(c, c.finishes[0], currentRates().EUR) ?? 0),
     0,
   );
   return (
-    <div className="space-y-5">
-      <h1 className="font-display text-3xl font-semibold">
-        {wishlist ? 'Wishlist' : 'Collection'}
-      </h1>
-      {wishlist && (
-        <p className="text-muted">
-          Estimated cost: {money(cost)} · unavailable quotes excluded
-        </p>
-      )}
-      <div className="flex gap-3">
-        <label className="flex-1">
-          Filter cards
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow={module.shortName}
+        title={wishlist ? 'Wishlist' : 'Collection'}
+        actions={
+          <Link className="btn btn-ghost" to={`/${module.id}/search`}>
+            Find cards <ArrowRight size={14} />
+          </Link>
+        }
+      >
+        {all.length} unique printings
+        {wishlist
+          ? ` · ${money(cost)} estimated cost`
+          : ` · ${state.entries.reduce((n, e) => n + e.quantity, 0)} copies`}
+      </PageHeader>
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-line bg-canvas/95 py-3 backdrop-blur">
+        <label className="relative min-w-40 flex-1">
+          <Search size={16} className="absolute left-3 top-3 text-muted" />
+          <span className="sr-only">Filter cards</span>
           <input
-            className="input mt-1 w-full"
+            className="input w-full !pl-9"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter cards…"
           />
         </label>
-        <button
-          className="btn btn-ghost self-end"
-          onClick={() => setBinder(!binder)}
+        <select
+          className="input !w-auto max-w-48"
+          aria-label="Filter by set"
+          value={set}
+          onChange={(e) => setSet(e.target.value)}
         >
-          {binder ? 'Grid' : 'Binder'}
-        </button>
+          <option value="">All sets</option>
+          {[...new Map(all.map((c) => [c.setId, c.setName])).entries()]
+            .sort((a, b) => a[1].localeCompare(b[1]))
+            .map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+        </select>
+        <select
+          className="input !w-auto"
+          aria-label="Sort cards"
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+        >
+          <option value="name">Name</option>
+          <option value="value">Highest value</option>
+          <option value="set">Set & number</option>
+        </select>
+        <Segmented
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'grid', label: 'Grid' },
+            { value: 'binder', label: 'Binder' },
+          ]}
+        />
       </div>
-      <TcgGrid cards={cards} binder={binder} />
-      {wishlist &&
-        !readOnly &&
-        cards.map((c) => (
-          <button
-            className="btn btn-ghost mr-2"
-            key={c.id}
-            disabled={busy}
-            onClick={() =>
-              void save([
-                {
-                  kind: 'entry',
-                  id: `${c.id}::${c.finishes[0]}`,
-                  data: {
-                    id: `${c.id}::${c.finishes[0]}`,
-                    cardId: c.id,
-                    finish: c.finishes[0],
-                    quantity:
-                      (state.entries.find(
-                        (e) => e.cardId === c.id && e.finish === c.finishes[0],
-                      )?.quantity ?? 0) + 1,
-                    addedAt: new Date().toISOString(),
-                  },
-                },
-              ]).then((ok) => {
-                if (ok) void remove('wishlist', c.id);
-              })
-            }
-          >
-            Got {c.name}
-          </button>
-        ))}
+      {cards.length ? (
+        <TcgGrid cards={cards} binder={view === 'binder'} wishlist={wishlist} />
+      ) : (
+        <EmptyState
+          icon={<Layers size={28} />}
+          title={
+            all.length
+              ? 'No matching cards'
+              : wishlist
+                ? 'Your wishlist is empty'
+                : 'Your collection starts here'
+          }
+          action={
+            <Link className="btn btn-primary" to={`/${module.id}/search`}>
+              Find cards
+            </Link>
+          }
+        >
+          {all.length
+            ? 'Try a different filter.'
+            : 'Browse a set or search for a card to get started.'}
+        </EmptyState>
+      )}
     </div>
   );
 }
 export function GameCard({ id }: { id: string }) {
   const money = useMoney();
   const [priceSeries, setPriceSeries] = useState('');
+  const [face, setFace] = useState(0);
   const { module, state, save, busy, readOnly } = useGame();
   const [selectedList, setSelectedList] = useState(''),
     [zone, setZone] = useState('main'),
@@ -491,7 +678,7 @@ export function GameCard({ id }: { id: string }) {
       }),
     enabled: !!q.data?.details.oracleId,
   });
-  const c = q.data;
+  const c = q.data ?? state.cards.find((card) => card.id === id);
   if (!c)
     return (
       <p role={q.error ? 'alert' : 'status'}>
@@ -500,12 +687,45 @@ export function GameCard({ id }: { id: string }) {
     );
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 md:grid-cols-[240px_1fr]">
-        <TcgCardTile card={c} />
+      {q.error && (
+        <p role="status" className="text-sm text-muted">
+          Showing your saved card details. The catalogue could not be refreshed.{' '}
+          <button className="text-accent" onClick={() => void q.refetch()}>
+            Try again
+          </button>
+        </p>
+      )}
+      <Link
+        className="text-sm text-muted hover:text-accent"
+        to={`/${module.id}/sets/${encodeURIComponent(c.setId)}`}
+      >
+        ← {c.setName}
+      </Link>
+      <div className="grid items-start gap-8 md:grid-cols-[minmax(240px,340px)_1fr] lg:gap-12">
+        <div className="mx-auto w-full max-w-[340px] space-y-4 md:sticky md:top-6">
+          <HoloCard
+            id={c.id}
+            src={c.faces[face]?.image ?? c.image ?? ''}
+            name={c.printedName ?? c.name}
+            number={c.number}
+            setName={c.setName}
+            foil={c.finishes.includes('foil')}
+          />
+          {c.faces.filter((f) => f.image).length > 1 && (
+            <button
+              className="btn btn-ghost w-full"
+              onClick={() => setFace((face + 1) % c.faces.length)}
+            >
+              Flip card
+            </button>
+          )}
+          <TcgCardTile card={c} quick={true} controlsOnly />
+        </div>
         <div className="space-y-4">
-          <h1 className="font-display text-3xl font-semibold">
-            {c.printedName ?? c.name}
-          </h1>
+          <PageHeader
+            eyebrow={`${c.setCode} · #${c.number} · ${c.language.toUpperCase()}`}
+            title={c.printedName ?? c.name}
+          />
           <Link
             className="text-accent"
             to={`/${module.id}/sets/${encodeURIComponent(c.setId)}`}
@@ -513,10 +733,7 @@ export function GameCard({ id }: { id: string }) {
             {c.setName} · {c.number}
           </Link>
           {c.faces.map((f, n) => (
-            <section
-              className="space-y-2 rounded-lg border border-line p-4"
-              key={n}
-            >
+            <section className="space-y-3 border-b border-line py-4" key={n}>
               <h2 className="font-semibold">
                 {f.name} <ManaText text={f.manaCost ?? ''} />
               </h2>
@@ -541,159 +758,180 @@ export function GameCard({ id }: { id: string }) {
           <p className="text-xs text-muted">
             Catalogue refreshed {new Date(c.fetchedAt).toLocaleString()}
           </p>
-        </div>
-      </div>
-      {!!module.cardFacts && (
-        <dl className="flex flex-wrap gap-5">
-          {module.cardFacts(c).map((f) => (
-            <div key={f.label}>
-              <dt className="text-xs text-muted">{f.label}</dt>
-              <dd>{f.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">Market prices</h2>
-        {c.finishes.map((finish) => (
-          <div key={finish} className="rounded-lg border border-line p-3">
-            <strong>
-              {finish} · {money(cardValue(c, finish, currentRates().EUR))}
-            </strong>
-            {(c.prices[finish] ?? []).map((quote) => (
-              <p key={quote.source} className="mt-1 text-xs text-muted">
-                {quote.source} · {quote.currency} {quote.amount.toFixed(2)} ·
-                retrieved {new Date(quote.at).toLocaleDateString()}
-              </p>
-            ))}
-          </div>
-        ))}
-      </section>
-      {!readOnly && (
-        <>
+          {!!module.cardFacts && (
+            <dl className="flex flex-wrap gap-5">
+              {module.cardFacts(c).map((f) => (
+                <div key={f.label}>
+                  <dt className="text-xs text-muted">{f.label}</dt>
+                  <dd>{f.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
           <section className="space-y-3">
-            <h2 className="text-xl font-semibold">Owned copies</h2>
-            {c.finishes.map((f) => (
-              <HoldingForm key={`${c.id}:${f}`} card={c} finish={f} />
-            ))}
-          </section>
-          <form
-            className="space-y-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void save([
-                {
-                  kind: 'note',
-                  id: c.id,
-                  data: {
-                    id: c.id,
-                    text:
-                      note ??
-                      state.notes.find((n) => n.id === c.id)?.text ??
-                      '',
-                  },
-                },
-              ]);
-            }}
-          >
-            <label>
-              Card note
-              <textarea
-                className="input mt-1 min-h-24 w-full"
-                value={
-                  note ?? state.notes.find((n) => n.id === c.id)?.text ?? ''
-                }
-                onChange={(e) => setNote(e.target.value)}
-                maxLength={5000}
-              />
-            </label>
-            <button className="btn btn-ghost" disabled={busy}>
-              Save note
-            </button>
-          </form>
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const list = state.lists.find((l) => l.id === selectedList);
-              if (!list) return;
-              const section = list.kind === 'list' ? 'main' : zone;
-              const existing = list.items.find(
-                (i) => i.cardId === c.id && i.zone === section,
-              );
-              const items = existing
-                ? list.items.map((i) =>
-                    i === existing
-                      ? {
-                          ...i,
-                          quantity: list.kind === 'list' ? 1 : i.quantity + 1,
-                        }
-                      : i,
-                  )
-                : [...list.items, { cardId: c.id, quantity: 1, zone: section }];
-              void save([
-                { kind: 'list', id: list.id, data: { ...list, items } },
-              ]);
-            }}
-          >
-            <label>
-              Add to list or deck
-              <select
-                className="input block"
-                value={selectedList}
-                onChange={(e) => setSelectedList(e.target.value)}
-              >
-                <option value="">Choose list</option>
-                {state.lists.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
+            <h2 className="text-xl font-semibold">Market prices</h2>
+            {c.finishes.map((finish) => (
+              <div key={finish} className="rounded-lg border border-line p-3">
+                <strong>
+                  {finish} · {money(cardValue(c, finish, currentRates().EUR))}
+                </strong>
+                {(c.prices[finish] ?? []).map((quote) => (
+                  <p key={quote.source} className="mt-1 text-xs text-muted">
+                    {quote.source} · {quote.currency} {quote.amount.toFixed(2)}{' '}
+                    · retrieved {new Date(quote.at).toLocaleDateString()}
+                  </p>
                 ))}
-              </select>
-            </label>
-            <label>
-              Section
-              <select
-                className="input block"
-                value={zone}
-                onChange={(e) => setZone(e.target.value)}
-              >
-                {['main', 'commander', 'companion', 'maybeboard'].map((z) => (
-                  <option key={z}>{z}</option>
-                ))}
-              </select>
-            </label>
-            <button
-              disabled={busy || !selectedList}
-              className="btn btn-primary"
-            >
-              Add card
-            </button>
-            <Link className="btn btn-ghost" to={`/${module.id}/lists`}>
-              Create deck or list
-            </Link>
-          </form>
-        </>
-      )}
-      {module.capabilities.graded && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Graded slabs</h2>
-          <GradedForm card={c} />
-          {state.graded
-            .filter((g) => g.cardId === c.id)
-            .map((g) => (
-              <div
-                key={g.id}
-                className="space-y-2 rounded-xl border border-line p-4"
-              >
-                <p>
-                  {g.company} {g.grade} · {g.finish} · {g.certNumber}
-                </p>
-                <AssetTools kind="graded" item={g} />
               </div>
             ))}
-        </section>
-      )}
+          </section>
+          {!readOnly && (
+            <>
+              <section className="space-y-3">
+                <h2 className="text-xl font-semibold">Owned copies</h2>
+                {c.finishes.map((f) => (
+                  <HoldingForm key={`${c.id}:${f}`} card={c} finish={f} />
+                ))}
+              </section>
+              <details className="border-b border-line py-4">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Card notes
+                  {state.notes.find((n) => n.id === c.id)?.text
+                    ? ' · saved'
+                    : ''}
+                </summary>
+                <form
+                  className="mt-4 space-y-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void save([
+                      {
+                        kind: 'note',
+                        id: c.id,
+                        data: {
+                          id: c.id,
+                          text:
+                            note ??
+                            state.notes.find((n) => n.id === c.id)?.text ??
+                            '',
+                        },
+                      },
+                    ]);
+                  }}
+                >
+                  <label>
+                    Card note
+                    <textarea
+                      className="input mt-1 min-h-24 w-full"
+                      value={
+                        note ??
+                        state.notes.find((n) => n.id === c.id)?.text ??
+                        ''
+                      }
+                      onChange={(e) => setNote(e.target.value)}
+                      maxLength={5000}
+                    />
+                  </label>
+                  <button className="btn btn-ghost" disabled={busy}>
+                    Save note
+                  </button>
+                </form>
+              </details>
+              <details className="border-b border-line py-4">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Add to a list or deck
+                </summary>
+                <form
+                  className="mt-4 flex flex-wrap items-end gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const list = state.lists.find((l) => l.id === selectedList);
+                    if (!list) return;
+                    const section = list.kind === 'list' ? 'main' : zone;
+                    const existing = list.items.find(
+                      (i) => i.cardId === c.id && i.zone === section,
+                    );
+                    const items = existing
+                      ? list.items.map((i) =>
+                          i === existing
+                            ? {
+                                ...i,
+                                quantity:
+                                  list.kind === 'list' ? 1 : i.quantity + 1,
+                              }
+                            : i,
+                        )
+                      : [
+                          ...list.items,
+                          { cardId: c.id, quantity: 1, zone: section },
+                        ];
+                    void save([
+                      { kind: 'list', id: list.id, data: { ...list, items } },
+                    ]);
+                  }}
+                >
+                  <label>
+                    Add to list or deck
+                    <select
+                      className="input block"
+                      value={selectedList}
+                      onChange={(e) => setSelectedList(e.target.value)}
+                    >
+                      <option value="">Choose list</option>
+                      {state.lists.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Section
+                    <select
+                      className="input block"
+                      value={zone}
+                      onChange={(e) => setZone(e.target.value)}
+                    >
+                      {['main', 'commander', 'companion', 'maybeboard'].map(
+                        (z) => (
+                          <option key={z}>{z}</option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                  <button
+                    disabled={busy || !selectedList}
+                    className="btn btn-primary"
+                  >
+                    Add card
+                  </button>
+                  <Link className="btn btn-ghost" to={`/${module.id}/lists`}>
+                    Create deck or list
+                  </Link>
+                </form>
+              </details>
+            </>
+          )}
+          {module.capabilities.graded && (
+            <section className="space-y-4">
+              <h2 className="text-xl font-semibold">Graded slabs</h2>
+              <GradedForm card={c} />
+              {state.graded
+                .filter((g) => g.cardId === c.id)
+                .map((g) => (
+                  <div
+                    key={g.id}
+                    className="space-y-2 rounded-xl border border-line p-4"
+                  >
+                    <p>
+                      {g.company} {g.grade} · {g.finish} · {g.certNumber}
+                    </p>
+                    <AssetTools kind="graded" item={g} />
+                  </div>
+                ))}
+            </section>
+          )}
+        </div>
+      </div>
       <section>
         <h2 className="mb-3 text-xl font-semibold">Price history</h2>
         {!!history.data?.length && (
@@ -735,30 +973,35 @@ export function GameCard({ id }: { id: string }) {
           </div>
         )}
         {history.data?.length ? (
-          <div className="max-h-64 overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Finish</th>
-                  <th>Source</th>
-                  <th>Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.data.map((p, n) => (
-                  <tr key={n}>
-                    <td>{p.date}</td>
-                    <td>{p.finish}</td>
-                    <td>{p.source}</td>
-                    <td>
-                      {p.currency} {p.price.toFixed(2)}
-                    </td>
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm text-muted">
+              View price observations
+            </summary>
+            <div className="mt-3 max-h-64 overflow-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Finish</th>
+                    <th>Source</th>
+                    <th>Price</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {history.data.map((p, n) => (
+                    <tr key={n}>
+                      <td>{p.date}</td>
+                      <td>{p.finish}</td>
+                      <td>{p.source}</td>
+                      <td>
+                        {p.currency} {p.price.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         ) : (
           <p className="text-sm text-muted">
             History begins when this instance first observes a quote.
