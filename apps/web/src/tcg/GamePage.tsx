@@ -29,7 +29,7 @@ import {
 import { TcgGrid } from './Cards';
 import { useMoney } from '../hooks/useMoney';
 import { currentRates } from '../utils/fx';
-export default function GamePage({ game }: { game: string }) {
+export default function GamePage({ game, section: pageSection }: { game: string; section?: 'settings' | 'sharing' }) {
   const module = games.require(game),
     collectionId = useCollectionStore((s) => s.collectionId),
     userId = useAuth((s) => s.user?.id);
@@ -113,7 +113,7 @@ export default function GamePage({ game }: { game: string }) {
     return ok;
   };
   const parts = pathname.split('/').filter(Boolean).slice(1),
-    section = parts[0] ?? '',
+    section = pageSection ?? parts[0] ?? '',
     id = parts[1] ? decodeURIComponent(parts[1]) : undefined;
   const body =
     section === 'precons' && id ? (

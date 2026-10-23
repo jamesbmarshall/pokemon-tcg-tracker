@@ -31,6 +31,7 @@ import { Logo } from './components/ui';
 import { useThemeSync } from './utils/theme';
 import { games } from '@poketracker/shared/tcg/registry';
 import GamePage from './tcg/GamePage';
+import { useActiveGame } from './hooks/useActiveGame';
 
 // Catalogue queries retry with backoff because upstream TCGdex hiccups are common and transient.
 // Focus refetching is off: the data changes rarely and a refetch would hit the server for nothing.
@@ -51,6 +52,15 @@ function GameHome() {
   return selected && selected !== 'pokemon' && games.get(selected) ? <Navigate to={`/${selected}`} replace /> : <HomePage />;
 }
 
+function UniversalGamePage({ section }: { section: 'settings' | 'sharing' }) {
+  const game = useActiveGame();
+  if (game !== 'pokemon') {
+    const page = <GamePage key={game} game={game} section={section} />;
+    return section === 'settings' ? <SettingsPage gameData={page} /> : page;
+  }
+  return section === 'settings' ? <SettingsPage /> : <SharingPage />;
+}
+
 function SignedInApp() {
   const load = useCollectionStore((s) => s.load);
   const userId = useAuth((s) => s.user?.id);
@@ -62,7 +72,14 @@ function SignedInApp() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        {games.all().filter(g => g.id !== 'pokemon').map(g => <Route key={g.id} path={`${g.id}/*`} element={<GamePage game={g.id} />} />)}
+        {games.all().filter(g => g.id !== 'pokemon').map(g => <Route key={g.id} path={g.id}>
+          <Route index element={<GamePage game={g.id} />} />
+          <Route path="settings" element={<Navigate to="/settings" replace />} />
+          <Route path="sharing" element={<Navigate to="/sharing" replace />} />
+          <Route path="admin" element={<Navigate to="/admin" replace />} />
+          <Route path="account" element={<Navigate to="/account" replace />} />
+          <Route path="*" element={<GamePage game={g.id} />} />
+        </Route>)}
         <Route index element={<GameHome />} />
         <Route path="sets" element={<SetsPage />} />
         <Route path="sets/:setId" element={<SetPage />} />
@@ -72,12 +89,12 @@ function SignedInApp() {
         <Route path="sealed" element={<SealedPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="scan" element={<ScanPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings" element={<UniversalGamePage section="settings" />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="lists" element={<ListsPage />} />
         <Route path="lists/:listId" element={<ListPage />} />
-        <Route path="sharing" element={<SharingPage />} />
+        <Route path="sharing" element={<UniversalGamePage section="sharing" />} />
         <Route path="shared" element={<Navigate to="/sharing" replace />} />
         <Route path="browse" element={<Navigate to="/sets" replace />} />
         <Route path="browse/:setId" element={<LegacySetRedirect />} />
