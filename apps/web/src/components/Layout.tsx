@@ -84,7 +84,7 @@ function CollectionSwitcher({ className = '' }: { className?: string }) {
         <select
           value={current ?? ''}
           onChange={(e) => void load(e.target.value)}
-          className="input !h-9 w-full truncate !pr-8 !text-sm font-medium"
+          className="input !h-9 w-full truncate !text-sm font-medium"
         >
           {collections.map((c) => (
             <option key={c.id} value={c.id}>

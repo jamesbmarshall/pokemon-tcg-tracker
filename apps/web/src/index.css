@@ -208,6 +208,26 @@ html[data-theme='dark'] {
   }
   .input:focus { @apply outline-none border-accent ring-2 ring-accent/20; }
 
+  /* Keep dropdown arrows aligned with the input's left padding. */
+  select.input:not([multiple]):not([size]) {
+    appearance: none;
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%231c1a16' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2 4 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.875rem center;
+    background-size: 0.75rem;
+  }
+  html[data-theme='dark'] select.input:not([multiple]):not([size]) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23ece7dc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2 4 4 4 4-4'/%3E%3C/svg%3E");
+  }
+  @media (forced-colors: active) {
+    select.input:not([multiple]):not([size]),
+    html[data-theme='dark'] select.input:not([multiple]):not([size]) {
+      appearance: auto;
+      background-image: none;
+    }
+  }
+
   .eyebrow {
     @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted;
     font-stretch: 75%;
