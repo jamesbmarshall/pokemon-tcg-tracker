@@ -38,7 +38,7 @@ function Section({ title, description, children }: { title: string; description?
   );
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ gameData }: { gameData?: React.ReactNode }) {
   const { currency, setCurrency, pocketSize, setPocketSize, theme, setTheme } = useSettings();
   const entries = useCollectionStore((s) => s.entries);
   const graded = useCollectionStore((s) => s.graded);
@@ -152,6 +152,7 @@ export default function SettingsPage() {
         />
       </Section>
 
+      {gameData ?? <>
       <Section title="Prices" description="Your server refreshes prices for every owned and wishlisted card twice a day, even when nobody has the app open. Each day's total is saved to build your value chart.">
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={async () => {
@@ -198,6 +199,8 @@ export default function SettingsPage() {
         )}
       </Section>
 
+      </>}
+
       <Section title="Server" description="This PokéTracker server and who can use it.">
         <p className="text-sm text-muted">
           Version <b className="font-mono text-fg">{status?.version ?? '…'}</b>
@@ -218,7 +221,7 @@ export default function SettingsPage() {
         </Section>
       )}
 
-      <Section title="Data source" description="Where card data comes from.">
+      {!gameData && <Section title="Data source" description="Where card data comes from.">
         <p className="text-sm leading-relaxed text-muted">
           Sets, cards and images come from{' '}
           <a className="text-fg underline underline-offset-2" href="https://tcgdex.dev" target="_blank" rel="noreferrer">
@@ -237,9 +240,9 @@ export default function SettingsPage() {
         >
           <Coffee size={14} /> Support PokéTracker on Ko-fi
         </a>
-      </Section>
+      </Section>}
 
-      {role === 'owner' && (
+      {!gameData && role === 'owner' && (
       <Section title="Danger zone" description="Permanently remove every card, slab, note, list, wishlist entry and value history point from this collection.">
         <div className="rounded-2xl border border-loss/30 bg-loss/5 p-4">
           <label className="text-xs text-muted">

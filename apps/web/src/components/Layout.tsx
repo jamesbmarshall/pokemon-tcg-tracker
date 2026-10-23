@@ -18,6 +18,7 @@ import { Logo } from './ui';
 import CommandPalette from './CommandPalette';
 import ThemeToggle from './ThemeToggle';
 import Toaster from './Toaster';
+import { useActiveGame } from '../hooks/useActiveGame';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -141,7 +142,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const [palette, setPalette] = useState(false);
   const { pathname } = useLocation();
-  const game = games.get(pathname.split('/')[1])?.id ?? 'pokemon';
+  const game = useActiveGame();
   const prefix = game === 'pokemon' ? '' : `/${game}`;
   const path = (to: string) => prefix ? `${prefix}${to === '/' ? '' : to}` : to;
   const nav = NAV.filter(item => item.to !== '/scan' || games.require(game).capabilities.scanning).map(item => ({ ...item, to: path(item.to) }));
@@ -236,11 +237,11 @@ export default function Layout() {
         <div className="mt-auto space-y-4">
           {game === 'pokemon' ? <ValueBadge /> : <GameValueBadge game={game} />}
           <div className="space-y-0.5">
-            <NavLink to={path('/sharing')} className={sideLink}>
+            <NavLink to="/sharing" className={sideLink}>
               <Share2 size={16} strokeWidth={1.9} />
               Sharing
             </NavLink>
-            <NavLink to={path('/settings')} className={sideLink}>
+            <NavLink to="/settings" className={sideLink}>
               <Settings size={16} strokeWidth={1.9} />
               Settings
             </NavLink>
@@ -273,10 +274,10 @@ export default function Layout() {
           <button onClick={() => game === 'pokemon' ? setPalette(true) : navigate(path('/search'))} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
             <Search size={19} />
           </button>
-          <Link to={path('/sharing')} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Sharing">
+          <Link to="/sharing" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Sharing">
             <Share2 size={19} />
           </Link>
-          <Link to={path('/settings')} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Settings">
+          <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Settings">
             <Settings size={19} />
           </Link>
           <Link to="/account" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Account">

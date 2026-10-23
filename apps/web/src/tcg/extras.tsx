@@ -16,7 +16,6 @@ import { useGame } from './context';
 import { download, gameApi } from './api';
 import { TcgGrid } from './Cards';
 import { useMoney } from '../hooks/useMoney';
-import { useSettings, type Currency } from '../store/settingsStore';
 export function AssetTools({
   kind,
   item,
@@ -483,27 +482,11 @@ export function GameSettings() {
     [importing, setImporting] = useState(false),
     [clear, setClear] = useState(false);
   const base = `/api/collections/${collectionId}/games/${module.id}`;
-  const { currency, setCurrency } = useSettings();
   return (
     <div className="space-y-5">
       <PageHeader eyebrow="Settings" title={`${module.shortName} data`}>
-        Manage your display preferences and collection data.
+        Manage your {module.shortName} collection data.
       </PageHeader>
-      <section className="space-y-4 rounded-lg border border-line bg-surface p-5">
-        <h2 className="font-display text-xl">Display preferences</h2>
-        <label>
-          Display currency
-          <select
-            className="input ml-2"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value as Currency)}
-          >
-            {['GBP', 'EUR', 'USD'].map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </label>
-      </section>
       <section className="space-y-4 rounded-lg border border-line bg-surface p-5">
         <h2 className="font-display text-xl">Import & export</h2>
         <p className="text-muted">
