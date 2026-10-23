@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { magicModule } from '@poketracker/shared/tcg/registry';
 import { fromScryfall } from '@poketracker/shared/tcg/scryfall';
+import { holdingId } from '@poketracker/shared/tcg/collection';
 import type { PreconDetail } from '@poketracker/shared/tcg/precons';
 import { renderWithProviders } from '../test/render';
 import { GameContext, type GameContextValue } from './context';
@@ -24,6 +25,7 @@ const forest = {
   id: 'mtg:33333333-3333-4333-8333-333333333333',
   providerId: '33333333-3333-4333-8333-333333333333',
   name: 'Forest',
+  finishes: ['nonfoil', 'foil'],
 };
 const deck: PreconDetail = {
   id: 'DeepClueSea_MKC',
@@ -190,9 +192,59 @@ describe('precon browsing', () => {
       within(screen.getByRole('dialog')).getByLabelText('Deck name'),
     ).toHaveValue('My clue deck');
   });
+  it('adds all cards with their finishes and quantities, preserving existing holdings', async () => {
+    const existing = {
+      id: holdingId(forest.id, 'nonfoil'), cardId: forest.id,
+      finish: 'nonfoil', quantity: 2, condition: 'LP',
+      notes: 'Already owned', addedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const { ctx } = renderGame(<PreconPage id={deck.id} />);
+    ctx.state.entries = [existing];
+    await userEvent.click(await screen.findByRole('button', { name: 'I own this precon' }));
+    await screen.findByText('All 100 cards resolved · ready to save');
+    await userEvent.click(screen.getByRole('button', { name: 'Add cards to collection' }));
+    expect(ctx.save).toHaveBeenCalledWith([
+      { kind: 'entry', id: holdingId(leader.id, 'foil'), data: expect.objectContaining({
+        cardId: leader.id, finish: 'foil', quantity: 1,
+      }) },
+      { kind: 'entry', id: existing.id, data: { ...existing, quantity: 101 } },
+    ]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+  it('blocks a collection import when printings are incomplete', async () => {
+    vi.mocked(gameApi.preconCards).mockResolvedValue({
+      cards: [leader], items: [items[0]], unresolved: [deck.cards[1]],
+    });
+    const { ctx } = renderGame(<PreconPage id={deck.id} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'I own this precon' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Forest');
+    expect(screen.getByRole('button', { name: 'Add cards to collection' })).toBeDisabled();
+    expect(ctx.save).not.toHaveBeenCalled();
+  });
+  it('blocks a collection import when a published finish is unavailable', async () => {
+    vi.mocked(gameApi.preconCards).mockResolvedValue({
+      cards: [leader, { ...forest, finishes: ['foil'] }], items, unresolved: [],
+    });
+    const { ctx } = renderGame(<PreconPage id={deck.id} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'I own this precon' }));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'Add cards to collection' })).toBeDisabled();
+    expect(ctx.save).not.toHaveBeenCalled();
+  });
+  it('keeps the collection import open after a failed save', async () => {
+    const { ctx } = renderGame(<PreconPage id={deck.id} />, {
+      save: vi.fn().mockResolvedValue(false),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'I own this precon' }));
+    await screen.findByText('All 100 cards resolved · ready to save');
+    await userEvent.click(screen.getByRole('button', { name: 'Add cards to collection' }));
+    expect(ctx.save).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
   it('lets viewers browse without offering a collection write', async () => {
     renderGame(<PreconPage id={deck.id} />, { readOnly: true });
     await screen.findByRole('heading', { name: 'Deep Clue Sea' });
+    expect(screen.queryByRole('button', { name: 'I own this precon' })).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Save as deck' }),
     ).not.toBeInTheDocument();

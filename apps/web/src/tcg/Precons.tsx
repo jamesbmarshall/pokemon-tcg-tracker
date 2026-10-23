@@ -6,9 +6,13 @@ import {
   Download,
   ExternalLink,
   Layers,
+  Plus,
   Search,
 } from 'lucide-react';
+import { holdingId } from '@poketracker/shared/tcg/collection';
+import type { Holding } from '@poketracker/shared/tcg/types';
 import type { PreconDetail } from '@poketracker/shared/tcg/precons';
+import { toast } from '../store/toastStore';
 import {
   PageHeader,
   EmptyState,
@@ -160,12 +164,15 @@ export function PreconSearch() {
 }
 function SavePrecon({
   deck,
+  mode,
   onClose,
 }: {
   deck: PreconDetail;
+  mode: 'deck' | 'collection';
   onClose: () => void;
 }) {
-  const { module, save, busy } = useGame();
+  const { module, state, save, busy } = useGame();
+  const collecting = mode === 'collection';
   const navigate = useNavigate();
   const [name, setName] = useState(deck.name);
   const [id] = useState(() => crypto.randomUUID());
@@ -175,15 +182,58 @@ function SavePrecon({
     staleTime: 3600_000,
   });
   const total = resolved.data?.items.reduce((n, i) => n + i.quantity, 0) ?? 0;
+  const holdings = new Map<string, Holding>();
+  const cards = new Map(resolved.data?.cards.map((c) => [c.providerId, c]));
+  let holdingsComplete = true;
+  for (const row of deck.cards) {
+    const card = cards.get(row.providerId);
+    if (!card || !card.finishes.includes(row.finish)) {
+      holdingsComplete = false;
+      continue;
+    }
+    const key = holdingId(card.id, row.finish);
+    const existing = holdings.get(key) ?? state.entries.find((e) => e.id === key);
+    holdings.set(key, {
+      ...existing,
+      id: key,
+      cardId: card.id,
+      finish: row.finish,
+      quantity: (existing?.quantity ?? 0) + row.quantity,
+      addedAt: existing?.addedAt ?? new Date().toISOString(),
+    });
+  }
   const complete =
-    !!resolved.data && !resolved.data.unresolved.length && total === deck.total;
+    !!resolved.data &&
+    !resolved.data.unresolved.length &&
+    total === deck.total &&
+    (!collecting || holdingsComplete);
   return (
-    <Modal title="Save precon as deck" onClose={onClose}>
+    <Modal
+      title={collecting ? 'Add precon to collection' : 'Save precon as deck'}
+      onClose={onClose}
+    >
       <form
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!complete || !resolved.data) return;
+          if (busy || resolved.isFetching || !complete || !resolved.data) return;
+          if (collecting) {
+            void save(
+              [...holdings.values()].map((data) => ({
+                kind: 'entry',
+                id: data.id,
+                data,
+              })),
+            ).then((ok) => {
+              if (ok) {
+                toast(
+                  `Added ${deck.total} cards from ${deck.name} to your collection`,
+                );
+                onClose();
+              }
+            });
+            return;
+          }
           void save([
             {
               kind: 'list',
@@ -204,20 +254,23 @@ function SavePrecon({
           });
         }}
       >
-        <label className="block text-sm">
-          Deck name
-          <input
-            autoFocus
-            className="input mt-1 w-full"
-            required
-            maxLength={200}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
+        {!collecting && (
+          <label className="block text-sm">
+            Deck name
+            <input
+              autoFocus
+              className="input mt-1 w-full"
+              required
+              maxLength={200}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+        )}
         <p className="text-sm text-muted">
-          Create an editable copy of this decklist. Your card holdings and
-          sealed products stay as they are.
+          {collecting
+            ? `Add all ${deck.total} cards from one copy of ${deck.name}, including the published quantities and finishes. These copies will be added to any cards you already own. Each import adds one more precon.`
+            : 'Create an editable copy of this decklist. Your card holdings and sealed products stay as they are.'}
         </p>
         {resolved.isPending && (
           <p role="status" className="text-sm text-muted">
@@ -239,7 +292,9 @@ function SavePrecon({
         {resolved.data && !complete && (
           <div role="alert" className="text-sm text-loss">
             <p>
-              Some printings could not be resolved. The deck has not been saved.
+              Some printings could not be resolved
+              {collecting ? ' with their published finishes' : ''}. Nothing has
+              been saved.
             </p>
             <ul className="mt-2 list-inside list-disc">
               {resolved.data.unresolved.map((c, i) => (
@@ -268,9 +323,11 @@ function SavePrecon({
           </button>
           <button
             className="btn btn-primary"
-            disabled={busy || !name.trim() || !complete || resolved.isFetching}
+            disabled={
+              busy || (!collecting && !name.trim()) || !complete || resolved.isFetching
+            }
           >
-            Save deck
+            {collecting ? 'Add cards to collection' : 'Save deck'}
           </button>
         </div>
       </form>
@@ -279,7 +336,7 @@ function SavePrecon({
 }
 export function PreconPage({ id }: { id: string }) {
   const { module, readOnly } = useGame();
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<'deck' | 'collection' | null>(null);
   const q = useQuery({
     queryKey: ['tcg-precon', module.id, id],
     queryFn: () => gameApi.precon(module.id, id),
@@ -321,10 +378,22 @@ export function PreconPage({ id }: { id: string }) {
         title={deck.name}
         actions={
           !readOnly && (
-            <button className="btn btn-primary" onClick={() => setSaving(true)}>
-              <Download size={15} />
-              Save as deck
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn btn-primary"
+                onClick={() => setSaving('collection')}
+              >
+                <Plus size={15} />
+                I own this precon
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setSaving('deck')}
+              >
+                <Download size={15} />
+                Save as deck
+              </button>
+            </div>
           )
         }
       >
@@ -332,7 +401,9 @@ export function PreconPage({ id }: { id: string }) {
         {module.formats.find((f) => f.id === deck.format)?.name ?? deck.format}{' '}
         · original decklist
       </PageHeader>
-      {saving && <SavePrecon deck={deck} onClose={() => setSaving(false)} />}
+      {saving && (
+        <SavePrecon deck={deck} mode={saving} onClose={() => setSaving(null)} />
+      )}
       <div className="flex flex-wrap gap-4 text-xs text-muted">
         <a
           href={deck.catalogueUrl}
