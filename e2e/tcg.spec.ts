@@ -143,7 +143,7 @@ test('imports a Commander deck through preview, validates it, and shares a read-
   );
 });
 
-test('keeps Commander and data settings reachable on a phone', async ({
+test('keeps Magic selected across universal settings, admin and sharing on a phone', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -152,10 +152,27 @@ test('keeps Commander and data settings reachable on a phone', async ({
     page.getByRole('heading', { name: 'Lists & decks', exact: true }),
   ).toBeVisible();
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page).toHaveURL(/\/mtg\/settings$/);
+  await expect(page).toHaveURL(/\/settings$/);
   await expect(
     page.getByRole('heading', { name: 'Magic data', exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Appearance', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
+  const game = page.getByLabel('Trading card game').filter({ visible: true });
+  await expect(game).toHaveValue('mtg');
+  await page.getByRole('link', { name: 'Users, invites, jobs & backups', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(game).toHaveValue('mtg');
+  await page.reload();
+  await expect(game).toHaveValue('mtg');
+  await page.getByRole('link', { name: 'Sharing', exact: true }).click();
+  await expect(page).toHaveURL(/\/sharing$/);
+  await expect(page.getByRole('heading', { name: 'Share Magic', exact: true })).toBeVisible();
+  await expect(game).toHaveValue('mtg');
+  const axe = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa'])
+    .analyze();
+  expect(axe.violations).toEqual([]);
   await expect
     .poll(() =>
       page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
