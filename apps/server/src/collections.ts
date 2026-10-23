@@ -358,7 +358,8 @@ export interface ImportResult {
 export async function importInto(ctx: Ctx, collectionId: string, data: unknown, commit: (fn: () => ImportResult) => ImportResult = (fn) => fn()): Promise<ImportResult> {
   validateImportEnvelope(data);
   const obj = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
-  if (obj.version !== undefined && (!Number.isInteger(obj.version) || Number(obj.version) < 1 || Number(obj.version) > 6)) throw bad('Unsupported export version. No changes were made.', 'import_version');
+  if (obj.version !== undefined && (!Number.isInteger(obj.version) || Number(obj.version) < 1 || Number(obj.version) > 7)) throw bad('Unsupported export version. No changes were made.', 'import_version');
+  if (obj.version === 7 && (obj.game !== 'pokemon' || obj.games !== undefined)) throw bad('Import this file from its game’s data settings. No changes were made.', 'import_game');
   const rawLists: unknown[] = Array.isArray(obj.lists) ? obj.lists : [];
   const warnings: ImportResult['warnings'] = [];
   const rawEntries: unknown[] = Array.isArray(data) ? data : Array.isArray(obj.collection) ? obj.collection : [];
@@ -823,7 +824,8 @@ export function collectionRoutes(app: FastifyInstance, ctx: Ctx) {
     reply.header('content-disposition', `attachment; filename="poketracker-${new Date().toISOString().slice(0, 10)}.json"`);
     return {
       app: 'poketracker',
-      version: 6,
+      version: 7,
+      game: 'pokemon',
       exportedAt: now(),
       collection: s.entries,
       wishlist: s.wishlist,

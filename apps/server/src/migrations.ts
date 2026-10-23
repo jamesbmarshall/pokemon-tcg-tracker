@@ -410,4 +410,21 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (actor_id, collection_id, operation_key)
   );
   `,
+  /* Multi-game catalogues and collections. Legacy Pokémon tables and keys remain intact. */ `
+  CREATE TABLE tcg_cards (game TEXT NOT NULL, id TEXT NOT NULL, set_id TEXT NOT NULL, data TEXT NOT NULL, fetched_at INTEGER NOT NULL, PRIMARY KEY(game,id));
+  CREATE INDEX tcg_cards_set ON tcg_cards(game,set_id);
+  CREATE TABLE tcg_sets (game TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(game,id));
+  CREATE TABLE tcg_catalogues (game TEXT NOT NULL, set_id TEXT NOT NULL, language TEXT NOT NULL, data TEXT NOT NULL, synced_at INTEGER NOT NULL, PRIMARY KEY(game,set_id,language));
+  CREATE TABLE tcg_records (
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    game TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, deleted_at TEXT,
+    PRIMARY KEY(collection_id,game,kind,id)
+  );
+  CREATE TABLE tcg_value_history (collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE, game TEXT NOT NULL, date TEXT NOT NULL, value_usd REAL NOT NULL, cards INTEGER NOT NULL, PRIMARY KEY(collection_id,game,date));
+  CREATE TABLE tcg_price_history (game TEXT NOT NULL, card_id TEXT NOT NULL, finish TEXT NOT NULL, source TEXT NOT NULL, date TEXT NOT NULL, price REAL NOT NULL, currency TEXT NOT NULL, PRIMARY KEY(game,card_id,finish,source,date));
+  CREATE TABLE tcg_photos (id TEXT PRIMARY KEY, collection_id TEXT NOT NULL, game TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, mime TEXT NOT NULL, added_at TEXT NOT NULL,
+    FOREIGN KEY(collection_id,game,kind,record_id) REFERENCES tcg_records(collection_id,game,kind,id) ON DELETE CASCADE);
+  ALTER TABLE shares ADD COLUMN game TEXT NOT NULL DEFAULT 'pokemon';
+  ALTER TABLE shares ADD COLUMN game_language TEXT NOT NULL DEFAULT 'en';
+  `,
 ];

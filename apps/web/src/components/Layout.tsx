@@ -3,7 +3,9 @@
  * badge, and the command palette shortcut. Pages render into the <Outlet />.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { games } from '@poketracker/shared/tcg/registry';
+import { GameValueBadge } from '../tcg/GamePage';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, BookOpen, Eye, Heart, Info, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, ScanLine, Search, Settings, Share2, ShieldCheck, UserRound, X } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
@@ -26,6 +28,14 @@ const NAV = [
   { to: '/search', label: 'Search', icon: Search },
   { to: '/scan', label: 'Scan', icon: ScanLine },
 ];
+
+function GameSwitcher({ game }: { game: string }) {
+  const navigate = useNavigate();
+  return <label className="block"><span className="sr-only">Trading card game</span><select className="input w-full !text-sm" value={game} onChange={e => {
+    localStorage.setItem('poketracker-game', e.target.value);
+    navigate(e.target.value === 'pokemon' ? '/' : `/${e.target.value}`);
+  }}>{games.all().map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>;
+}
 
 /**
  * Sidebar collection value. Refresh asks the server for fresh prices; for members the server
@@ -128,8 +138,13 @@ function AccountLink() {
 }
 
 export default function Layout() {
+  const navigate = useNavigate();
   const [palette, setPalette] = useState(false);
   const { pathname } = useLocation();
+  const game = games.get(pathname.split('/')[1])?.id ?? 'pokemon';
+  const prefix = game === 'pokemon' ? '' : `/${game}`;
+  const path = (to: string) => prefix ? `${prefix}${to === '/' ? '' : to}` : to;
+  const nav = NAV.filter(item => item.to !== '/scan' || games.require(game).capabilities.scanning).map(item => ({ ...item, to: path(item.to) }));
   const pendingSaves = useCollectionStore((s) => s.pendingSaves);
   const saveError = useCollectionStore((s) => s.saveError);
   const lastSavedAt = useCollectionStore((s) => s.lastSavedAt);
@@ -144,15 +159,17 @@ export default function Layout() {
       // Cmd/Ctrl+K works even while typing (it has no text meaning); '/' only outside text fields.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setPalette((p) => !p);
+        if (game === 'pokemon') setPalette((p) => !p);
+        else navigate(`/${game}/search`);
       } else if (e.key === '/' && !typing) {
         e.preventDefault();
-        setPalette(true);
+        if (game === 'pokemon') setPalette(true);
+        else navigate(`/${game}/search`);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [game, navigate]);
 
   // The layout persists across routes, so the browser won't reset scroll on navigation by itself.
   useEffect(() => {
@@ -165,7 +182,7 @@ export default function Layout() {
     const refresh = () => {
       const state = useCollectionStore.getState();
       const editing = document.querySelector('dialog[open], [role="dialog"]') || document.activeElement?.matches('input,textarea,select,[contenteditable]');
-      if (state.collectionId && !state.readOnly && !state.pendingSaves && !state.saveError && !editing && document.visibilityState !== 'hidden') void state.refresh().catch(() => undefined);
+      if (game === 'pokemon' && state.collectionId && !state.readOnly && !state.pendingSaves && !state.saveError && !editing && document.visibilityState !== 'hidden') void state.refresh().catch(() => undefined);
     };
     const saved = (event: Event) => channel?.postMessage((event as CustomEvent<string>).detail);
     if (channel) channel.onmessage = (event: MessageEvent<string>) => { if (event.data === useCollectionStore.getState().collectionId) refresh(); };
@@ -173,7 +190,7 @@ export default function Layout() {
     window.addEventListener('focus', refresh);
     const timer = window.setInterval(refresh, 30_000);
     return () => { channel?.close(); window.clearInterval(timer); window.removeEventListener('pt:collection-saved', saved); window.removeEventListener('focus', refresh); };
-  }, []);
+  }, [game]);
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -191,7 +208,7 @@ export default function Layout() {
         </Link>
 
         <button
-          onClick={() => setPalette(true)}
+          onClick={() => game === 'pokemon' ? setPalette(true) : navigate(path('/search'))}
           className="mt-7 flex h-9 items-center gap-2.5 rounded-md border border-line-strong bg-canvas px-3 text-sm text-faint transition-colors hover:text-muted"
         >
           <Search size={15} />
@@ -200,29 +217,30 @@ export default function Layout() {
         </button>
 
         <CollectionSwitcher className="mt-4" />
+        <div className="mt-3"><GameSwitcher game={game} /></div>
 
         <nav className="mt-7 space-y-0.5">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {nav.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} className={sideLink}>
               <Icon size={16} strokeWidth={1.9} />
               <span className="flex-1">{label}</span>
               {to === '/wishlist' && wishCount > 0 && <span className="font-mono text-[10px] font-normal text-faint">{wishCount}</span>}
             </NavLink>
           ))}
-          <NavLink to="/lists" className={sideLink}>
+          <NavLink to={path('/lists')} className={sideLink}>
             <ListChecks size={16} strokeWidth={1.9} />
             Lists
           </NavLink>
         </nav>
 
         <div className="mt-auto space-y-4">
-          <ValueBadge />
+          {game === 'pokemon' ? <ValueBadge /> : <GameValueBadge game={game} />}
           <div className="space-y-0.5">
-            <NavLink to="/sharing" className={sideLink}>
+            <NavLink to={path('/sharing')} className={sideLink}>
               <Share2 size={16} strokeWidth={1.9} />
               Sharing
             </NavLink>
-            <NavLink to="/settings" className={sideLink}>
+            <NavLink to={path('/settings')} className={sideLink}>
               <Settings size={16} strokeWidth={1.9} />
               Settings
             </NavLink>
@@ -252,13 +270,13 @@ export default function Layout() {
         </Link>
         <div className="flex items-center">
           <ThemeToggle className="!h-10 !w-10" />
-          <button onClick={() => setPalette(true)} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
+          <button onClick={() => game === 'pokemon' ? setPalette(true) : navigate(path('/search'))} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
             <Search size={19} />
           </button>
-          <Link to="/sharing" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Sharing">
+          <Link to={path('/sharing')} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Sharing">
             <Share2 size={19} />
           </Link>
-          <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Settings">
+          <Link to={path('/settings')} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Settings">
             <Settings size={19} />
           </Link>
           <Link to="/account" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Account">
@@ -269,11 +287,12 @@ export default function Layout() {
 
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
         <CollectionSwitcher className="mb-5 lg:hidden" />
+        <div className="mb-5 lg:hidden"><GameSwitcher game={game} /></div>
         {status?.priceSyncPartial && <p role="status" className="mb-3 text-sm text-loss">The last price refresh was incomplete. Some quotes retain their previous source date; review valuation coverage before relying on the total.</p>}
-        {status?.catalogDegraded && (
+        {(game === 'pokemon' ? status?.catalogDegraded : status?.gameCatalogDegraded?.[game]) && (
           <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-loss/30 bg-loss/5 px-3 py-2 text-sm text-loss">
             <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />
-            Card data may be out of date — TCGdex is unreachable. We're showing the last data we have.
+            Card data may be out of date — {game === 'pokemon' ? 'TCGdex' : 'the catalogue provider'} is unreachable. We're showing the last data we have.
           </div>
         )}
         {(pendingSaves > 0 || saveError || lastSavedAt) && (
@@ -284,7 +303,7 @@ export default function Layout() {
         )}
         <Outlet />
         <footer className="mt-20 border-t border-line pt-6 text-xs text-faint">
-          Card data, images & prices from{' '}
+          {game === 'pokemon' ? <>Card data, images & prices from{' '}
           <a href="https://tcgdex.dev" target="_blank" rel="noreferrer" className="underline decoration-line-strong underline-offset-2 hover:text-muted">
             TCGdex
           </a>{' '}
@@ -292,13 +311,13 @@ export default function Layout() {
           <a href="https://frankfurter.dev" target="_blank" rel="noreferrer" className="underline decoration-line-strong underline-offset-2 hover:text-muted">
             Frankfurter
           </a>
-          . Pokémon and card images © The Pokémon Company.
+          . Pokémon and card images © The Pokémon Company.</> : <>{games.require(game).attribution} Currency rates from Frankfurter.</>}
         </footer>
       </main>
 
       {/* Mobile tab bar */}
       <nav data-mobile-nav className="fixed inset-x-0 bottom-0 z-40 grid auto-cols-fr grid-flow-col border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
-        {NAV.map(({ to, label, icon: Icon, end }) => (
+        {nav.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -311,7 +330,7 @@ export default function Layout() {
         ))}
       </nav>
 
-      {palette && <CommandPalette open onClose={() => setPalette(false)} />}
+      {palette && game === 'pokemon' && <CommandPalette open onClose={() => setPalette(false)} />}
       <Toaster />
     </div>
   );

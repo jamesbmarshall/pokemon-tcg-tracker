@@ -1,6 +1,7 @@
 import { createPackage } from './backupPackages.ts';
 import { reconcilePhotos } from './photoStorage.ts';
 import { discoverSets, syncPrintingCatalogues } from './printingCatalog.ts';
+import { refreshGameCatalogues, refreshGamePrices, refreshGameSets } from './tcg/jobs.ts';
 /**
  * In-process job scheduler. Each job runs on a cron schedule, can be triggered from the admin
  * UI, and is caught up shortly after boot if its last success is older than staleMs, because a
@@ -39,6 +40,9 @@ const H = 3600_000;
 const HOUR_QUARTER = H / 4;
 
 export const JOBS: JobDef[] = [
+  { name: 'tcg-sets', label: 'Additional game sets', schedule: '50 */6 * * *', staleMs: 6 * H, run: refreshGameSets },
+  { name: 'tcg-catalogues', label: 'Additional game catalogues', schedule: '45 5 * * *', staleMs: 24 * H, run: refreshGameCatalogues },
+  { name: 'tcg-prices', label: 'Additional game prices', schedule: '45 7 * * *', staleMs: 24 * H, run: refreshGamePrices },
   {
     name: 'fx',
     label: 'Currency rates',
@@ -328,7 +332,7 @@ export function startScheduler(ctx: Ctx) {
   // read the refreshed card data). 'values' is absent because prices runs it.
   const timer = setTimeout(async () => {
     const rows = new Map(ctx.db.all<JobRow>("SELECT * FROM jobs WHERE last_status = 'ok'").map((r) => [r.name, r]));
-    for (const j of ['fx', 'sets', 'printings', 'prices', 'update-check', 'images', 'backup', 'cleanup']) {
+    for (const j of ['fx', 'sets', 'printings', 'prices', 'update-check', 'images', 'backup', 'cleanup', 'tcg-sets', 'tcg-prices', 'tcg-catalogues']) {
       const def = active.find((d) => d.name === j);
       if (!def) continue; // excluded for this mode (e.g. update-check in demo mode)
       const last = rows.get(j)?.last_finished_at;

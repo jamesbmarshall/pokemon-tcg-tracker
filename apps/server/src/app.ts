@@ -23,6 +23,7 @@ import { shareRoutes, attachShare } from './shares.ts';
 import { systemRoutes } from './system.ts';
 import { demoGuard, demoRoutes } from './demo.ts';
 import { pricechartingRoutes } from './providers/pricecharting.ts';
+import { tcgRoutes } from './tcg/routes.ts';
 
 /** Methods that must not change state, so they skip the CSRF checks below. */
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -151,6 +152,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
   systemRoutes(app, ctx);
   demoRoutes(app, ctx);
   pricechartingRoutes(app, ctx);
+  tcgRoutes(app, ctx);
 
   // Without this, unknown API paths would fall through to the SPA and return HTML with a 200.
   app.all('/api/*', async () => {

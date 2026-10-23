@@ -37,6 +37,8 @@ See [Deploy](#deploy) below for Azure and a bare VPS, or [`deploy/nas/README.md`
 
 ## Features
 
+- **Multiple trading card games**: switch between Pokémon and Magic: The Gathering in the same account and household collection. Magic includes multilingual Scryfall cards and sets, collecting and binder views, printing/finish checklists, prices, wishlists, slabs, sealed products, sharing and Commander decks with import/export, ownership checks and legality feedback. The [game framework guide](docs/multi-game.md) explains how further TCGs can be added and documents data coverage and rules limitations.
+
 - **Dashboard**: collection value with a daily history chart, biggest movers over the last 7 or 30 days, sets in progress, most valuable cards, recent additions and the sets you're closest to finishing.
 - **Sets**: physical-card sets in the supported TCGdex languages, grouped by series, with progress bars. Each set page shows four completion measures:
   - **Base**: numbered cards up to the printed total.
