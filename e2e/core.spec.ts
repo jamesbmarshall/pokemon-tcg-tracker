@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/tcgdex/**', route => route.fulfill({ json: [] }));

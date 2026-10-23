@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { magicLeader, magicForest, magicSet } from './tcg-fixtures';
 
@@ -65,6 +66,8 @@ for (const width of [1440, 390, 320]) {
     expect(magic).toEqual(pokemon);
     expect(magic.overflow).toBe(false);
     await expect(page.getByLabel('Notes about this card')).toBeVisible();
+    await page.getByRole('button', { name: 'Add Normal copy', exact: true }).click();
+    await expect(page.getByLabel('Condition of Normal copy')).toBeVisible();
     const violations = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])
       .analyze();

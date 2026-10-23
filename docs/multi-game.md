@@ -172,3 +172,11 @@ Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` and
 collection isolation, revisions, redaction, scoped photos, import admission and
 budgets, malformed providers and bulk stream boundaries. Browser tests additionally
 cover shared card layouts and the precon search/preview/save journey.
+
+Run the full browser matrix with `npm run test:browser` after building the web
+app and installing Playwright's Chromium/WebKit browsers and OS dependencies.
+Each browser test starts its own HTTP server on an ephemeral port with a freshly
+seeded database and closes it on teardown. This prevents shared collection edits,
+revision state and login rate limits from leaking between tests or browser
+projects; production authentication limits remain enabled. Card-layout checks
+also add an owned copy before running axe so purchase/value controls are covered.

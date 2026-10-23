@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 test.use({ serviceWorkers: 'allow' });
 test('installed service worker prompts for update and preserves an open edit', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'Service-worker update lifecycle is exercised in Chromium.');

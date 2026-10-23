@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 import { magicLeader, magicForest, magicSet } from './tcg-fixtures';
 test.beforeEach(async ({ page }) => {
