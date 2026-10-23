@@ -14,6 +14,7 @@ import { mutate } from '../mutations.ts';
 import { publishPhoto } from '../photoStorage.ts';
 import { sha256 } from '../security.ts';
 import { pcProduct, pcGradedPrice } from '../providers/pricecharting.ts';
+import { preconsFor } from './precons.ts';
 import { providerFor, readGameCards } from './provider.ts';
 import { cardValue, quoteUsd } from '@poketracker/shared/tcg/collection';
 import { currentRates } from '../cards.ts';
@@ -59,6 +60,40 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
           formats: formats.map((f) => ({ id: f.id, name: f.name })),
         }),
       );
+  });
+  app.get('/api/games/:game/precons', async (req, reply) => {
+    requireUser(req);
+    limit.check(req.user!.id, reply);
+    const g = game(req);
+    const q = (req.query as { q?: unknown }).q ?? '';
+    if (typeof q !== 'string' || q.length > 200)
+      throw bad('Invalid precon search');
+    const result = await preconsFor(ctx, g).list();
+    const words = q.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+    return {
+      ...result,
+      decks: result.decks.filter((d) =>
+        words.every((word) =>
+          `${d.name} ${d.setCode} ${d.releaseDate}`
+            .toLocaleLowerCase()
+            .includes(word),
+        ),
+      ),
+    };
+  });
+  app.get('/api/games/:game/precons/:preconId', async (req, reply) => {
+    requireUser(req);
+    limit.check(req.user!.id, reply);
+    return preconsFor(ctx, game(req)).detail(
+      (req.params as { preconId: string }).preconId,
+    );
+  });
+  app.get('/api/games/:game/precons/:preconId/cards', async (req, reply) => {
+    requireUser(req);
+    limit.check(req.user!.id, reply);
+    return preconsFor(ctx, game(req)).resolve(
+      (req.params as { preconId: string }).preconId,
+    );
   });
   app.get('/api/games/:game/sets', async (req, reply) => {
     reader(req);

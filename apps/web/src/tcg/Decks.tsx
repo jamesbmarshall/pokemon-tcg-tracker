@@ -37,6 +37,14 @@ export function DecksPage({ listId }: { listId?: string }) {
         actions={
           !readOnly && (
             <>
+              {module.capabilities.precons && (
+                <Link
+                  className="btn btn-ghost"
+                  to={`/${module.id}/search?tab=precons`}
+                >
+                  Browse precons
+                </Link>
+              )}
               <button
                 className="btn btn-ghost"
                 onClick={() => setCreating('list')}

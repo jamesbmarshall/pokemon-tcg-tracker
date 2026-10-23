@@ -78,9 +78,19 @@ claimed legal. Validation does not model gameplay, table agreements or tournamen
 judgments. Recommendations and other Magic deck formats are not included.
 
 Deck text import previews printings before replacing a deck. Unknown or ambiguous
-rows need resolution. Built-in precon browsing is not included; import their text
-lists. Owned/missing counts use raw physical copies across reprints and languages,
-exclude graded slabs, and do not reserve cards between decks.
+rows need resolution. Owned/missing counts use raw physical copies across reprints
+and languages, exclude graded slabs, and do not reserve cards between decks.
+
+Paper Commander precons are searchable by name, set code and release year through
+MTGJSON. Search → Precons and Lists & decks → Browse precons open the catalogue.
+Each preview separates the playable commander/main deck from display copies and
+tokens, preserves quantities and original printing IDs, and links to the publisher
+when available. Save as deck resolves exact Scryfall printings in batches of at
+most 75 and creates a normal editable Commander deck. Unresolved cards block
+saving; no raw holdings or sealed products are created by this action. Catalogue
+responses are cached for a day with a labelled stale fallback. The catalogue is
+English/source-printing based and is independent of the card-language filter.
+Other games can register a precon provider and enable the precons capability.
 
 Camera OCR runs on-device. Set-code/collector-number lookup is best for modern
 cards. Older cards need manual lookup or name search, and finish is always chosen

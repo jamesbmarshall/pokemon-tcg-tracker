@@ -21,7 +21,7 @@ interface Page {
 }
 const delays = new WeakMap<Ctx, Promise<void>>();
 /** One request gate per instance, including concurrent searches and jobs. */
-async function gate(ctx: Ctx) {
+export async function scryfallGate(ctx: Ctx) {
   const previous = delays.get(ctx) ?? Promise.resolve();
   const next = previous
     .catch(() => {})
@@ -38,7 +38,7 @@ export async function scryfallJson<T>(
   if (!path.startsWith('/') || path.startsWith('//'))
     throw bad('Invalid catalogue path');
   // Gate only network misses; cachedUpstream still provides retry/circuit-breaker/stale fallback.
-  await gate(ctx);
+  await scryfallGate(ctx);
   const r = await cachedUpstream(
     ctx,
     'scryfall',

@@ -16,6 +16,7 @@ import type { TcgSearch } from '@poketracker/shared/tcg/types';
 import { collectionValue, cardValue } from '@poketracker/shared/tcg/collection';
 import { useGame } from './context';
 import { gameApi } from './api';
+import { PreconSearch, SearchTypeSwitch } from './Precons';
 import { TcgGrid } from './Cards';
 import { useMoney } from '../hooks/useMoney';
 import { currentRates } from '../utils/fx';
@@ -152,11 +153,22 @@ export function GameDashboard() {
   );
 }
 export function GameSearch() {
+  const { module } = useGame();
+  const [params] = useSearchParams();
+  return module.capabilities.precons && params.get('tab') === 'precons' ? (
+    <PreconSearch />
+  ) : (
+    <GameCardSearch />
+  );
+}
+function GameCardSearch() {
   const { module, language } = useGame();
   const [params, setParams] = useSearchParams();
-  const fields = Object.fromEntries(params.entries());
+  const fields = Object.fromEntries(
+    [...params.entries()].filter(([key]) => key !== 'tab'),
+  );
   const [filters, setFilters] = useState(false);
-  const debounced = useDebounced(params.toString(), 350);
+  const debounced = useDebounced(new URLSearchParams(fields).toString(), 350);
   const query = Object.fromEntries(new URLSearchParams(debounced)) as TcgSearch;
   const page = Number(fields.page) || 1;
   const active = Object.entries(query).some(([k, v]) => k !== 'page' && !!v);
@@ -182,7 +194,11 @@ export function GameSearch() {
   ).length;
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={module.shortName} title="Search cards">
+      <PageHeader
+        eyebrow={module.shortName}
+        title="Search cards"
+        actions={<SearchTypeSwitch />}
+      >
         Find a particular printing, or explore the catalogue.
       </PageHeader>
       <form
@@ -281,7 +297,20 @@ export function GameSearch() {
             {q.data.cards.length ? (
               <TcgGrid cards={q.data.cards} />
             ) : (
-              <EmptyState icon={<Search size={28} />} title="No cards found">
+              <EmptyState
+                icon={<Search size={28} />}
+                title="No cards found"
+                action={
+                  module.capabilities.precons && (
+                    <Link
+                      className="btn btn-ghost"
+                      to={`/${module.id}/search?${new URLSearchParams({ tab: 'precons', q: fields.q ?? '' })}`}
+                    >
+                      Search precons for this name <ArrowRight size={14} />
+                    </Link>
+                  )
+                }
+              >
                 Try a different name or remove a filter.
               </EmptyState>
             )}

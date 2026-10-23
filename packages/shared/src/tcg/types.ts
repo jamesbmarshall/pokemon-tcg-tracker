@@ -191,10 +191,12 @@ export interface GameModule {
   shortName: string;
   attribution?: string;
   searchHint?: string;
+  preconCatalogue?: { name: string; url: string; description?: string };
   cardFacts?: (card: TcgCard) => { label: string; value: string }[];
   languages: { code: string; name: string }[];
   capabilities: {
     decks: boolean;
+    precons?: boolean;
     scanning: boolean;
     sealed: boolean;
     graded: boolean;

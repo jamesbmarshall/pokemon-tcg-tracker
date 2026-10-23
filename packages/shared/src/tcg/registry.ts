@@ -54,6 +54,11 @@ export const magicModule: GameModule = {
   attribution:
     'Card data, images and prices from Scryfall (TCGplayer & Cardmarket). Magic: The Gathering © Wizards of the Coast.',
   searchHint: 'Card name or Scryfall query',
+  preconCatalogue: {
+    name: 'MTGJSON',
+    url: 'https://mtgjson.com/',
+    description: 'Paper Commander preconstructed decks',
+  },
   cardFacts: (card) => [
     { label: 'Mana value', value: String(card.details.manaValue ?? '') },
     {
@@ -90,7 +95,13 @@ export const magicModule: GameModule = {
     ['ph', 'Phyrexian'],
     ['qya', 'Quenya'],
   ].map(([code, name]) => ({ code, name })),
-  capabilities: { decks: true, scanning: true, sealed: true, graded: true },
+  capabilities: {
+    decks: true,
+    precons: true,
+    scanning: true,
+    sealed: true,
+    graded: true,
+  },
   searchFields: [
     { key: 'text', label: 'Rules text' },
     { key: 'type', label: 'Card type' },

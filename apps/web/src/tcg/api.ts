@@ -6,10 +6,25 @@ import type {
   TcgSearch,
   TcgSet,
 } from '@poketracker/shared/tcg/types';
+import type {
+  PreconSummary,
+  PreconDetail,
+  ResolvedPrecon,
+} from '@poketracker/shared/tcg/precons';
 import { api } from '../api/http';
 export const gameStateKey = (collectionId: string | null, game: string) =>
   ['game-state', collectionId, game] as const;
 export const gameApi = {
+  precons: (game: string, q = '') =>
+    api<{ decks: PreconSummary[]; stale: boolean }>(
+      `/api/games/${game}/precons?${new URLSearchParams({ q })}`,
+    ),
+  precon: (game: string, id: string) =>
+    api<PreconDetail>(`/api/games/${game}/precons/${encodeURIComponent(id)}`),
+  preconCards: (game: string, id: string) =>
+    api<ResolvedPrecon>(
+      `/api/games/${game}/precons/${encodeURIComponent(id)}/cards`,
+    ),
   state: (id: string, game: string) =>
     api<GameState>(`/api/collections/${id}/games/${game}/state`, {
       acceptRevision: 'initial',

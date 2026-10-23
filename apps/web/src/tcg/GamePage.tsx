@@ -17,6 +17,7 @@ import {
   GameCollection,
   GameCard,
 } from './Views';
+import { PreconPage } from './Precons';
 import { DecksPage } from './Decks';
 import {
   GameSealed,
@@ -37,7 +38,7 @@ export default function GamePage({ game }: { game: string }) {
   const [language, setLanguage] = useState(
     () => localStorage.getItem(`tcg-language:${game}`) ?? 'en',
   );
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const client = useQueryClient();
   const q = useQuery({
     queryKey: [...gameStateKey(collectionId, game), userId],
@@ -115,7 +116,9 @@ export default function GamePage({ game }: { game: string }) {
     section = parts[0] ?? '',
     id = parts[1] ? decodeURIComponent(parts[1]) : undefined;
   const body =
-    section === 'sets' ? (
+    section === 'precons' && id ? (
+      <PreconPage key={id} id={id} />
+    ) : section === 'sets' ? (
       <GameSets id={id} />
     ) : section === 'card' && id ? (
       <GameCard key={id} id={id} />
@@ -157,27 +160,31 @@ export default function GamePage({ game }: { game: string }) {
         reload,
       }}
     >
-      {['sets', 'search', 'scan'].includes(section) && (
-        <div className="mb-5 flex justify-end">
-          <label className="flex items-center gap-2 whitespace-nowrap text-xs text-muted">
-            Card language
-            <select
-              className="input !h-8 !w-auto max-w-48 !py-1 !text-xs"
-              value={language}
-              onChange={(e) => {
-                setLanguage(e.target.value);
-                localStorage.setItem(`tcg-language:${game}`, e.target.value);
-              }}
-            >
-              {module.languages.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
+      {['sets', 'search', 'scan'].includes(section) &&
+        !(
+          section === 'search' &&
+          new URLSearchParams(search).get('tab') === 'precons'
+        ) && (
+          <div className="mb-5 flex justify-end">
+            <label className="flex items-center gap-2 whitespace-nowrap text-xs text-muted">
+              Card language
+              <select
+                className="input !h-8 !w-auto max-w-48 !py-1 !text-xs"
+                value={language}
+                onChange={(e) => {
+                  setLanguage(e.target.value);
+                  localStorage.setItem(`tcg-language:${game}`, e.target.value);
+                }}
+              >
+                {module.languages.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
       {busy && (
         <p
           role="status"
