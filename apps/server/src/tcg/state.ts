@@ -47,7 +47,8 @@ const paid = (value: unknown): Holding['paid'] => {
     currency: p.currency as 'USD' | 'EUR' | 'GBP',
   };
 };
-export function recordCardIds(record: GameRecord): string[] {
+export function recordCardIds(raw: unknown): string[] {
+  const record = obj(raw);
   const d = obj(record.data);
   if (record.kind === 'list')
     return Array.isArray(d.items)
@@ -56,13 +57,17 @@ export function recordCardIds(record: GameRecord): string[] {
           return typeof value.cardId === 'string' ? [value.cardId] : [];
         })
       : [];
-  if (record.kind === 'note' || record.kind === 'wishlist') return [record.id];
+  if (record.kind === 'note' || record.kind === 'wishlist') {
+    if (typeof record.id !== 'string') throw bad('Invalid card ID');
+    return [record.id];
+  }
   return typeof d.cardId === 'string' ? [d.cardId] : [];
 }
 export function cleanGameRecord(
   ctx: Ctx,
   game: string,
   raw: unknown,
+  catalogue?: ReadonlyMap<string, TcgCard>,
 ): GameRecord {
   const r = obj(raw),
     d = obj(r.data),
@@ -79,7 +84,9 @@ export function cleanGameRecord(
   const card = (id: unknown, finish?: unknown): TcgCard => {
     if (typeof id !== 'string' || !id.startsWith(`${game}:`))
       throw bad('Card belongs to another game');
-    const found = readGameCards(ctx, game, [id])[0];
+    const found = catalogue
+      ? catalogue.get(id)
+      : readGameCards(ctx, game, [id])[0];
     if (!found) throw bad('Load the card from the catalogue before adding it');
     if (
       finish !== undefined &&
@@ -220,10 +227,10 @@ export function putGameRecord(
     const next = record.data as Record<string, unknown>;
     if (
       old &&
-      old.cardId === next.cardId &&
-      old.finish === next.finish &&
-      old.company === next.company &&
-      old.grade === next.grade &&
+      (record.kind === 'graded'
+        ? ['cardId', 'finish', 'company', 'grade']
+        : ['name', 'productType', 'setId', 'language']
+      ).every((key) => old[key] === next[key]) &&
       next.pcProductId === undefined
     ) {
       record = {
@@ -246,20 +253,22 @@ export function gameState(
   collectionId: string,
   game: string,
   role = 'viewer',
+  includeHistory = true,
 ): GameState {
   const records = ctx.db.all<{ kind: string; id: string; data: string }>(
     'SELECT kind,id,data FROM tcg_records WHERE collection_id = ? AND game = ? AND deleted_at IS NULL',
     collectionId,
     game,
   );
+  const parsed = records.map((r) => ({ ...r, data: JSON.parse(r.data) }));
   const pick = <T>(kind: string) =>
-    records.filter((r) => r.kind === kind).map((r) => JSON.parse(r.data) as T);
+    parsed.filter((r) => r.kind === kind).map((r) => r.data as T);
   const ids = new Set(
-    records.flatMap((r) =>
+    parsed.flatMap((r) =>
       recordCardIds({
         kind: r.kind as GameRecord['kind'],
         id: r.id,
-        data: JSON.parse(r.data),
+        data: r.data,
       }),
     ),
   );
@@ -274,15 +283,17 @@ export function gameState(
     wishlist: records.filter((r) => r.kind === 'wishlist').map((r) => r.id),
     notes: pick('note'),
     lists: pick('list'),
-    history: ctx.db.all<{ date: string; valueUsd: number; cards: number }>(
-      'SELECT date,value_usd AS valueUsd,cards FROM tcg_value_history WHERE collection_id = ? AND game = ? ORDER BY date',
-      collectionId,
-      game,
-    ),
+    history: includeHistory
+      ? ctx.db.all<{ date: string; valueUsd: number; cards: number }>(
+          'SELECT date,value_usd AS valueUsd,cards FROM tcg_value_history WHERE collection_id = ? AND game = ? ORDER BY date',
+          collectionId,
+          game,
+        )
+      : [],
   };
 }
 export function recordGameValue(ctx: Ctx, id: string, game: string) {
-  const state = gameState(ctx, id, game);
+  const state = gameState(ctx, id, game, 'viewer', false);
   const value = collectionValue(
     state.cards,
     state.entries,
@@ -334,7 +345,13 @@ export function gameShareState(
   const all = share.scope === 'collection';
   const list = s.lists.find((l) => l.id === share.target);
   const setIds = new Set(
-    s.cards.filter((c) => c.setId === share.target).map((c) => c.id),
+    s.cards
+      .filter(
+        (c) =>
+          c.setId === share.target &&
+          c.language === (share.game_language ?? 'en'),
+      )
+      .map((c) => c.id),
   );
   const ids = all
     ? new Set(s.cards.map((c) => c.id))
@@ -359,7 +376,11 @@ export function gameShareState(
     all || share.scope === 'sealed'
       ? s.sealed
       : share.scope === 'set'
-        ? s.sealed.filter((p) => p.setId === share.target)
+        ? s.sealed.filter(
+            (p) =>
+              p.setId === share.target &&
+              p.language === (share.game_language ?? 'en'),
+          )
         : [];
   s.wishlist =
     all || ['set', 'wishlist'].includes(share.scope)

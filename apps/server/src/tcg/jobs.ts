@@ -1,12 +1,9 @@
 import { games } from '@poketracker/shared/tcg/registry';
-import {
-  fromScryfall,
-  type ScryfallCard,
-} from '@poketracker/shared/tcg/scryfall';
+import type { ScryfallCard } from '@poketracker/shared/tcg/scryfall';
 import type { Ctx } from '../context.ts';
 import { assertStorage } from '../resourceLimits.ts';
 import { recordGameValue } from './state.ts';
-import { providerFor, scryfallJson } from './provider.ts';
+import { providerFor, scryfallJson, normalizeScryfall } from './provider.ts';
 import {
   pcConfigured,
   pcProduct,
@@ -23,7 +20,9 @@ export async function* jsonObjects(
     escaped = false,
     total = 0;
   let started = false,
-    ended = false;
+    ended = false,
+    needComma = false,
+    allowEnd = true;
   for await (const chunk of chunks) {
     total += chunk.length;
     if (total > 4 * 1024 ** 3) throw new Error('Bulk catalogue exceeds 4 GiB');
@@ -35,12 +34,23 @@ export async function* jsonObjects(
         continue;
       }
       if (depth === 0) {
-        if (char === ']') {
+        if (/\s/.test(char)) continue;
+        if (ended) throw new Error('Invalid bulk array');
+        if (needComma) {
+          if (char === ']') {
+            ended = true;
+            continue;
+          }
+          if (char !== ',') throw new Error('Invalid bulk array');
+          needComma = false;
+          allowEnd = false;
+          continue;
+        }
+        if (char === ']' && allowEnd) {
           ended = true;
           continue;
         }
-        if (/[\s,]/.test(char)) continue;
-        if (ended || char !== '{') throw new Error('Invalid bulk array');
+        if (char !== '{') throw new Error('Invalid bulk array');
       }
       object += char;
       if (object.length > 2 * 1024 ** 2)
@@ -56,6 +66,7 @@ export async function* jsonObjects(
         if (depth === 0) {
           yield JSON.parse(object);
           object = '';
+          needComma = true;
         }
       }
     }
@@ -115,7 +126,7 @@ export async function refreshGameCatalogues(ctx: Ctx) {
       assertStorage(ctx, 4 * 1024 ** 2);
       ctx.db.tx(() => {
         for (const raw of batch) {
-          const card = fromScryfall(raw, source.updated_at);
+          const card = normalizeScryfall(raw, source.updated_at);
           if (!card.paper) continue;
           ctx.db.run(
             'INSERT OR REPLACE INTO tcg_bulk_stage VALUES (?,?,?,?,?)',

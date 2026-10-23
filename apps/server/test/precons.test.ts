@@ -260,3 +260,39 @@ describe('preconstructed deck catalogue', () => {
     });
   });
 });
+
+it('ignores malformed index rows and rejects malformed deck rows as upstream failures', async () => {
+  fetchMock.mockImplementation(async (url) =>
+    String(url).endsWith('/DeckList.json')
+      ? Response.json({ data: [null, false, ...index] })
+      : Response.json({ data: { ...rawDeck, mainBoard: [null] } }),
+  );
+  expect((await owner.get(path)).statusCode).toBe(200);
+  const result = await owner.get(`${path}/DeepClueSea_MKC`);
+  expect(result.statusCode).toBe(502);
+  expect(result.json().code).toBe('upstream');
+});
+
+it.each([
+  null,
+  { data: [null] },
+  { data: [{ ...leader, finishes: 'foil' }] },
+  'not json',
+])(
+  'rejects malformed bulk printing responses without persisting cards: %j',
+  async (payload) => {
+    fetchMock.mockImplementation(async (url) => {
+      if (String(url).endsWith('/DeckList.json'))
+        return Response.json({ data: index });
+      if (String(url).includes('/decks/'))
+        return Response.json({ data: rawDeck });
+      return typeof payload === 'string'
+        ? new Response(payload)
+        : Response.json(payload);
+    });
+    const result = await owner.get(`${path}/DeepClueSea_MKC/cards`);
+    expect(result.statusCode).toBe(502);
+    expect(result.json().code).toBe('upstream');
+    expect(s.ctx.db.all('SELECT id FROM tcg_cards')).toEqual([]);
+  },
+);

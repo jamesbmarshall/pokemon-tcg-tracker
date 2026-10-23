@@ -9,7 +9,7 @@ import {
 } from './helpers.ts';
 import { fromScryfall } from '@poketracker/shared/tcg/scryfall';
 import { saveGameCards } from '../src/tcg/provider.ts';
-import { gameState } from '../src/tcg/state.ts';
+import { gameState, putGameRecord } from '../src/tcg/state.ts';
 import { jsonObjects } from '../src/tcg/jobs.ts';
 import { reconcilePhotos } from '../src/photoStorage.ts';
 const card = fromScryfall({
@@ -388,3 +388,224 @@ it('does not replace newer quotes or invent a new observation date from stale ca
     s.ctx.db.get("SELECT 1 FROM tcg_price_history WHERE date='2000-01-01'"),
   ).toBeUndefined();
 });
+
+it('restricts set shares and photo access to the published language', async () => {
+  const japanese = {
+    ...card,
+    id: 'mtg:33333333-3333-4333-8333-333333333333',
+    providerId: '33333333-3333-4333-8333-333333333333',
+    language: 'ja',
+  };
+  saveGameCards(s.ctx, [japanese]);
+  const slab = {
+    kind: 'graded',
+    id: 'private-japanese-slab',
+    data: {
+      cardId: japanese.id,
+      finish: 'foil',
+      company: 'PSA',
+      grade: '10',
+      notes: 'Japanese private note',
+    },
+  };
+  await owner.put(`${base()}/records`, {
+    records: [
+      entry(),
+      {
+        kind: 'entry',
+        id: `${japanese.id}::nonfoil`,
+        data: { ...entry().data, cardId: japanese.id },
+      },
+      slab,
+      { kind: 'note', id: japanese.id, data: { text: 'Japanese secret' } },
+      { kind: 'wishlist', id: japanese.id, data: {} },
+    ],
+  });
+  const share = (
+    await owner.post('/api/shares', {
+      collectionId: id,
+      game: 'mtg',
+      scope: 'set',
+      target: card.setId,
+      language: 'en',
+      audience: 'public',
+      hideNotes: false,
+    })
+  ).json();
+  const token = share.url.split('/s/')[1];
+  const visitor = new Client(s.app);
+  const result = await visitor.get(`/api/public/${token}`);
+  expect(result.statusCode).toBe(200);
+  expect(result.json().cards.map((c: { id: string }) => c.id)).toEqual([
+    card.id,
+  ]);
+  expect(
+    result.json().entries.map((e: { cardId: string }) => e.cardId),
+  ).toEqual([card.id]);
+  expect(result.json().notes).toEqual([]);
+  expect(result.json().wishlist).toEqual([]);
+  expect(result.json().graded).toEqual([]);
+  expect(
+    (await visitor.get(`/api/public/${token}/game-photos/graded/${slab.id}`))
+      .statusCode,
+  ).toBe(404);
+});
+
+it('rejects malformed bulk JSON before catalogue publication', async () => {
+  for (const text of [
+    '[{}{}]',
+    '[{},]',
+    '[,{}]',
+    '[{}]]',
+    '[{}]true',
+    '[{},,{}]',
+  ]) {
+    async function* chunks() {
+      yield new TextEncoder().encode(text);
+    }
+    await expect(async () => {
+      for await (const object of jsonObjects(chunks())) void object;
+    }).rejects.toThrow('Invalid bulk array');
+  }
+});
+
+it('preflights invalid and excessive import references before any external request', async () => {
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockRejectedValue(new Error('Must not fetch'));
+  const wishlist = Array.from(
+    { length: 501 },
+    (_, i) =>
+      `mtg:50000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`,
+  );
+  for (const patch of [
+    { wishlist },
+    { wishlist: [wishlist[0], 'pokemon:bad'] },
+    {
+      wishlist: [wishlist[0]],
+      history: [{ date: 'bad', valueUsd: 0, cards: 0 }],
+    },
+    {
+      lists: [
+        {
+          id: 'bad',
+          items: Array.from({ length: 1001 }, () => ({ cardId: wishlist[0] })),
+        },
+      ],
+    },
+  ])
+    expect(
+      (
+        await owner.post(`${base()}/import`, {
+          version: 7,
+          games: { mtg: patch },
+        })
+      ).statusCode,
+    ).toBe(400);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(gameState(s.ctx, id, 'mtg').wishlist).toEqual([]);
+  expect(
+    (await owner.put(`${base()}/records`, { records: [null] })).statusCode,
+  ).toBe(400);
+});
+
+it('shares import admission between Pokemon and Magic and releases it after completion', async () => {
+  let notifyEntered!: () => void;
+  let releaseFetch!: (response: Response) => void;
+  const entered = new Promise<void>((resolve) => {
+    notifyEntered = resolve;
+  });
+  const released = new Promise<Response>((resolve) => {
+    releaseFetch = resolve;
+  });
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+    notifyEntered();
+    return released;
+  });
+  const missing = 'mtg:33333333-3333-4333-8333-333333333333';
+  const pending = owner.post(`${base()}/import`, {
+    version: 7,
+    games: { mtg: { wishlist: [missing] } },
+  });
+  try {
+    await entered;
+    expect(
+      (
+        await owner.post(`/api/collections/${id}/import`, {
+          version: 6,
+          collection: [],
+        })
+      ).statusCode,
+    ).toBe(429);
+    expect(
+      (await owner.post(`${base()}/import`, { version: 7, games: { mtg: {} } }))
+        .statusCode,
+    ).toBe(429);
+  } finally {
+    releaseFetch(
+      Response.json({
+        id: missing.slice(4),
+        name: 'Missing',
+        lang: 'en',
+        set: 'tst',
+        set_name: 'Test',
+        collector_number: '2',
+        games: ['paper'],
+        finishes: ['nonfoil'],
+      }),
+    );
+  }
+  expect((await pending).statusCode).toBe(200);
+  expect(
+    (await owner.post(`${base()}/import`, { version: 7, games: { mtg: {} } }))
+      .statusCode,
+  ).toBe(200);
+});
+
+it('keeps linked sealed prices for metadata edits but drops them when the product changes', async () => {
+  const data = {
+    name: 'Original box',
+    productType: 'Booster box',
+    quantity: 1,
+    status: 'sealed',
+    pcProductId: '123',
+    pcPrice: 250,
+  };
+  const module = (await owner.get('/api/games'))
+    .json()
+    .find((g: { id: string }) => g.id === 'mtg');
+  data.productType = module.sealedTypes[0];
+  putGameRecord(s.ctx, id, 'mtg', { kind: 'sealed', id: 'linked-box', data });
+  const update = (name: string) =>
+    owner.put(`${base()}/records`, {
+      records: [
+        {
+          kind: 'sealed',
+          id: 'linked-box',
+          data: { ...data, name, quantity: 2 },
+        },
+      ],
+    });
+  expect((await update('Original box')).statusCode).toBe(200);
+  expect(gameState(s.ctx, id, 'mtg').sealed[0].pcPrice).toBe(250);
+  expect((await update('Different box')).statusCode).toBe(200);
+  expect(gameState(s.ctx, id, 'mtg').sealed[0]).not.toHaveProperty('pcPrice');
+  expect(gameState(s.ctx, id, 'mtg').sealed[0]).not.toHaveProperty(
+    'pcProductId',
+  );
+});
+
+it.each([null, { data: null }, { data: [null] }, 'invalid json'])(
+  'rejects malformed card catalogue responses: %j',
+  async (payload) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      typeof payload === 'string'
+        ? new Response(payload)
+        : Response.json(payload),
+    );
+    const result = await owner.get('/api/games/mtg/search?q=Leader');
+    expect(result.statusCode).toBe(502);
+    expect(result.json().code).toBe('upstream');
+    expect(s.ctx.db.all('SELECT id FROM tcg_cards')).toHaveLength(1);
+  },
+);

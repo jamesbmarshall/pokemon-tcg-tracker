@@ -4,14 +4,16 @@ import type {
   PreconSummary,
   ResolvedPrecon,
 } from '@poketracker/shared/tcg/precons';
-import {
-  fromScryfall,
-  type ScryfallCard,
-} from '@poketracker/shared/tcg/scryfall';
+import type { ScryfallCard } from '@poketracker/shared/tcg/scryfall';
 import { cachedUpstream } from '../catalog.ts';
 import { bad, HttpError, notFound, type Ctx } from '../context.ts';
 import { sha256 } from '../security.ts';
-import { readGameCards, saveGameCards, scryfallGate } from './provider.ts';
+import {
+  readGameCards,
+  saveGameCards,
+  scryfallGate,
+  normalizeScryfall,
+} from './provider.ts';
 
 const MTGJSON = 'https://mtgjson.com/api/v5';
 const DAY = 24 * 3600_000;
@@ -57,7 +59,7 @@ async function mtgjson<T>(
     'mtgjson',
     `mtgjson:${path}`,
     `${MTGJSON}/${path}`,
-    { headers: { accept: 'application/json' } },
+    { headers: { accept: 'application/json' }, redirect: 'error' },
     DAY,
   );
   if (result.status !== 200)
@@ -93,6 +95,8 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
     const decks = result.data
       .filter(
         (r) =>
+          r != null &&
+          typeof r === 'object' &&
           r.type === 'Commander Deck' &&
           typeof r.fileName === 'string' &&
           FILE.test(r.fileName) &&
@@ -146,12 +150,18 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
         );
       for (const row of rows) {
         if (
+          !row ||
+          typeof row !== 'object' ||
           typeof row.name !== 'string' ||
           !Number.isInteger(row.count) ||
           row.count < 1 ||
           row.count > 1000 ||
           typeof row.setCode !== 'string' ||
-          typeof row.number !== 'string'
+          typeof row.number !== 'string' ||
+          (row.isFoil !== undefined && typeof row.isFoil !== 'boolean') ||
+          (row.finishes !== undefined &&
+            (!Array.isArray(row.finishes) ||
+              row.finishes.some((finish) => typeof finish !== 'string')))
         )
           throw new HttpError(
             502,
@@ -221,6 +231,7 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
           'https://api.scryfall.com/cards/collection',
           {
             method: 'POST',
+            redirect: 'error',
             headers: {
               accept: 'application/json',
               'content-type': 'application/json',
@@ -235,10 +246,23 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
             'Card printings could not be loaded. Try again.',
             'upstream',
           );
-        const raw = JSON.parse(result.body.toString()) as {
-          data: ScryfallCard[];
-        };
-        if (!Array.isArray(raw.data))
+        let raw: { data?: ScryfallCard[] } | null;
+        try {
+          raw = JSON.parse(result.body.toString());
+        } catch {
+          throw new HttpError(
+            502,
+            'The card provider returned invalid data',
+            'upstream',
+          );
+        }
+        if (
+          !raw ||
+          !Array.isArray(raw.data) ||
+          raw.data.some(
+            (c) => !c || typeof c !== 'object' || typeof c.id !== 'string',
+          )
+        )
           throw new HttpError(
             502,
             'The card provider returned invalid data',
@@ -253,7 +277,7 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
           ctx,
           raw.data
             .filter((c) => batch.includes(c.id))
-            .map((c) => fromScryfall(c, new Date(at).toISOString()))
+            .map((c) => normalizeScryfall(c, new Date(at).toISOString()))
             .filter((c) => c.paper),
         );
       }
@@ -264,6 +288,7 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
       ).filter((c) => c.paper);
       const byId = new Map(cards.map((c) => [c.providerId, c]));
       const items: ResolvedPrecon['items'] = [];
+      const bySection = new Map<string, ResolvedPrecon['items'][number]>();
       const unresolved: PreconCard[] = [];
       for (const row of deck.cards) {
         const card = byId.get(row.providerId);
@@ -271,16 +296,18 @@ export function magicPrecons(ctx: Ctx): PreconProvider {
           unresolved.push(row);
           continue;
         }
-        const existing = items.find(
-          (i) => i.cardId === card.id && i.zone === row.zone,
-        );
+        const key = `${card.id}:${row.zone}`;
+        const existing = bySection.get(key);
         if (existing) existing.quantity += row.quantity;
-        else
-          items.push({
+        else {
+          const item = {
             cardId: card.id,
             zone: row.zone,
             quantity: row.quantity,
-          });
+          };
+          items.push(item);
+          bySection.set(key, item);
+        }
       }
       return { cards, items, unresolved };
     },

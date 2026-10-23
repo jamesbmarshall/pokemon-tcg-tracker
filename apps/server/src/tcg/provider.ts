@@ -4,6 +4,7 @@ import type {
   TcgPage,
   TcgCard,
   TcgSet,
+  MagicCard,
 } from '@poketracker/shared/tcg/types';
 import {
   fromScryfall,
@@ -38,13 +39,18 @@ export async function scryfallJson<T>(
   if (!path.startsWith('/') || path.startsWith('//'))
     throw bad('Invalid catalogue path');
   // Gate only network misses; cachedUpstream still provides retry/circuit-breaker/stale fallback.
-  await scryfallGate(ctx);
+  const snapshot = ctx.db.get<{ fetched_at: number }>(
+    'SELECT fetched_at FROM http_cache WHERE key = ?',
+    `scryfall:${path}`,
+  );
+  if (!snapshot || Date.now() - snapshot.fetched_at >= ttl)
+    await scryfallGate(ctx);
   const r = await cachedUpstream(
     ctx,
     'scryfall',
     `scryfall:${path}`,
     `${BASE}${path}`,
-    { headers: { accept: 'application/json' } },
+    { headers: { accept: 'application/json' }, redirect: 'error' },
     ttl,
   );
   if (r.status === 404)
@@ -56,7 +62,52 @@ export async function scryfallJson<T>(
     `scryfall:${path}`,
   );
   observe?.({ at: cached?.fetched_at ?? Date.now(), stale: !r.fresh });
-  return JSON.parse(r.body.toString()) as T;
+  try {
+    return JSON.parse(r.body.toString()) as T;
+  } catch {
+    throw new HttpError(
+      502,
+      'The card provider returned invalid data',
+      'upstream',
+    );
+  }
+}
+/** Treat provider JSON as untrusted even when TypeScript declares its expected shape. */
+export function normalizeScryfall(raw: unknown, at: string): MagicCard {
+  const invalid = () =>
+    new HttpError(502, 'The card provider returned invalid data', 'upstream');
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid();
+  const value = raw as Record<string, unknown>;
+  if (
+    ['id', 'name', 'lang', 'set', 'set_name', 'collector_number'].some(
+      (key) => typeof value[key] !== 'string',
+    ) ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+      String(value.id),
+    )
+  )
+    throw invalid();
+  for (const key of [
+    'finishes',
+    'games',
+    'colors',
+    'color_identity',
+    'keywords',
+    'produced_mana',
+    'frame_effects',
+  ]) {
+    const field = value[key];
+    if (
+      field !== undefined &&
+      (!Array.isArray(field) || field.some((item) => typeof item !== 'string'))
+    )
+      throw invalid();
+  }
+  try {
+    return fromScryfall(raw as ScryfallCard, at);
+  } catch {
+    throw invalid();
+  }
 }
 export function saveGameCards(ctx: Ctx, cards: TcgCard[]) {
   ctx.db.tx(() => {
@@ -142,8 +193,14 @@ export function magicProvider(ctx: Ctx): TcgProvider {
         return { cards: [], total: 0, hasMore: false };
       throw e;
     }
+    if (!page || !Array.isArray(page.data))
+      throw new HttpError(
+        502,
+        'The card provider returned invalid data',
+        'upstream',
+      );
     const cards = page.data
-      .map((c) => fromScryfall(c, new Date(metadata.at).toISOString()))
+      .map((c) => normalizeScryfall(c, new Date(metadata.at).toISOString()))
       .filter((c) => c.paper);
     saveGameCards(ctx, cards);
     const canonical = new Map(
@@ -180,6 +237,12 @@ export function magicProvider(ctx: Ctx): TcgProvider {
       const result = await scryfallJson<{
         data: Parameters<typeof scryfallSet>[0][];
       }>(ctx, '/sets');
+      if (!result || !Array.isArray(result.data))
+        throw new HttpError(
+          502,
+          'The card provider returned invalid data',
+          'upstream',
+        );
       const sets = result.data
         .filter(
           (s) =>
@@ -213,16 +276,17 @@ export function magicProvider(ctx: Ctx): TcgProvider {
           at = metadata.at;
         },
       );
-      const card = fromScryfall(raw, new Date(at).toISOString());
+      const card = normalizeScryfall(raw, new Date(at).toISOString());
       if (
         card.details.meldResultId &&
         /^[a-f0-9-]{36}$/.test(card.details.meldResultId)
       ) {
-        const result = fromScryfall(
+        const result = normalizeScryfall(
           await scryfallJson<ScryfallCard>(
             ctx,
             `/cards/${card.details.meldResultId}`,
           ),
+          new Date(at).toISOString(),
         );
         card.faces = [...card.faces, ...result.faces];
       }

@@ -236,7 +236,10 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
     const records = (req.body as { records?: unknown })?.records;
     if (!Array.isArray(records) || records.length > 1000)
       throw bad('Expected at most 1000 records');
-    const clean = records.map((r) => cleanGameRecord(ctx, g, r));
+    const ids = [...new Set(records.flatMap(recordCardIds))];
+    if (ids.length > 20_000) throw bad('Too many referenced cards');
+    const catalogue = new Map(readGameCards(ctx, g, ids).map((c) => [c.id, c]));
+    const clean = records.map((r) => cleanGameRecord(ctx, g, r, catalogue));
     return mutate(ctx, req, reply, () => {
       for (const r of clean) putGameRecord(ctx, id, g, r);
       recordGameValue(ctx, id, g);
@@ -321,16 +324,27 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
       records.push({ kind: 'wishlist', id, data: { id } });
     }
     if (records.length > 20_000) throw bad('Import exceeds 20,000 records');
+    for (const record of records) {
+      if (record.kind === 'list') {
+        const items = (record.data as { items?: unknown }).items;
+        if (!Array.isArray(items) || items.length > 1000)
+          throw bad('Invalid list');
+      }
+    }
     const ids = [...new Set(records.flatMap(recordCardIds))];
+    if (
+      ids.length > 20_000 ||
+      ids.some((id) => !id.startsWith(`${g}:`) || !/^[\w:.-]{1,180}$/.test(id))
+    )
+      throw bad('Invalid imported card IDs');
     const known = new Set(readGameCards(ctx, g, ids).map((c) => c.id));
-    // Provider hydration keeps imported catalog payloads from poisoning the shared catalogue.
-    for (const cardId of ids)
-      if (!known.has(cardId)) await providerFor(ctx, g).card(cardId);
-    const clean = records.map((r) => cleanGameRecord(ctx, g, r));
+    if (raw.history !== undefined && !Array.isArray(raw.history))
+      throw bad('Invalid value history');
     const history = Array.isArray(raw.history)
       ? (raw.history as { date: string; valueUsd: number; cards: number }[])
       : [];
     if (
+      history.length > 20_000 ||
       history.some(
         (h) =>
           !h ||
@@ -343,6 +357,15 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
       )
     )
       throw bad('Invalid value history');
+    if (ids.filter((id) => !known.has(id)).length > 500)
+      throw bad(
+        'Import needs more than 500 uncached cards. Split it into smaller imports.',
+      );
+    // Provider hydration keeps imported catalog payloads from poisoning the shared catalogue.
+    for (const cardId of ids)
+      if (!known.has(cardId)) await providerFor(ctx, g).card(cardId);
+    const catalogue = new Map(readGameCards(ctx, g, ids).map((c) => [c.id, c]));
+    const clean = records.map((r) => cleanGameRecord(ctx, g, r, catalogue));
     return mutate(ctx, req, reply, () => {
       for (const record of clean) putGameRecord(ctx, id, g, record);
       for (const h of history)

@@ -124,7 +124,10 @@ Lists and decks are reachable from the desktop sidebar and the mobile header.
 
 Every new share records its game and reuses expiry, revocation, audiences and
 server-side privacy redaction. Item-photo routes recheck both share access and
-scope on every request. Existing shares default to Pokémon.
+scope on every request. Set shares include only the selected language, including
+holdings, notes, wishlist entries, slabs, sealed products and photo access. Sealed
+products without a known language are excluded from language-specific shares.
+Existing shares default to Pokémon.
 
 JSON version 7 exports are game-scoped. Pokémon uses the existing top-level
 collection shape with `game: pokemon`; additional games use a `games` object
@@ -139,3 +142,33 @@ Commander quantities use new generic record storage. Editing metadata updates
 records in place so photo foreign keys survive. Older application versions reject
 newer schema versions; downgrade through the existing pre-update backup restore
 workflow rather than opening a migrated database with an old binary.
+
+## Security and resource limits
+
+Game imports reuse Pokémon's permission checks, single-import admission, worker
+JSON parser, storage reserve, atomic revision checks and durable retry receipts.
+An import accepts at most 20,000 records, 20,000 distinct card references and
+20,000 history points; each list accepts at most 1,000 rows. At most 500 uncached
+cards may be hydrated per import. Split larger imports before retrying. Invalid
+references, oversized lists and malformed history fail before provider requests.
+Catalogue payloads supplied in an export never update the shared card catalogue.
+
+Provider endpoints use fixed HTTPS hosts, disable redirects, bound response sizes
+and validate external data before normalization. Precon filenames must occur in
+the cached upstream index and pass a path-safe allowlist. Malformed provider data
+returns an upstream error rather than being treated as a successful deck import.
+The streamed bulk catalogue validates JSON array separators and completion before
+publishing staged cards. Image downloads retain the explicit raster/host allowlist.
+
+Record batches load referenced cards once for validation. Collection state parses
+each record once, and recording today's valuation skips loading historical values.
+Precon resolution merges repeated printing/zone rows with a map rather than
+repeatedly scanning the deck. Fresh cached Scryfall responses bypass the network
+request gate. Linked sealed-product prices survive metadata edits but are cleared
+when the product name, type, set or language changes.
+
+Run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` and
+`npm run audit:dependencies` for verification. The server TCG/precon tests cover
+collection isolation, revisions, redaction, scoped photos, import admission and
+budgets, malformed providers and bulk stream boundaries. Browser tests additionally
+cover shared card layouts and the precon search/preview/save journey.
