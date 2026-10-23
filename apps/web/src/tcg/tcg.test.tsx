@@ -5,7 +5,7 @@ import { renderWithProviders } from '../test/render';
 import { GameContext, type GameContextValue } from './context';
 import { magicModule } from '@poketracker/shared/tcg/registry';
 import { fromScryfall } from '@poketracker/shared/tcg/scryfall';
-import { TcgCardTile, HoldingForm } from './Cards';
+import { TcgCardTile } from './Cards';
 import { GameSearch } from './Views';
 import { gameApi } from './api';
 import { DecksPage } from './Decks';
@@ -142,20 +142,6 @@ describe('shared game UI', () => {
         }),
       }),
     ]);
-  });
-  it('keeps copy details in the dialog when a save fails', async () => {
-    const ctx = context({ save: vi.fn().mockResolvedValue(false) });
-    renderWithProviders(
-      <GameContext.Provider value={ctx}>
-        <HoldingForm card={card} finish="foil" />
-      </GameContext.Provider>,
-    );
-    expect(screen.queryByLabelText('Paid per copy')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Edit details/ }));
-    await userEvent.type(screen.getByLabelText('Paid per copy'), '12.50');
-    await userEvent.click(screen.getByRole('button', { name: 'Save details' }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByLabelText('Paid per copy')).toHaveValue(12.5);
   });
   it('does not remove a wishlist card if collecting it fails', async () => {
     const ctx = context({ save: vi.fn().mockResolvedValue(false) });

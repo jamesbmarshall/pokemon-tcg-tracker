@@ -1,33 +1,59 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from '../store/toastStore';
 import { Link } from 'react-router-dom';
-import type { TcgCard, Holding, Slab } from '@poketracker/shared/tcg/types';
+import type { TcgCard, Slab } from '@poketracker/shared/tcg/types';
 import { cardValue, holdingId } from '@poketracker/shared/tcg/collection';
 import CardImage from '../components/CardImage';
 import { Modal } from '../components/forms';
 import { BinderBook } from '../components/BinderView';
 import { useSettings } from '../store/settingsStore';
-import { Heart, RotateCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Heart,
+  RotateCw,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Sun,
+  Droplet,
+  Skull,
+  Flame,
+  TreePine,
+  Diamond,
+  CornerUpRight,
+} from 'lucide-react';
 import { useMoney } from '../hooks/useMoney';
 import { useGame } from './context';
 import { currentRates } from '../utils/fx';
+const MANA = {
+  W: { label: 'White mana', color: '#eee7c4', icon: Sun },
+  U: { label: 'Blue mana', color: '#94bdd8', icon: Droplet },
+  B: { label: 'Black mana', color: '#b7afb0', icon: Skull },
+  R: { label: 'Red mana', color: '#e69a87', icon: Flame },
+  G: { label: 'Green mana', color: '#8bbba2', icon: TreePine },
+  C: { label: 'Colorless mana', color: '#cbc7bc', icon: Diamond },
+  T: { label: 'Tap', color: '#cbc7bc', icon: CornerUpRight },
+};
 export function ManaText({ text }: { text: string }) {
   return (
     <>
-      {text.split(/(\{[^}]+\})/).map((part, n) =>
-        part.startsWith('{') ? (
+      {text.split(/(\{[^}]+\})/).map((part, n) => {
+        if (!part.startsWith('{')) return part;
+        const symbol = part.slice(1, -1),
+          meta = MANA[symbol as keyof typeof MANA],
+          Icon = meta?.icon;
+        return (
           <span
             key={n}
-            aria-label={part.slice(1, -1)}
-            className="mx-0.5 inline-flex min-w-5 items-center justify-center rounded-full border border-line-strong bg-surface-2 px-1 font-mono text-xs"
-            title={part}
+            role="img"
+            aria-label={meta?.label ?? symbol}
+            title={meta?.label ?? symbol}
+            className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-0.5 align-middle font-mono text-xs font-semibold shadow-sm"
+            style={{ background: meta?.color ?? '#cbc7bc', color: '#25221e' }}
           >
-            {part.slice(1, -1)}
+            {Icon ? <Icon size={13} strokeWidth={2.5} /> : symbol}
           </span>
-        ) : (
-          part
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
@@ -354,154 +380,54 @@ export function TcgGrid({
     </>
   );
 }
-export function HoldingForm({
+export function GradedForm({
   card,
-  finish,
+  copy,
+  trigger = true,
+  onDone,
+  children,
 }: {
   card: TcgCard;
-  finish: string;
+  copy?: Slab;
+  trigger?: boolean;
+  onDone?: () => void;
+  children?: ReactNode;
 }) {
-  const { state, save, readOnly, busy } = useGame();
-  const [open, setOpen] = useState(false);
-  const entry = state.entries.find(
-    (e) => e.cardId === card.id && e.finish === finish,
-  );
-  const [condition, setCondition] = useState(entry?.condition ?? 'NM'),
-    [notes, setNotes] = useState(entry?.notes ?? ''),
-    [value, setValue] = useState(entry?.valueUsd?.toString() ?? ''),
-    [paid, setPaid] = useState(entry?.paid?.amount.toString() ?? ''),
-    [currency, setCurrency] = useState<'USD' | 'GBP' | 'EUR'>(
-      entry?.paid?.currency ?? 'USD',
-    );
-  if (readOnly) return null;
-  return (
-    <>
-      <button
-        className="flex w-full items-center justify-between gap-3 border-b border-line py-3 text-left text-sm hover:text-accent"
-        onClick={() => setOpen(true)}
-      >
-        <span className="capitalize">
-          {finish}{' '}
-          <span className="ml-2 text-muted">
-            {entry?.quantity ?? 0} owned · {entry?.condition ?? 'No details'}
-          </span>
-        </span>
-        <span className="text-accent">Edit details →</span>
-      </button>
-      {open && (
-        <Modal title={`${finish} copy details`} onClose={() => setOpen(false)}>
-          <form
-            className="flex flex-wrap items-end gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const next: Holding = {
-                ...entry,
-                id: holdingId(card.id, finish),
-                cardId: card.id,
-                finish,
-                quantity: entry?.quantity ?? 1,
-                condition,
-                notes,
-                valueUsd: value === '' ? undefined : Number(value),
-                paid:
-                  paid === '' ? undefined : { amount: Number(paid), currency },
-                addedAt: entry?.addedAt ?? new Date().toISOString(),
-              };
-              void save([{ kind: 'entry', id: next.id, data: next }]).then(
-                (ok) => {
-                  if (ok) setOpen(false);
-                },
-              );
-            }}
-          >
-            <strong className="w-full">{finish}</strong>
-            <label>
-              Condition
-              <select
-                className="input block"
-                value={condition}
-                onChange={(e) => setCondition(e.target.value)}
-              >
-                {['M', 'NM', 'LP', 'MP', 'HP', 'DMG'].map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Paid per copy
-              <input
-                className="input block w-32"
-                type="number"
-                min="0"
-                step="0.01"
-                value={paid}
-                onChange={(e) => setPaid(e.target.value)}
-              />
-            </label>
-            <label>
-              Currency
-              <select
-                className="input block"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as typeof currency)}
-              >
-                {['USD', 'GBP', 'EUR'].map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Manual value (USD)
-              <input
-                className="input block w-36"
-                type="number"
-                min="0"
-                step="0.01"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-              />
-            </label>
-            <label>
-              Notes
-              <input
-                className="input block"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                maxLength={5000}
-              />
-            </label>
-            <button className="btn btn-primary" disabled={busy}>
-              Save details
-            </button>
-          </form>
-        </Modal>
-      )}
-    </>
-  );
-}
-export function GradedForm({ card }: { card: TcgCard }) {
   const { save, busy, readOnly } = useGame();
-  const [open, setOpen] = useState(false);
-  const [company, setCompany] = useState('PSA'),
-    [grade, setGrade] = useState('10'),
-    [finish, setFinish] = useState(card.finishes[0] ?? ''),
-    [cert, setCert] = useState(''),
-    [value, setValue] = useState(''),
-    [counts, setCounts] = useState(true);
+  const [open, setOpen] = useState(!trigger);
+  const close = () => {
+    setOpen(false);
+    onDone?.();
+  };
+  const [company, setCompany] = useState(copy?.company ?? 'PSA'),
+    [grade, setGrade] = useState(copy?.grade ?? '10'),
+    [finish, setFinish] = useState(copy?.finish ?? card.finishes[0] ?? ''),
+    [cert, setCert] = useState(copy?.certNumber ?? ''),
+    [value, setValue] = useState(copy?.valueUsd?.toString() ?? ''),
+    [counts, setCounts] = useState(copy?.countsTowardSet ?? true);
   if (readOnly) return null;
   return (
     <>
-      <button className="btn btn-ghost" onClick={() => setOpen(true)}>
-        Add graded slab
-      </button>
+      {trigger && (
+        <button
+          className="btn btn-ghost !h-9 !text-xs"
+          onClick={() => setOpen(true)}
+        >
+          <Plus size={14} /> Add graded copy
+        </button>
+      )}
       {open && (
-        <Modal title="Add graded slab" onClose={() => setOpen(false)}>
+        <Modal
+          title={copy ? 'Edit graded copy' : 'Add graded copy'}
+          onClose={close}
+        >
           <form
             className="flex flex-wrap items-end gap-3"
             onSubmit={(e) => {
               e.preventDefault();
               const slab: Slab = {
-                id: crypto.randomUUID(),
+                ...copy,
+                id: copy?.id ?? crypto.randomUUID(),
                 cardId: card.id,
                 finish,
                 company,
@@ -509,11 +435,11 @@ export function GradedForm({ card }: { card: TcgCard }) {
                 certNumber: cert,
                 countsTowardSet: counts,
                 valueUsd: value === '' ? undefined : Number(value),
-                addedAt: new Date().toISOString(),
+                addedAt: copy?.addedAt ?? new Date().toISOString(),
               };
               void save([{ kind: 'graded', id: slab.id, data: slab }]).then(
                 (ok) => {
-                  if (ok) setOpen(false);
+                  if (ok) close();
                 },
               );
             }}
@@ -576,9 +502,10 @@ export function GradedForm({ card }: { card: TcgCard }) {
               Counts toward completion
             </label>
             <button className="btn btn-primary" disabled={busy}>
-              Add slab
+              {copy ? 'Save details' : 'Add slab'}
             </button>
           </form>
+          {children}
         </Modal>
       )}
     </>

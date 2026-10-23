@@ -88,6 +88,16 @@ by the user.
 
 ## Browsing and editing
 
+Card detail pages use the same `CardDetailLayout` presentation components for
+Pokémon and additional games: navigation, columns and artwork sizing, identity,
+collection summaries, finish rows, graded sections/slab rows, market tables and
+other-printing strips. Notes and price-history controls also share implementations.
+The Pokémon controller retains its existing data/store integration; the generic
+controller adapts normalized cards and game records. Game-specific card text,
+symbols and facts are content slots rather than separate page layouts. Browser
+regression checks compare column geometry and typography at desktop and phone
+widths.
+
 Additional games share Pokémon's page headers, dialogs, charts, artwork renderer
 and animated binder. Binder pocket size follows the existing display preference.
 Grid/binder choices are remembered separately per game and page. Collection and

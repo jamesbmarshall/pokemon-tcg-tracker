@@ -2,15 +2,38 @@ import { printingRoleLabel } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, ExternalLink, Heart, Minus, Plus, Trash2 } from 'lucide-react';
+import { ExternalLink, Heart, Minus, Plus, Trash2 } from 'lucide-react';
 import { useCard, usePrintings, useSetCards } from '../api/hooks';
 import { langOf } from '../api/languages';
 import { LanguageBadge } from '../components/Language';
-import { cardVariants, compareCardNumber, toSnapshot, usdPrices } from '../api/client';
-import { costBasis, entryValue, gradedValue, ownedTotal, useCollectionStore, useGradedFor, useOwned, useReadOnly, useWished } from '../store/collectionStore';
+import {
+  cardVariants,
+  compareCardNumber,
+  toSnapshot,
+  usdPrices,
+} from '../api/client';
+import {
+  costBasis,
+  entryValue,
+  gradedValue,
+  ownedTotal,
+  useCollectionStore,
+  useGradedFor,
+  useOwned,
+  useReadOnly,
+  useWished,
+} from '../store/collectionStore';
 import AddToList from '../components/AddToList';
 import { useFx, useMoney, useRates } from '../hooks/useMoney';
-import { useCardArtworkSize } from '../hooks/useCardArtworkSize';
+import {
+  CardDetailLayout,
+  CardDetailHeading,
+  CardCollectionSection,
+  CardFinishRow,
+  CardMarket,
+  CardDetailNavigation,
+  CardPrintingStrip,
+} from '../components/CardDetailLayout';
 import { imageSrc } from '../api/client';
 import { useSwipe } from '../hooks/useSwipe';
 import { Gain, PaidInput } from '../components/Paid';
@@ -21,7 +44,6 @@ import { toast } from '../store/toastStore';
 import HoloCard from '../components/HoloCard';
 import GradedSection from '../components/GradedSection';
 import CardNotes from '../components/CardNotes';
-import CardImage from '../components/CardImage';
 import { SetSymbol } from '../components/SetArt';
 import { Energy, ErrorState, Skeleton } from '../components/ui';
 import { CONDITIONS, isFoil, variantLabel } from '../utils/variants';
@@ -31,7 +53,9 @@ import type { Condition, PokemonCard } from '../api/types';
 function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const snap = useMemo(() => toSnapshot(card), [card]);
   const owned = useOwned(card.id);
-  const entry = useCollectionStore((s) => s.entries.get(`${card.id}::${variant}`));
+  const entry = useCollectionStore((s) =>
+    s.entries.get(`${card.id}::${variant}`),
+  );
   const adjust = useCollectionStore((s) => s.adjust);
   const reassignEntry = useCollectionStore((s) => s.reassignEntry);
   const updateEntry = useCollectionStore((s) => s.updateEntry);
@@ -46,126 +70,202 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const manualValue = n > 0 ? entry?.valueUsd : undefined;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 py-3">
-      <span className={`h-8 w-[3px] rounded-full ${n ? (isFoil(variant) ? 'holo-bar' : 'bg-accent') : 'bg-surface-3'}`} />
-      <div className="min-w-48 flex-1">
-        {!readOnly && n > 0 && !card.variants.includes(variant) && <select aria-label={`Identify legacy ${variantLabel(variant)}`} className="input mb-2" value="" onChange={(e) => { if (e.target.value) void reassignEntry(card.id, variant, e.target.value); }}>
-          <option value="">Identify this printing…</option>
-          {card.printings?.map((p) => <option key={p.id} value={p.id} disabled={!!owned?.[p.id]}>{p.label}</option>)}
-        </select>}
-        <p className="text-sm font-semibold">{printingLabel(card, variant) ?? variantLabel(variant)}</p>
-        <p className="text-xs text-muted" title={printing?.decision?.reason}>{printing ? printingRoleLabel(printing) : ''}</p>
-        {printing?.productIds?.tcgplayer && <a className="text-xs text-muted hover:text-accent" href={`https://www.tcgplayer.com/product/${printing.productIds.tcgplayer}`} target="_blank" rel="noreferrer">View this printing on TCGplayer</a>}
-        <p className="font-mono text-[11px] text-muted tabular">
-          {manualValue != null ? (
-            <>
-              <span>{money(manualValue)}</span> your value <ManualBadge className="normal-case" />
-            </>
-          ) : market ? (
-            `${money(market)} market`
-          ) : (
-            'No price data'
-          )}
-          {low ? ` · from ${money(low)}` : ''}
-        </p>
-        {paidEach != null && market != null && <Gain valueUsd={(manualValue ?? market) * n} costUsd={paidEach * n} className="text-[11px]" />}
-      </div>
-      {readOnly ? (
-        n > 0 && (
-          <span className="font-mono text-sm font-bold tabular">
-            ×{n}
-            {entry?.condition && <span className="ml-2 text-xs font-normal text-muted">{entry.condition}</span>}
-          </span>
-        )
-      ) : (
+    <CardFinishRow
+      owned={n > 0}
+      foil={isFoil(variant)}
+      info={
         <>
-      {n > 0 && entry && (
-        <PaidInput
-          value={entry.paid}
-          label={`Paid per ${variantLabel(variant)} copy`}
-          onCommit={(paid) => {
-            void updateEntry(card.id, variant, { paid });
-            toast(paid ? 'Purchase price saved' : 'Purchase price cleared');
-          }}
-        />
-      )}
-      {n > 0 && entry && (
-        <ValueInput
-          value={entry.valueUsd}
-          label={`Your value per ${variantLabel(variant)} copy`}
-          onCommit={(valueUsd) => {
-            void updateEntry(card.id, variant, { valueUsd });
-            toast(valueUsd != null ? 'Your value saved' : 'Your value cleared');
-          }}
-        />
-      )}
-      {n > 0 && entry && (
-        <select
-          value={entry.condition ?? 'NM'}
-          onChange={(e) => updateEntry(card.id, variant, { condition: e.target.value as Condition })}
-          className="input !h-8 !w-auto !rounded-lg !px-2 !text-xs"
-          aria-label="Condition"
-        >
-          {CONDITIONS.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.value} · {c.label}
-            </option>
-          ))}
-        </select>
-      )}
-      {n > 0 ? (
-        <div className="flex items-center rounded-lg border border-line-strong">
-          <button
-            onClick={async () => {
-              await adjust(snap, variant, -1);
-              if (n === 1) toast(`Removed ${variantLabel(variant)}`, { action: { label: 'Undo', run: () => adjust(snap, variant, 1) } });
-            }}
-            className="grid h-8 w-8 place-items-center text-muted hover:text-fg"
-            aria-label={`Remove one ${variantLabel(variant)}`}
-          >
-            <Minus size={14} />
-          </button>
-          <span className="w-7 text-center font-mono text-sm font-bold tabular">{n}</span>
-          <button onClick={() => adjust(snap, variant, 1)} className="grid h-8 w-8 place-items-center text-muted hover:text-fg" aria-label={`Add one ${variantLabel(variant)}`}>
-            <Plus size={14} />
-          </button>
-        </div>
-      ) : (
-        <button onClick={() => adjust(snap, variant, 1)} className="btn btn-primary !h-8 !rounded-lg !px-3 !text-xs">
-          <Plus size={14} /> Add
-        </button>
-      )}
+          {' '}
+          {!readOnly && n > 0 && !card.variants.includes(variant) && (
+            <select
+              aria-label={`Identify legacy ${variantLabel(variant)}`}
+              className="input mb-2"
+              value=""
+              onChange={(e) => {
+                if (e.target.value)
+                  void reassignEntry(card.id, variant, e.target.value);
+              }}
+            >
+              <option value="">Identify this printing…</option>
+              {card.printings?.map((p) => (
+                <option key={p.id} value={p.id} disabled={!!owned?.[p.id]}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <p className="text-sm font-semibold">
+            {printingLabel(card, variant) ?? variantLabel(variant)}
+          </p>
+          <p className="text-xs text-muted" title={printing?.decision?.reason}>
+            {printing ? printingRoleLabel(printing) : ''}
+          </p>
+          {printing?.productIds?.tcgplayer && (
+            <a
+              className="text-xs text-muted hover:text-accent"
+              href={`https://www.tcgplayer.com/product/${printing.productIds.tcgplayer}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View this printing on TCGplayer
+            </a>
+          )}
+          <p className="font-mono text-[11px] text-muted tabular">
+            {manualValue != null ? (
+              <>
+                <span>{money(manualValue)}</span> your value{' '}
+                <ManualBadge className="normal-case" />
+              </>
+            ) : market ? (
+              `${money(market)} market`
+            ) : (
+              'No price data'
+            )}
+            {low ? ` · from ${money(low)}` : ''}
+          </p>
+          {paidEach != null && market != null && (
+            <Gain
+              valueUsd={(manualValue ?? market) * n}
+              costUsd={paidEach * n}
+              className="text-[11px]"
+            />
+          )}
         </>
-      )}
-      <PriceHistory cardId={card.id} variant={variant} />
-    </div>
+      }
+      controls={
+        <>
+          {' '}
+          {readOnly ? (
+            n > 0 && (
+              <span className="font-mono text-sm font-bold tabular">
+                ×{n}
+                {entry?.condition && (
+                  <span className="ml-2 text-xs font-normal text-muted">
+                    {entry.condition}
+                  </span>
+                )}
+              </span>
+            )
+          ) : (
+            <>
+              {n > 0 && entry && (
+                <PaidInput
+                  value={entry.paid}
+                  label={`Paid per ${variantLabel(variant)} copy`}
+                  onCommit={(paid) => {
+                    void updateEntry(card.id, variant, { paid });
+                    toast(
+                      paid ? 'Purchase price saved' : 'Purchase price cleared',
+                    );
+                  }}
+                />
+              )}
+              {n > 0 && entry && (
+                <ValueInput
+                  value={entry.valueUsd}
+                  label={`Your value per ${variantLabel(variant)} copy`}
+                  onCommit={(valueUsd) => {
+                    void updateEntry(card.id, variant, { valueUsd });
+                    toast(
+                      valueUsd != null
+                        ? 'Your value saved'
+                        : 'Your value cleared',
+                    );
+                  }}
+                />
+              )}
+              {n > 0 && entry && (
+                <select
+                  value={entry.condition ?? 'NM'}
+                  onChange={(e) =>
+                    updateEntry(card.id, variant, {
+                      condition: e.target.value as Condition,
+                    })
+                  }
+                  className="input !h-8 !w-auto !rounded-lg !px-2 !text-xs"
+                  aria-label="Condition"
+                >
+                  {CONDITIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.value} · {c.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {n > 0 ? (
+                <div className="flex items-center rounded-lg border border-line-strong">
+                  <button
+                    onClick={async () => {
+                      await adjust(snap, variant, -1);
+                      if (n === 1)
+                        toast(`Removed ${variantLabel(variant)}`, {
+                          action: {
+                            label: 'Undo',
+                            run: () => adjust(snap, variant, 1),
+                          },
+                        });
+                    }}
+                    className="grid h-8 w-8 place-items-center text-muted hover:text-fg"
+                    aria-label={`Remove one ${variantLabel(variant)}`}
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <span className="w-7 text-center font-mono text-sm font-bold tabular">
+                    {n}
+                  </span>
+                  <button
+                    onClick={() => adjust(snap, variant, 1)}
+                    className="grid h-8 w-8 place-items-center text-muted hover:text-fg"
+                    aria-label={`Add one ${variantLabel(variant)}`}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => adjust(snap, variant, 1)}
+                  className="btn btn-primary !h-8 !rounded-lg !px-3 !text-xs"
+                >
+                  <Plus size={14} /> Add
+                </button>
+              )}
+            </>
+          )}
+        </>
+      }
+      history={<PriceHistory cardId={card.id} variant={variant} />}
+    />
   );
 }
 
-function OtherPrintings({ card, searchResults }: { card: PokemonCard; searchResults?: string }) {
+function OtherPrintings({
+  card,
+  searchResults,
+}: {
+  card: PokemonCard;
+  searchResults?: string;
+}) {
   const { data } = usePrintings(card.name, langOf(card.id));
   const byCard = useCollectionStore((s) => s.byCard);
   const slabbed = useCollectionStore((s) => s.gradedByCard);
   const all = data?.filter((c) => c.id !== card.id) ?? [];
   const others = all.slice(0, 24);
-  if (!others.length) return null;
   return (
-    <section>
-      <h2 className="mb-4 font-display text-2xl font-medium">
-        Other {card.name} printings <span className="font-mono text-sm text-faint">{all.length}</span>
-      </h2>
-      <div className="scroll-x -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
-        {others.map((c) => (
-          <Link key={c.id} to={`/card/${c.id}`} state={searchResults ? { searchResults } : undefined} className="group w-[112px] shrink-0 snap-start">
-            <div className={`aspect-[63/88] overflow-hidden rounded-[4.5%/3.2%] shadow-card ring-1 transition group-hover:-translate-y-1 group-hover:shadow-card-lift ${byCard.has(c.id) || slabbed.has(c.id) ? 'ring-accent/60' : 'ring-line'}`}>
-              <CardImage id={c.id} src={c.image} name={c.name} number={c.number} setName={c.setName} />
-            </div>
-            <p className="mt-1.5 truncate text-[11px] text-muted">{c.setName}</p>
-            <p className="font-mono text-[10px] text-faint">{c.releaseDate.slice(0, 4)} · #{c.number}</p>
-          </Link>
-        ))}
-      </div>
-    </section>
+    <CardPrintingStrip
+      name={card.name}
+      count={all.length}
+      items={others.map((c) => ({
+        id: c.id,
+        url: `/card/${c.id}`,
+        state: searchResults ? { searchResults } : undefined,
+        name: c.name,
+        image: c.image,
+        number: c.number,
+        setName: c.setName,
+        caption: `${c.releaseDate.slice(0, 4)} · #${c.number}`,
+        owned: byCard.has(c.id) || slabbed.has(c.id),
+      }))}
+    />
   );
 }
 
@@ -173,8 +273,15 @@ export default function CardPage() {
   const { cardId = '' } = useParams();
   const navigate = useNavigate();
   const { state } = useLocation();
-  const searchResults = (state as { searchResults?: string } | null)?.searchResults;
-  const { data: card, isLoading, error, refetch, isPlaceholderData } = useCard(cardId);
+  const searchResults = (state as { searchResults?: string } | null)
+    ?.searchResults;
+  const {
+    data: card,
+    isLoading,
+    error,
+    refetch,
+    isPlaceholderData,
+  } = useCard(cardId);
   const setId = card?.set.id ?? '';
   const { data: setCards } = useSetCards(setId);
   const owned = useOwned(cardId);
@@ -183,7 +290,9 @@ export default function CardPage() {
   const readOnly = useReadOnly();
   const collectionLabel = useCollectionStore((s) => {
     const c = s.collections.find((x) => x.id === s.collectionId);
-    return c && !(c.kind === 'personal' && c.mine) ? `In ${c.name}` : 'In your collection';
+    return c && !(c.kind === 'personal' && c.mine)
+      ? `In ${c.name}`
+      : 'In your collection';
   });
   const toggleWishlist = useCollectionStore((s) => s.toggleWishlist);
   const removeCard = useCollectionStore((s) => s.removeCard);
@@ -192,12 +301,20 @@ export default function CardPage() {
   const money = useMoney();
   const { data: rates } = useRates();
   const allEntries = useCollectionStore((s) => s.entries);
-  const fromEur = (eur?: number) => (eur == null ? undefined : eur / (rates?.EUR || 0.89));
+  const fromEur = (eur?: number) =>
+    eur == null ? undefined : eur / (rates?.EUR || 0.89);
 
-  const list = useMemo(() => setCards ? [...setCards].sort(compareCardNumber) : [], [setCards]);
+  const list = useMemo(
+    () => (setCards ? [...setCards].sort(compareCardNumber) : []),
+    [setCards],
+  );
   const { prev, next, pos } = useMemo(() => {
     const i = list.findIndex((c) => c.id === cardId);
-    return { prev: i > 0 ? list[i - 1] : undefined, next: i >= 0 && i < list.length - 1 ? list[i + 1] : undefined, pos: i };
+    return {
+      prev: i > 0 ? list[i - 1] : undefined,
+      next: i >= 0 && i < list.length - 1 ? list[i + 1] : undefined,
+      pos: i,
+    };
   }, [list, cardId]);
 
   // Keep the local snapshot (and its price) fresh whenever an owned or wishlisted card is viewed
@@ -206,18 +323,30 @@ export default function CardPage() {
   }, [card, isPlaceholderData, owned, wished, remember]);
 
   // `dir` tells the incoming card which side to slide in from.
-  const go = (to: PokemonCard | undefined, dir: 1 | -1) => to && navigate(`/card/${to.id}`, { state: { dir, searchResults } });
-  const swipeRef = useSwipe<HTMLDivElement>({ onSwipeLeft: () => go(next, 1), onSwipeRight: () => go(prev, -1) });
-  const artworkRef = useCardArtworkSize();
+  const go = (to: PokemonCard | undefined, dir: 1 | -1) =>
+    to && navigate(`/card/${to.id}`, { state: { dir, searchResults } });
+  const swipeRef = useSwipe<HTMLDivElement>({
+    onSwipeLeft: () => go(next, 1),
+    onSwipeRight: () => go(prev, -1),
+  });
 
   const slide = (state as { dir?: number } | null)?.dir;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest('input,textarea,select')) return;
-      if (e.key === 'ArrowLeft' && prev) navigate(`/card/${prev.id}`, { state: { dir: -1, searchResults } });
-      if (e.key === 'ArrowRight' && next) navigate(`/card/${next.id}`, { state: { dir: 1, searchResults } });
-      if (e.key === 'Escape' && setId && !document.querySelector('[role="dialog"]')) navigate(searchResults ?? `/sets/${setId}`, { state: { fromCard: cardId } });
+      if (e.key === 'ArrowLeft' && prev)
+        navigate(`/card/${prev.id}`, { state: { dir: -1, searchResults } });
+      if (e.key === 'ArrowRight' && next)
+        navigate(`/card/${next.id}`, { state: { dir: 1, searchResults } });
+      if (
+        e.key === 'Escape' &&
+        setId &&
+        !document.querySelector('[role="dialog"]')
+      )
+        navigate(searchResults ?? `/sets/${setId}`, {
+          state: { fromCard: cardId },
+        });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -237,7 +366,11 @@ export default function CardPage() {
   }
   if (error || !card) {
     return (
-      <ErrorState title="Couldn't load this card" error={error} onRetry={() => refetch()}>
+      <ErrorState
+        title="Couldn't load this card"
+        error={error}
+        onRetry={() => refetch()}
+      >
         <Link to={searchResults ?? '/sets'} className="btn btn-ghost">
           {searchResults ? 'Back to search results' : 'Browse sets'}
         </Link>
@@ -245,158 +378,225 @@ export default function CardPage() {
     );
   }
 
-  const variants = [...new Set([...cardVariants(card), ...Object.keys(owned ?? {}), ...slabs.map((g) => g.variant)])];
+  const variants = [
+    ...new Set([
+      ...cardVariants(card),
+      ...Object.keys(owned ?? {}),
+      ...slabs.map((g) => g.variant),
+    ]),
+  ];
   const rawTotal = ownedTotal(owned);
   // Slabs are owned copies whether or not they count towards set completion.
   const total = rawTotal + slabs.length;
   const snap = toSnapshot(card);
   const cardsMap = new Map([[card.id, snap]]);
-  const cardEntries = Array.from(allEntries.values()).filter((e) => e.cardId === card.id);
+  const cardEntries = Array.from(allEntries.values()).filter(
+    (e) => e.cardId === card.id,
+  );
   // Each owned variant's contribution uses its manual override (entryValue) when set, else market price.
   const ownedValue =
-    cardEntries.reduce((s, e) => s + (entryValue(e, cardsMap) ?? 0) * e.quantity, 0) +
-    slabs.reduce((s, g) => s + gradedValue(g, cardsMap), 0);
-  const cost = rates ? costBasis(cardEntries, cardsMap, slabs, rates) : undefined;
-  const hasManualValue = cardEntries.some((e) => e.valueUsd != null) || slabs.some((g) => g.valueUsd != null);
-  const foilish = /holo|rare|ex|illustration|secret|ultra|gx|vmax|vstar/i.test(card.rarity ?? '') || variants.some(isFoil);
+    cardEntries.reduce(
+      (s, e) => s + (entryValue(e, cardsMap) ?? 0) * e.quantity,
+      0,
+    ) + slabs.reduce((s, g) => s + gradedValue(g, cardsMap), 0);
+  const cost = rates
+    ? costBasis(cardEntries, cardsMap, slabs, rates)
+    : undefined;
+  const hasManualValue =
+    cardEntries.some((e) => e.valueUsd != null) ||
+    slabs.some((g) => g.valueUsd != null);
+  const foilish =
+    /holo|rare|ex|illustration|secret|ultra|gx|vmax|vstar/i.test(
+      card.rarity ?? '',
+    ) || variants.some(isFoil);
 
   return (
-    <div ref={swipeRef} className="space-y-5 md:space-y-12">
-      {/* Reuse two DOM images rather than creating detached Image objects on every swipe. */}
-      <div hidden aria-hidden="true">
-        {[prev, next].map((neighbour, i) => <img key={i} src={neighbour?.images.large ? imageSrc(neighbour.images.large) : undefined} alt="" decoding="async" />)}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-          {searchResults && (
-            <Link to={searchResults} title="Back to search results (Esc)" className="inline-flex items-center gap-2 py-1.5 text-sm font-medium hover:text-accent">
-              <ChevronLeft size={16} /> Back to search results
-            </Link>
-          )}
+    <CardDetailLayout
+      swipeRef={swipeRef}
+      canBrowse={!!(prev || next)}
+      preload={
+        <>
+          {' '}
+          <div hidden aria-hidden="true">
+            {[prev, next].map((neighbour, i) => (
+              <img
+                key={i}
+                src={
+                  neighbour?.images.large
+                    ? imageSrc(neighbour.images.large)
+                    : undefined
+                }
+                alt=""
+                decoding="async"
+              />
+            ))}
+          </div>
+        </>
+      }
+      navigation={
+        <CardDetailNavigation
+          setUrl={`/sets/${card.set.id}`}
+          setName={card.set.name}
+          cardId={card.id}
+          searchResults={searchResults}
+          symbol={
+            <SetSymbol
+              src={card.set.images.symbol}
+              className="h-5 w-5 shrink-0 object-contain"
+            />
+          }
+          badge={<LanguageBadge id={card.id} />}
+          previous={!!prev}
+          next={!!next}
+          position={pos}
+          total={setCards?.length ?? 0}
+          onPrevious={() => go(prev, -1)}
+          onNext={() => go(next, 1)}
+        />
+      }
+      artwork={
+        <div
+          key={card.id}
+          className={`card-artwork mx-auto ${slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : ''}`}
+        >
+          <HoloCard
+            id={card.id}
+            src={card.images.large}
+            name={card.name}
+            number={card.number}
+            setName={card.set.name}
+            types={card.types}
+            foil={foilish}
+          />
+        </div>
+      }
+      otherPrintings={
+        <OtherPrintings card={card} searchResults={searchResults} />
+      }
+    >
+      <CardDetailHeading
+        setLabel={
           <Link
             to={`/sets/${card.set.id}`}
             state={{ fromCard: card.id }}
-            title={searchResults ? 'View set' : 'Back to set (Esc)'}
-            className="group inline-flex min-w-0 items-center gap-2.5 rounded-md py-1.5 pr-3 text-sm transition hover:text-fg focus-visible:outline-offset-2"
+            className="truncate text-fg hover:text-accent"
           >
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-muted transition group-hover:-translate-x-0.5 group-hover:text-accent">
-              {searchResults ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            </span>
-            <SetSymbol src={card.set.images.symbol} className="h-5 w-5 shrink-0 object-contain" />
-            <span className="flex min-w-0 flex-col leading-tight">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-faint">{searchResults ? 'View set' : 'Back to set'}</span>
-              <span className="truncate font-medium text-fg">{card.set.name}</span>
-            </span>
-            <LanguageBadge id={card.id} />
+            #{card.number}/{card.set.printedTotal} · {card.set.name}
           </Link>
-        </div>
-        <div className="flex items-center gap-1">
-          <button disabled={!prev} onClick={() => go(prev, -1)} className="btn btn-ghost !h-9 !w-9 !p-0" aria-label="Previous card">
-            <ChevronLeft size={16} />
-          </button>
-          {pos >= 0 && setCards && (
-            <span className="px-2 font-mono text-xs text-faint tabular">
-              {pos + 1}/{setCards.length}
-            </span>
-          )}
-          <button disabled={!next} onClick={() => go(next, 1)} className="btn btn-ghost !h-9 !w-9 !p-0" aria-label="Next card">
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      <div className="relative grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,400px)_1fr] lg:gap-16">
-        <div ref={artworkRef} className="relative mx-auto w-full max-w-[400px] md:sticky md:top-10 md:self-start">
-          <div key={card.id} className={`card-artwork mx-auto ${slide === 1 ? 'animate-slide-from-right' : slide === -1 ? 'animate-slide-from-left' : ''}`}>
-            <HoloCard id={card.id} src={card.images.large} name={card.name} number={card.number} setName={card.set.name} types={card.types} foil={foilish} />
-          </div>
-          <p data-artwork-hint className="mt-4 text-center text-xs text-faint pointer-coarse:hidden">Move your pointer over the card</p>
-          {(prev || next) && <p data-artwork-hint className="mt-4 hidden text-center text-xs text-faint pointer-coarse:block">Swipe left or right to browse the set</p>}
-        </div>
-
-        <div className="relative min-w-0 space-y-8">
-          <header>
-            {/* Slab-style label: the facts a grader would print above the card */}
-            <div className="relative grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1.5 overflow-hidden rounded-md border border-line-strong bg-surface py-3 pl-5 pr-4 font-label text-[10.5px] font-medium text-muted">
-              <span className="absolute inset-y-0 left-0 w-1 bg-accent" aria-hidden />
-              <Link to={`/sets/${card.set.id}`} state={{ fromCard: card.id }} className="truncate text-fg hover:text-accent">
-                #{card.number}/{card.set.printedTotal} · {card.set.name}
-              </Link>
-              <span className="text-right tabular">{card.set.releaseDate.slice(0, 4)}</span>
-              <p className="truncate">
-                {card.supertype}
-                {card.subtypes?.length ? ` · ${card.subtypes.join(' · ')}` : ''}
-              </p>
-              <span className="flex items-center justify-end gap-2">
-                {card.rarity && <span>{card.rarity}</span>}
-                {card.regulationMark && <span className="grid h-4 min-w-4 place-items-center rounded-sm border border-line-strong px-0.5 font-mono text-[9.5px] text-fg">{card.regulationMark}</span>}
+        }
+        release={card.set.releaseDate.slice(0, 4)}
+        typeLine={
+          <>
+            {card.supertype}
+            {card.subtypes?.length ? ` · ${card.subtypes.join(' · ')}` : ''}
+          </>
+        }
+        rarity={
+          <>
+            {card.rarity && <span>{card.rarity}</span>}
+            {card.regulationMark && (
+              <span className="grid h-4 min-w-4 place-items-center rounded-sm border border-line-strong px-0.5 font-mono text-[9.5px] text-fg">
+                {card.regulationMark}
               </span>
-            </div>
-            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
-              <h1 className="font-display text-[2.6rem] font-medium leading-tight tracking-tight sm:text-[3.2rem]">{card.name}</h1>
-              {card.hp && (
-                <span className="flex items-baseline gap-1.5 font-display text-2xl font-medium tabular">
-                  <span className="font-label text-[10px] font-semibold text-muted">HP</span>
-                  {card.hp}
+            )}
+          </>
+        }
+        title={card.name}
+        stats={
+          <>
+            {card.hp && (
+              <span className="flex items-baseline gap-1.5 font-display text-2xl font-medium tabular">
+                <span className="font-label text-[10px] font-semibold text-muted">
+                  HP
                 </span>
-              )}
-              {card.types?.map((t) => <Energy key={t} type={t} size={24} />)}
-            </div>
-            {card.artist && (
-              <p className="mt-1 text-sm text-muted">
-                <Link to={`/search?artist=${encodeURIComponent(card.artist)}`} className="italic hover:text-accent">
-                  Illus. {card.artist}
-                </Link>
+                {card.hp}
+              </span>
+            )}
+            {card.types?.map((t) => (
+              <Energy key={t} type={t} size={24} />
+            ))}
+          </>
+        }
+        artist={
+          card.artist && (
+            <Link
+              to={`/search?artist=${encodeURIComponent(card.artist)}`}
+              className="italic hover:text-accent"
+            >
+              Illus. {card.artist}
+            </Link>
+          )
+        }
+      />
+
+      {/* Collection */}
+      <CardCollectionSection
+        label={collectionLabel}
+        summary={
+          <>
+            {' '}
+            {total ? (
+              <>
+                {total} {total === 1 ? 'copy' : 'copies'}{' '}
+                <span className="text-muted">· {money(ownedValue)}</span>
+                {hasManualValue && (
+                  <ManualBadge className="ml-1.5 align-middle normal-case" />
+                )}
+                {slabs.length > 0 && (
+                  <span className="ml-2 align-middle text-xs font-normal text-muted">
+                    {rawTotal ? `${rawTotal} raw · ` : ''}
+                    {slabs.length} graded
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-muted">Not owned yet</span>
+            )}
+          </>
+        }
+        cost={
+          <>
+            {' '}
+            {cost && cost.costed > 0 && (
+              <p className="mt-1 text-xs text-muted">
+                Paid {money(cost.costUsd)}
+                {cost.costed < total
+                  ? ` for ${cost.costed} of ${total}`
+                  : ''} ·{' '}
+                <Gain valueUsd={cost.valueUsd} costUsd={cost.costUsd} icon />
               </p>
             )}
-          </header>
-
-          {/* Collection */}
-          <section className="border-t border-line-strong">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line py-4">
-              <div>
-                <p className="eyebrow">{collectionLabel}</p>
-                <p className="mt-1 font-display text-2xl font-medium">
-                  {total ? (
-                    <>
-                      {total} {total === 1 ? 'copy' : 'copies'} <span className="text-muted">· {money(ownedValue)}</span>
-                      {hasManualValue && <ManualBadge className="ml-1.5 align-middle normal-case" />}
-                      {slabs.length > 0 && (
-                        <span className="ml-2 align-middle text-xs font-normal text-muted">
-                          {rawTotal ? `${rawTotal} raw · ` : ''}
-                          {slabs.length} graded
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-muted">Not owned yet</span>
-                  )}
-                </p>
-                {cost && cost.costed > 0 && (
-                  <p className="mt-1 text-xs text-muted">
-                    Paid {money(cost.costUsd)}
-                    {cost.costed < total ? ` for ${cost.costed} of ${total}` : ''} · <Gain valueUsd={cost.valueUsd} costUsd={cost.costUsd} icon />
-                  </p>
-                )}
-              </div>
-              {!readOnly && (
+          </>
+        }
+        actions={
+          <>
+            {' '}
+            {!readOnly && (
               <div className="flex gap-2">
                 <AddToList card={card} />
                 <button
                   onClick={async () => {
                     const on = await toggleWishlist(card);
-                    toast(on ? 'Added to wishlist' : 'Removed from wishlist', { tone: on ? 'success' : 'default' });
+                    toast(on ? 'Added to wishlist' : 'Removed from wishlist', {
+                      tone: on ? 'success' : 'default',
+                    });
                   }}
                   className={`btn !h-9 !text-xs ${wished ? 'border border-wish/40 bg-wish/10 text-wish' : 'btn-ghost'}`}
                   aria-pressed={wished}
                 >
-                  <Heart size={14} fill={wished ? 'currentColor' : 'none'} /> {wished ? 'Wishlisted' : 'Wishlist'}
+                  <Heart size={14} fill={wished ? 'currentColor' : 'none'} />{' '}
+                  {wished ? 'Wishlisted' : 'Wishlist'}
                 </button>
                 {rawTotal > 0 && (
                   <button
                     onClick={async () => {
                       const removed = await removeCard(card.id);
-                      toast(`Removed all ${card.name}`, { action: { label: 'Undo', run: () => restoreEntries(removed) } });
+                      toast(`Removed all ${card.name}`, {
+                        action: {
+                          label: 'Undo',
+                          run: () => restoreEntries(removed),
+                        },
+                      });
                     }}
                     className="btn btn-ghost !h-9 !w-9 !p-0 hover:!text-loss"
                     aria-label="Remove all copies"
@@ -406,146 +606,198 @@ export default function CardPage() {
                   </button>
                 )}
               </div>
+            )}
+          </>
+        }
+      >
+        {variants.map((v) => (
+          <VariantRow key={v} card={card} variant={v} />
+        ))}
+      </CardCollectionSection>
+
+      {variants.some((v) => !card.variants.includes(v)) && (
+        <p className="text-sm text-muted">
+          Some owned entries use legacy printing labels. They are preserved, but
+          need identification before they count towards completion.
+        </p>
+      )}
+      <GradedSection card={card} />
+
+      <CardNotes key={card.id} cardId={card.id} />
+
+      {/* Market */}
+      {(card.tcgplayer || card.cardmarket) && (
+        <CardMarket
+          links={
+            <>
+              {card.tcgplayer?.url && (
+                <a
+                  href={card.tcgplayer.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
+                >
+                  TCGplayer <ExternalLink size={12} />
+                </a>
+              )}
+              {card.cardmarket && (
+                <a
+                  href={card.cardmarket.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
+                >
+                  Cardmarket <ExternalLink size={12} />
+                </a>
+              )}
+            </>
+          }
+          columns={[
+            <>
+              TCGplayer{' '}
+              <span className="normal-case tracking-normal text-faint">
+                (US)
+              </span>
+            </>,
+            <>
+              Cardmarket{' '}
+              <span className="normal-case tracking-normal text-faint">
+                (EU)
+              </span>
+            </>,
+            'From',
+          ]}
+          rows={Array.from(
+            new Set([
+              ...variants,
+              ...Object.keys(card.tcgplayer?.prices ?? {}),
+            ]),
+          ).map((v) => {
+            const t = card.tcgplayer?.prices[v],
+              c = card.cardmarket?.prices[v];
+            const lows = [t?.low, fromEur(c?.low)].filter(
+              (x): x is number => !!x,
+            );
+            return {
+              id: v,
+              label: printingLabel(card, v) ?? variantLabel(v),
+              values: [
+                money(t?.market ?? t?.mid),
+                money(fromEur(c?.market ?? c?.mid)),
+                <span className="font-normal text-muted">
+                  {money(lows.length ? Math.min(...lows) : undefined)}
+                </span>,
+              ],
+            };
+          })}
+          note={
+            <>
+              TCGplayer market and Cardmarket trend prices, converted at
+              today&apos;s rate. Updated{' '}
+              {formatDate(
+                card.tcgplayer?.updatedAt || card.cardmarket?.updatedAt || '',
+              )}
+              .
+            </>
+          }
+        />
+      )}
+
+      {/* Gameplay */}
+      {(card.abilities?.length ||
+        card.attacks?.length ||
+        card.rules?.length) && (
+        <section>
+          <h2 className="mb-2 font-display text-2xl font-medium">Card text</h2>
+          <div className="divide-y divide-line border-y border-line">
+            {card.abilities?.map((a) => (
+              <div key={a.name} className="py-4">
+                <p className="text-sm">
+                  <span className="mr-2 rounded bg-[#e0483b] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    {a.type}
+                  </span>
+                  <span className="font-semibold">{a.name}</span>
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-muted">
+                  {a.text}
+                </p>
+              </div>
+            ))}
+            {card.attacks?.map((a) => (
+              <div key={a.name} className="py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1">
+                    {a.cost.map((c, i) => (
+                      <Energy key={i} type={c} size={18} />
+                    ))}
+                  </div>
+                  <p className="flex-1 font-semibold">{a.name}</p>
+                  {a.damage && (
+                    <p className="font-display text-2xl font-medium tabular">
+                      {a.damage}
+                    </p>
+                  )}
+                </div>
+                {a.text && (
+                  <p className="mt-2 text-sm leading-relaxed text-muted">
+                    {a.text}
+                  </p>
+                )}
+              </div>
+            ))}
+            {card.rules?.map((r, i) => (
+              <p key={i} className="py-3 text-xs leading-relaxed text-muted">
+                {r}
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(card.weaknesses || card.resistances || card.retreatCost) && (
+        <section className="grid grid-cols-3 divide-x divide-line border-y border-line">
+          {[
+            { label: 'Weakness', items: card.weaknesses },
+            { label: 'Resistance', items: card.resistances },
+          ].map(({ label, items }) => (
+            <div key={label} className="px-4 py-3 first:pl-0">
+              <p className="eyebrow">{label}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {items?.length ? (
+                  items.map((w) => (
+                    <span
+                      key={w.type}
+                      className="flex items-center gap-1 font-mono text-sm"
+                    >
+                      <Energy type={w.type} size={18} /> {w.value}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-faint">—</span>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="px-4 py-3">
+            <p className="eyebrow">Retreat</p>
+            <div className="mt-2 flex gap-1">
+              {card.retreatCost?.length ? (
+                card.retreatCost.map((c, i) => (
+                  <Energy key={i} type={c} size={18} />
+                ))
+              ) : (
+                <span className="text-sm text-faint">—</span>
               )}
             </div>
-            <div className="divide-y divide-line">
-              {variants.map((v) => (
-                <VariantRow key={v} card={card} variant={v} />
-              ))}
-            </div>
-          </section>
+          </div>
+        </section>
+      )}
 
-          {variants.some((v) => !card.variants.includes(v)) && <p className="text-sm text-muted">Some owned entries use legacy printing labels. They are preserved, but need identification before they count towards completion.</p>}
-          <GradedSection card={card} />
-
-          <CardNotes key={card.id} cardId={card.id} />
-
-          {/* Market */}
-          {(card.tcgplayer || card.cardmarket) && (
-            <section>
-              <div className="mb-3 flex items-end justify-between gap-3">
-                <h2 className="font-display text-2xl font-medium">Market</h2>
-                <div className="flex gap-3">
-                  {card.tcgplayer?.url && (
-                    <a href={card.tcgplayer.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">
-                      TCGplayer <ExternalLink size={12} />
-                    </a>
-                  )}
-                  {card.cardmarket && (
-                    <a href={card.cardmarket.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">
-                      Cardmarket <ExternalLink size={12} />
-                    </a>
-                  )}
-                </div>
-              </div>
-              <div className="overflow-x-auto border-y border-line-strong">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-line text-left">
-                    <tr className="eyebrow">
-                      <th className="py-2.5 pr-4 font-normal">Variant</th>
-                      <th className="px-4 py-2.5 text-right font-normal">
-                        TCGplayer <span className="normal-case tracking-normal text-faint">(US)</span>
-                      </th>
-                      <th className="px-4 py-2.5 text-right font-normal">
-                        Cardmarket <span className="normal-case tracking-normal text-faint">(EU)</span>
-                      </th>
-                      <th className="py-2.5 pl-4 text-right font-normal">From</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line font-mono tabular">
-                    {Array.from(new Set([...variants, ...Object.keys(card.tcgplayer?.prices ?? {})])).map((v) => {
-                      const t = card.tcgplayer?.prices[v];
-                      const c = card.cardmarket?.prices[v];
-                      const lows = [t?.low, fromEur(c?.low)].filter((x): x is number => !!x);
-                      return (
-                        <tr key={v}>
-                          <td className="py-2.5 pr-4 font-sans">{printingLabel(card, v) ?? variantLabel(v)}</td>
-                          <td className="px-4 py-2.5 text-right font-semibold">{money(t?.market ?? t?.mid)}</td>
-                          <td className="px-4 py-2.5 text-right font-semibold">{money(fromEur(c?.market ?? c?.mid))}</td>
-                          <td className="py-2.5 pl-4 text-right text-muted">{money(lows.length ? Math.min(...lows) : undefined)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-2 text-[11px] text-faint">
-                TCGplayer market and Cardmarket trend prices, converted at today&apos;s rate. Updated{' '}
-                {formatDate(card.tcgplayer?.updatedAt || card.cardmarket?.updatedAt || '')}.
-              </p>
-            </section>
-          )}
-
-          {/* Gameplay */}
-          {(card.abilities?.length || card.attacks?.length || card.rules?.length) && (
-            <section>
-              <h2 className="mb-2 font-display text-2xl font-medium">Card text</h2>
-              <div className="divide-y divide-line border-y border-line">
-              {card.abilities?.map((a) => (
-                <div key={a.name} className="py-4">
-                  <p className="text-sm">
-                    <span className="mr-2 rounded bg-[#e0483b] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">{a.type}</span>
-                    <span className="font-semibold">{a.name}</span>
-                  </p>
-                  <p className="mt-2 text-sm leading-relaxed text-muted">{a.text}</p>
-                </div>
-              ))}
-              {card.attacks?.map((a) => (
-                <div key={a.name} className="py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex gap-1">
-                      {a.cost.map((c, i) => (
-                        <Energy key={i} type={c} size={18} />
-                      ))}
-                    </div>
-                    <p className="flex-1 font-semibold">{a.name}</p>
-                    {a.damage && <p className="font-display text-2xl font-medium tabular">{a.damage}</p>}
-                  </div>
-                  {a.text && <p className="mt-2 text-sm leading-relaxed text-muted">{a.text}</p>}
-                </div>
-              ))}
-              {card.rules?.map((r, i) => (
-                <p key={i} className="py-3 text-xs leading-relaxed text-muted">
-                  {r}
-                </p>
-              ))}
-              </div>
-            </section>
-          )}
-
-          {(card.weaknesses || card.resistances || card.retreatCost) && (
-            <section className="grid grid-cols-3 divide-x divide-line border-y border-line">
-              {[
-                { label: 'Weakness', items: card.weaknesses },
-                { label: 'Resistance', items: card.resistances },
-              ].map(({ label, items }) => (
-                <div key={label} className="px-4 py-3 first:pl-0">
-                  <p className="eyebrow">{label}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {items?.length
-                      ? items.map((w) => (
-                          <span key={w.type} className="flex items-center gap-1 font-mono text-sm">
-                            <Energy type={w.type} size={18} /> {w.value}
-                          </span>
-                        ))
-                      : <span className="text-sm text-faint">—</span>}
-                  </div>
-                </div>
-              ))}
-              <div className="px-4 py-3">
-                <p className="eyebrow">Retreat</p>
-                <div className="mt-2 flex gap-1">
-                  {card.retreatCost?.length ? card.retreatCost.map((c, i) => <Energy key={i} type={c} size={18} />) : <span className="text-sm text-faint">—</span>}
-                </div>
-              </div>
-            </section>
-          )}
-
-          {card.flavorText && <blockquote className="border-l-2 border-line-strong pl-4 font-display text-base italic text-muted">{card.flavorText}</blockquote>}
-        </div>
-      </div>
-
-      <OtherPrintings card={card} searchResults={searchResults} />
-    </div>
+      {card.flavorText && (
+        <blockquote className="border-l-2 border-line-strong pl-4 font-display text-base italic text-muted">
+          {card.flavorText}
+        </blockquote>
+      )}
+    </CardDetailLayout>
   );
 }
