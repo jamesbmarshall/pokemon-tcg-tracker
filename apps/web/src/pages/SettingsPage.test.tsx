@@ -126,7 +126,7 @@ describe('SettingsPage', () => {
     expect(downloads[0].name).toMatch(/^poketracker-\d{4}-\d{2}-\d{2}\.json$/);
     expect(downloads[0].blob.type).toBe('application/json');
     const data = JSON.parse(await downloads[0].blob.text());
-    expect(data).toMatchObject({ app: 'poketracker', version: 6, wishlist: [{ cardId: 'sv03-009' }] });
+    expect(data).toMatchObject({ app: 'poketracker', version: 7, wishlist: [{ cardId: 'sv03-009' }] });
     expect(data.collection).toHaveLength(3);
     expect(data).toMatchObject({ history: [], lists: [] });
   });

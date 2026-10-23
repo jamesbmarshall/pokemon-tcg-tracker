@@ -23,6 +23,7 @@ import { shareRoutes, attachShare } from './shares.ts';
 import { systemRoutes } from './system.ts';
 import { demoGuard, demoRoutes } from './demo.ts';
 import { pricechartingRoutes } from './providers/pricecharting.ts';
+import { tcgRoutes } from './tcg/routes.ts';
 
 /** Methods that must not change state, so they skip the CSRF checks below. */
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -47,10 +48,11 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
     logController: new LogController({ disableRequestLogging: true }),
   });
   ctx.log = app.log;
+  const isCollectionImport = (route?: string) => route === '/api/collections/:id/import' || route === '/api/collections/:id/games/:game/import';
   const defaultJson = app.getDefaultJsonParser('error', 'error');
   app.removeContentTypeParser('application/json');
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-    if (req.routeOptions.url === '/api/collections/:id/import') void parseImportJson(body as string).then(value => done(null, value), done);
+    if (isCollectionImport(req.routeOptions.url)) void parseImportJson(body as string).then(value => done(null, value), done);
     else defaultJson(req, body as string, done);
   });
   let importing: string | undefined;
@@ -114,7 +116,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
     attachSession(ctx, req, reply);
     attachShare(ctx, req);
     await demoGuard(ctx)(req);
-    if (req.routeOptions.url === '/api/collections/:id/import') {
+    if (isCollectionImport(req.routeOptions.url)) {
       need(ctx, req, 'write');
       if (importing) throw new HttpError(429, 'Another import is running. Try again when it finishes.', 'import_busy');
       assertStorage(ctx, IMPORT_BYTES * 2);
@@ -151,6 +153,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
   systemRoutes(app, ctx);
   demoRoutes(app, ctx);
   pricechartingRoutes(app, ctx);
+  tcgRoutes(app, ctx);
 
   // Without this, unknown API paths would fall through to the SPA and return HTML with a 200.
   app.all('/api/*', async () => {

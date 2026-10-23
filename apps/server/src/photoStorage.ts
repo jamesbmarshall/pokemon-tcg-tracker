@@ -41,6 +41,7 @@ export function reconcilePhotos(ctx: Ctx, graceMs = 86_400_000) {
   const missing: string[] = []; let removed = 0;
   for (const [kind, table] of [['photos', 'graded_photos'], ['sealed-photos', 'sealed_photos']] as const) {
     const referenced = new Set(ctx.db.all<{ id: string }>(`SELECT id FROM ${table}`).map((p) => p.id));
+    if (kind === 'photos') for (const p of ctx.db.all<{ id: string }>('SELECT id FROM tcg_photos')) referenced.add(p.id);
     const dir = join(ctx.config.dataDir, kind);
     for (const id of referenced) if (!validId(id) || !existsSync(join(dir, id))) missing.push(`${kind}/${id}`);
     if (!existsSync(dir)) continue;

@@ -27,6 +27,7 @@ import { PublicShareContext } from '../components/shareContext';
 import CardGrid from '../components/CardGrid';
 import { Logo } from '../components/ui';
 import { AuthShell, LoginPage } from './AuthPages';
+import { GamePublicView, type GamePublicData } from '../tcg/GamePage';
 
 const bySetThenNumber = (a: CardSnapshot, b: CardSnapshot) => a.setName.localeCompare(b.setName) || compareCardNumber(a, b);
 
@@ -246,6 +247,7 @@ export default function PublicSharePage() {
   useEffect(() => {
     const data = q.data;
     if (!data) return;
+    if ((data as unknown as GamePublicData).share.game && (data as unknown as GamePublicData).share.game !== 'pokemon') return;
     // Swap the backend before show() so anything the store triggers goes through the read-only one.
     setBackend(publicBackend(token));
     show({
@@ -278,6 +280,7 @@ export default function PublicSharePage() {
     if (err instanceof ApiError && err.status === 0) return <Unavailable message="Couldn't reach the server. Check your connection and try again." />;
     return <Unavailable message="This link has expired, been revoked, or isn't shared with you." />;
   }
+  if (q.data && (q.data as unknown as GamePublicData).share.game && (q.data as unknown as GamePublicData).share.game !== 'pokemon') return <GamePublicView data={q.data as unknown as GamePublicData} token={token} />;
   // Wait until the store actually holds this share, not just until the query resolves, so the
   // first render never shows leftover data from the user's own collection.
   if (!shown || !q.data) {

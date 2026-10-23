@@ -46,6 +46,7 @@ export async function createRecoverySnapshot(ctx: Ctx) {
     mkdirSync(staged, { mode: 0o700 });
     const photos = [
       ...ctx.db.all<{ id: string }>('SELECT id FROM graded_photos').map((p) => ({ kind: 'photos' as PhotoKind, id: p.id })),
+      ...ctx.db.all<{ id: string }>('SELECT id FROM tcg_photos').map((p) => ({ kind: 'photos' as PhotoKind, id: p.id })),
       ...ctx.db.all<{ id: string }>('SELECT id FROM sealed_photos').map((p) => ({ kind: 'sealed-photos' as PhotoKind, id: p.id })),
     ];
     const copyBytes = lstatSync(ctx.db.file).size * 3 + photos.reduce((sum, p) => sum + lstatSync(join(ctx.config.dataDir, p.kind, p.id)).size, 0);
@@ -111,6 +112,9 @@ export async function validateRecoverySnapshot(source: string): Promise<Recovery
     validateInstanceSecrets({ all: <T>(sql: string, ...params: SQLInputValue[]) => raw.prepare(sql).all(...params) as T[] }, new Sealer(key));
     for (const [kind, table] of [['photos', 'graded_photos'], ['sealed-photos', 'sealed_photos']] as const) {
       for (const photo of raw.prepare(`SELECT id FROM ${table}`).all()) if (!seen.has(`${kind}/${photo.id}`)) throw new Error('Recovery snapshot is missing referenced photos');
+    }
+    if (raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tcg_photos'").get()) {
+      for (const photo of raw.prepare('SELECT id FROM tcg_photos').all()) if (!seen.has(`photos/${photo.id}`)) throw new Error('Recovery snapshot is missing game photos');
     }
   } finally { raw.close(); }
   return manifest;

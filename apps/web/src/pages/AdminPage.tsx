@@ -439,6 +439,7 @@ function ProviderHealthPanel() {
     { label: 'TCGdex (catalogue & prices)', h: health.data.tcgdex },
     { label: 'PriceCharting (price fallback)', h: health.data.pricecharting },
   ];
+  if (health.data.scryfall) rows.push({ label: 'Scryfall (Magic catalogue & prices)', h: health.data.scryfall });
   const tone = (state: ProviderHealth['state']): 'good' | 'warn' | 'bad' | 'muted' => (state === 'closed' ? 'good' : state === 'half-open' ? 'warn' : 'bad');
   const label = (state: ProviderHealth['state']) => (state === 'closed' ? 'Healthy' : state === 'half-open' ? 'Checking' : 'Unreachable');
   return (

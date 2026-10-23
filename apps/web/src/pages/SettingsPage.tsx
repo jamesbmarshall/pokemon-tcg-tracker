@@ -66,7 +66,8 @@ export default function SettingsPage() {
   const exportJson = () => {
     const payload = {
       app: 'poketracker',
-      version: 6,
+      version: 7,
+      game: 'pokemon',
       exportedAt: new Date().toISOString(),
       collection: Array.from(entries.values()),
       wishlist: Array.from(wishlist.values()),

@@ -46,7 +46,7 @@ export async function lookupScan(query: { setCode?: string; number: string; tota
 
 // Mirrors the server's image allow-list: /api/img rejects any other host, so other URLs are
 // passed through unchanged (and the CSP decides whether they load).
-const PROXIED_HOSTS = new Set(['assets.tcgdex.net', 'images.pokemontcg.io']);
+const PROXIED_HOSTS = new Set(['assets.tcgdex.net', 'images.pokemontcg.io', 'cards.scryfall.io']);
 let proxyImages = false;
 
 /** Card art and set logos are served (and cached) by the app server, which the CSP requires. */

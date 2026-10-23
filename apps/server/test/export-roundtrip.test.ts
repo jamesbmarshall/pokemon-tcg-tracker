@@ -12,7 +12,7 @@ describe('portable collection exports', () => {
     await c.put(`/api/collections/${source}/lists/${list.id}/cards/sv1-002`, { qty: 4 });
     await c.put(`/api/collections/${source}/lists/${list.id}/cards/sv1-001`, { qty: 2 });
     const exported = (await c.get(`/api/collections/${source}/export`)).json();
-    expect(exported.version).toBe(6);
+    expect(exported.version).toBe(7);
     const target = (await c.post('/api/collections', { name: 'Restored' })).json().id;
     for (let i = 0; i < 2; i++) {
       const result = await c.post(`/api/collections/${target}/import`, exported);

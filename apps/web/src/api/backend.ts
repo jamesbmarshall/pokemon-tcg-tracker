@@ -115,6 +115,7 @@ export interface SystemStatus {
   demoMode?: boolean;
   /** Non-sensitive: true when the TCGdex breaker isn't closed, so the UI can show a banner. */
   catalogDegraded: boolean;
+  gameCatalogDegraded?: Record<string, boolean>;
   /** Only reported to owners and admins; members get the base status without update details. */
   updateAvailable?: boolean;
   latest?: string | null;
@@ -135,6 +136,7 @@ export interface ProviderHealth {
 }
 
 export interface ProviderHealthReport {
+  scryfall?: ProviderHealth;
   tcgdex: ProviderHealth;
   pricecharting: ProviderHealth & { configured: boolean };
 }

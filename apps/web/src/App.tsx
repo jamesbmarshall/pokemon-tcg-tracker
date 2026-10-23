@@ -29,6 +29,8 @@ import { AuthShell, InvitePage, LoginPage, ResetPage, SetupPage } from './pages/
 import { useAuth } from './store/authStore';
 import { Logo } from './components/ui';
 import { useThemeSync } from './utils/theme';
+import { games } from '@poketracker/shared/tcg/registry';
+import GamePage from './tcg/GamePage';
 
 // Catalogue queries retry with backoff because upstream TCGdex hiccups are common and transient.
 // Focus refetching is off: the data changes rarely and a refetch would hit the server for nothing.
@@ -44,6 +46,11 @@ function LegacySetRedirect() {
   return <Navigate to={`/sets/${setId}`} replace />;
 }
 
+function GameHome() {
+  const selected = localStorage.getItem('poketracker-game');
+  return selected && selected !== 'pokemon' && games.get(selected) ? <Navigate to={`/${selected}`} replace /> : <HomePage />;
+}
+
 function SignedInApp() {
   const load = useCollectionStore((s) => s.load);
   const userId = useAuth((s) => s.user?.id);
@@ -55,7 +62,8 @@ function SignedInApp() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<HomePage />} />
+        {games.all().filter(g => g.id !== 'pokemon').map(g => <Route key={g.id} path={`${g.id}/*`} element={<GamePage game={g.id} />} />)}
+        <Route index element={<GameHome />} />
         <Route path="sets" element={<SetsPage />} />
         <Route path="sets/:setId" element={<SetPage />} />
         <Route path="card/:cardId" element={<CardPage />} />

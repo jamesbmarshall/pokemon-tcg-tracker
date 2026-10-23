@@ -24,7 +24,7 @@ const MAX_IMAGE = 6 * 1024 * 1024;
  * proxy (SSRF): any signed-in user or share-link visitor could make the server request internal
  * addresses such as cloud metadata endpoints or other containers on the host network.
  */
-const IMAGE_HOSTS = new Set(['assets.tcgdex.net', 'images.pokemontcg.io']);
+const IMAGE_HOSTS = new Set(['assets.tcgdex.net', 'images.pokemontcg.io', 'cards.scryfall.io']);
 
 /** How long a cached catalogue response is fresh, by path. Stale copies are still served if TCGdex is down. */
 export function ttlFor(path: string): number {

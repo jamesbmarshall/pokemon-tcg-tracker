@@ -18,6 +18,10 @@ import { access, collectionState, photosFor, streamPhoto } from './collections.t
 import { sealedPhotosFor, streamSealedPhoto } from './sealed.ts';
 import { isSecure, linkBase } from './auth.ts';
 import { newId, randomToken, sha256 } from './security.ts';
+import { games } from '@poketracker/shared/tcg/registry';
+import { gameShareState } from './tcg/state.ts';
+import { createReadStream, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const SHARE_COOKIE = 'pt_share';
 const SCOPES = ['collection', 'set', 'wishlist', 'graded', 'sealed', 'list'] as const;
@@ -26,6 +30,8 @@ type Scope = (typeof SCOPES)[number];
 type Audience = (typeof AUDIENCES)[number];
 
 interface ShareRow {
+  game: string;
+  game_language: string;
   id: string;
   token_hash: string;
   token_enc: string;
@@ -147,6 +153,8 @@ function describe(ctx: Ctx, s: ShareRow, req: FastifyRequest) {
   const coll = ctx.db.get<{ name: string }>('SELECT name FROM collections WHERE id = ?', s.collection_id);
   return {
     id: s.id,
+    game: s.game,
+    language: s.game_language,
     collectionId: s.collection_id,
     collectionName: coll?.name,
     scope: s.scope,
@@ -225,6 +233,8 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
   app.post('/api/shares', async (req) => {
     const u = requireUser(req);
     const b = (req.body ?? {}) as Record<string, unknown>;
+    const game = typeof b.game === 'string' ? b.game : 'pokemon';
+    if (!games.get(game)) throw bad('Unsupported game');
     const collectionId = str(b.collectionId, 64);
     // Only the collection owner can publish it; editors share via membership instead.
     if (access(ctx, u.id, collectionId) !== 'owner') throw forbidden('Only the collection owner can share it');
@@ -239,7 +249,8 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     }
     if (scope === 'list') {
       target = str(b.target, 64);
-      if (!ctx.db.get('SELECT 1 FROM lists WHERE id = ? AND collection_id = ?', target, collectionId)) throw bad('Pick a list to share');
+      const exists = game === 'pokemon' ? ctx.db.get('SELECT 1 FROM lists WHERE id = ? AND collection_id = ?', target, collectionId) : ctx.db.get("SELECT 1 FROM tcg_records WHERE collection_id = ? AND game = ? AND kind = 'list' AND id = ?", collectionId, game, target);
+      if (!exists) throw bad('Pick a list to share');
     }
     if (ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM shares WHERE owner_id = ?', u.id)!.n >= 500) throw bad('You have too many share links');
     // 128 bits is plenty for an unguessable link and keeps the URL short enough to paste in chat.
@@ -266,6 +277,8 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
         now(),
         expiry(b) ?? null,
       );
+      const language = typeof b.language === 'string' && games.require(game).languages.some(l => l.code === b.language) ? b.language : 'en';
+      ctx.db.run('UPDATE shares SET game = ?, game_language = ? WHERE id = ?', game, language, id);
       if (audience === 'users') setUsers(ctx, id, u.id, b.userIds);
     });
     audit(ctx, req, 'share.created', id, { scope, audience });
@@ -369,6 +382,8 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
     const coll = ctx.db.get<{ name: string }>('SELECT name FROM collections WHERE id = ?', s.collection_id);
     return {
       share: {
+        game: s.game,
+        language: s.game_language,
         scope: s.scope,
         target: s.target,
         title: s.title || (s.scope === 'collection' ? coll?.name : null),
@@ -379,8 +394,31 @@ export function shareRoutes(app: FastifyInstance, ctx: Ctx) {
         expiresAt: s.expires_at,
       },
       role: 'viewer',
-      ...shareView(ctx, s),
+      ...(s.game === 'pokemon' ? shareView(ctx, s) : gameShareState(ctx, s.collection_id, s.game, s)),
     };
+  });
+
+  const gamePhoto = (s: ShareRow, kind: string, recordId: string) => {
+    if (s.game === 'pokemon') throw notFound();
+    const state = gameShareState(ctx, s.collection_id, s.game, s);
+    const visible = kind === 'graded' ? state.graded : kind === 'sealed' ? state.sealed : [];
+    if (!visible.some(record => record.id === recordId)) throw notFound();
+  };
+  app.get('/api/public/:token/game-photos/:kind/:recordId', async (req, reply) => {
+    const { s } = open(req, reply);
+    const { kind, recordId } = req.params as { kind: string; recordId: string };
+    gamePhoto(s, kind, recordId);
+    return ctx.db.all('SELECT id FROM tcg_photos WHERE collection_id = ? AND game = ? AND kind = ? AND record_id = ?', s.collection_id, s.game, kind, recordId);
+  });
+  app.get('/api/public/:token/game-photo/:photoId', async (req, reply) => {
+    const { s } = open(req, reply);
+    const { photoId } = req.params as { photoId: string };
+    const row = ctx.db.get<{ kind: string; record_id: string; mime: string }>('SELECT kind,record_id,mime FROM tcg_photos WHERE id = ? AND collection_id = ? AND game = ?', photoId, s.collection_id, s.game);
+    if (!row || !/^[\w-]{1,64}$/.test(photoId)) throw notFound();
+    gamePhoto(s, row.kind, row.record_id);
+    const file = join(ctx.config.dataDir, 'photos', photoId);
+    if (!existsSync(file)) throw notFound();
+    return reply.type(row.mime).header('x-content-type-options', 'nosniff').send(createReadStream(file));
   });
 
   // Photo access is derived from the same scoped view as the JSON, so a slab outside the share's
