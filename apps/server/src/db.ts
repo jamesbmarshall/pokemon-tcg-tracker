@@ -2,8 +2,12 @@
  * Thin synchronous wrapper over node:sqlite. The whole server shares one connection; SQLite is
  * fast enough for a household-sized instance and a single connection keeps transactions simple.
  */
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { backup, DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { isMainThread } from 'node:worker_threads';
+import { recoveryTask } from './recoveryTask.ts';
 import { mkdirSync } from 'node:fs';
+import { open, rename, rm } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 import { MIGRATIONS } from './migrations.ts';
 
@@ -15,9 +19,10 @@ export class Db {
   private stmts = new Map<string, ReturnType<DatabaseSync['prepare']>>();
 
   /** One shared connection. Startup selects rollback journaling for known network shares. */
-  constructor(readonly file: string, journalMode: 'wal' | 'delete' = 'wal') {
+  constructor(readonly file: string, journalMode: 'wal' | 'delete' = 'wal', readOnly = false) {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
-    this.raw = new DatabaseSync(file);
+    this.raw = new DatabaseSync(file, { readOnly });
+    if (readOnly) { this.raw.exec('PRAGMA busy_timeout = 5000'); return; }
     // journalMode is a closed union, so interpolating it cannot inject SQL.
     this.raw.exec(`PRAGMA journal_mode = ${journalMode === 'wal' ? 'WAL' : 'DELETE'};`);
     // foreign_keys is off by default in SQLite and is per connection, so it must be set here for
@@ -100,13 +105,19 @@ export class Db {
   }
 
   /**
-   * Consistent online copy of the database. VACUUM INTO works while the server keeps serving,
-   * folds in any WAL content and produces a single self-contained file, unlike copying the
-   * .db file directly. It fails if the target exists, so callers use unique names.
+   * Consistent online copy, including WAL content. Small incremental batches release read
+   * locks between steps; the worker keeps network filesystem I/O off the HTTP thread.
    */
-  backupTo(file: string) {
+  async backupTo(file: string) {
     mkdirSync(dirname(file), { recursive: true });
-    this.prep('VACUUM INTO ?').run(file);
+    const staged = `${file}.incoming-${randomBytes(12).toString('base64url')}`;
+    try {
+      if (isMainThread) await recoveryTask({ action: 'backup', source: this.file, destination: staged });
+      else await backup(this.raw, staged, { rate: 16 });
+      await rename(staged, file);
+      const parent = await open(dirname(file), 'r');
+      try { await parent.sync(); } finally { await parent.close(); }
+    } finally { await rm(staged, { force: true }); }
   }
 
   close() {

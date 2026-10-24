@@ -3,7 +3,7 @@ import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-for (const [entry, name] of [['index.ts', 'server.mjs'], ['recoveryCli.ts', 'recovery.mjs']]) await build({
+for (const [entry, name] of [['index.ts', 'server.mjs'], ['recoveryCli.ts', 'recovery.mjs'], ['recoveryWorker.ts', 'recovery-worker.mjs']]) await build({
   entryPoints: [`${root}src/${entry}`],
   outfile: `${root}dist/${name}`,
   bundle: true,

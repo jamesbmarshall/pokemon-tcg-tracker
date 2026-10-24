@@ -13,7 +13,7 @@ it('explains complete backups and retention, offers a download, and requires con
   const user = userEvent.setup();
   const mock = mockApi({ 'GET /api/admin/backup-packages': status, 'POST /api/admin/backup-packages/restore': { restarting: true } });
   renderWithProviders(<RecoveryPanel />);
-  expect(await screen.findByText(/Keeps 14 daily, 3 monthly and 1 yearly/)).toBeInTheDocument();
+  expect(await screen.findByText(/Keeps up to 14 daily, 3 monthly and 1 yearly/)).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/admin/backup-packages/complete.tar.gz');
   expect(screen.getByText(/No folder is connected/)).toBeInTheDocument();
   expect(screen.queryByText(/one-hour target/)).not.toBeInTheDocument();
@@ -39,4 +39,18 @@ it('does not claim a folder copy proves a cloud upload', async () => {
   renderWithProviders(<RecoveryPanel />);
   expect(await screen.findByText(/Check your storage service to confirm it has uploaded/)).toBeInTheDocument();
   expect(screen.getByRole('alert')).toHaveTextContent('Copy failed');
+});
+
+it('shows background progress without claiming a backup exists when the request is accepted', async () => {
+  const user = userEvent.setup();
+  let started = false;
+  mockApi({
+    'GET /api/admin/backup-packages': () => ({ ...status, running: started }),
+    'POST /api/admin/backup-packages': () => { started = true; return reply(202, { running: true }); },
+  });
+  renderWithProviders(<RecoveryPanel />);
+  await user.click(await screen.findByRole('button', { name: 'Back up now' }));
+  expect(await screen.findByText(/Creating your backup in the background/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Working…' })).toBeDisabled();
+  expect(screen.queryByText('Backup created. You can download it below.')).not.toBeInTheDocument();
 });

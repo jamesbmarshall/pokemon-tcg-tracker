@@ -1,4 +1,5 @@
 import { assertStorage, IMPORT_BYTES, parseImportJson } from './resourceLimits.ts';
+import { drainPackageWork } from './backupPackages.ts';
 import { need } from './collections.ts';
 import { readiness } from './diagnostics.ts';
 import { initCatalog } from './cards.ts';
@@ -48,6 +49,7 @@ export async function buildApp(ctx: Ctx, opts: { logger?: boolean; onRoute?: (me
     logController: new LogController({ disableRequestLogging: true }),
   });
   ctx.log = app.log;
+  app.addHook('onClose', () => drainPackageWork(ctx));
   const isCollectionImport = (route?: string) => route === '/api/collections/:id/import' || route === '/api/collections/:id/games/:game/import';
   const defaultJson = app.getDefaultJsonParser('error', 'error');
   app.removeContentTypeParser('application/json');

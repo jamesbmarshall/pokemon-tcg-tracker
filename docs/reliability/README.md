@@ -2,6 +2,9 @@
 
 [Open the draft PRs in review order](prs.md). [Read the verification record](verification.md).
 
+The [Azure backup incident review](azure-backup-review.md) records the October 2026
+production failure, the worker/retention/retry fixes, and the hosting decision for SQLite.
+
 The audit implementation is split into 19 dependent review branches. Merge in order; each PR's
 base is the preceding branch. The first builds on the existing mobile-navigation fix. No live
 Azure migration, credential configuration, DNS change or production release is performed by

@@ -1,4 +1,11 @@
-# Azure Container Apps: simple managed hosting
+# Azure hosting
+
+For new production installations, use the [VM with local storage](#vm-with-local-storage)
+template. SQLite is a single-host database; a persistent local data disk avoids the SMB
+locking/latency and overlapping-revision constraints of Container Apps. The VM still needs
+host maintenance and independent backups. It is not a managed database service.
+
+## Existing Container Apps installations
 
 Run one Container App with Azure Files mounted at `/data`. This avoids maintaining a VM or
 paying for a separate database service. `containerapps.bicep` (and its generated portal template,
@@ -9,6 +16,16 @@ The template configures one always-on replica, Single revision mode, rollback jo
 (`SQLITE_JOURNAL_MODE=delete`) and the SMB `nobrl` mount option for SQLite compatibility.
 The app automatically selects rollback journaling on recognised network mounts and reports
 a warning in the startup logs and owner Settings. No opt-in environment variable is required.
+
+The share quota is configurable using `dataShareQuotaGiB` (64 GiB by default for new
+deployments). The former 20 GiB default could fill with a 1.1 GiB database, retained database
+copies and interrupted snapshots. Capacity must include the live database, retained packages,
+photos and roughly three database sizes of temporary backup/compaction space. Increasing a
+quota alone does not fix blocking database work. Review Azure storage costs before changing it.
+
+Startup probes now allow ten minutes and liveness probes tolerate transient slow responses
+with explicit five-second timeouts. Expensive recovery operations run on a worker; longer
+probe tolerance is a safeguard, not the mechanism that keeps the app responsive.
 
 ## What protection you get
 
@@ -47,6 +64,11 @@ For an image/launcher update, accept a short outage and use **stop before start*
    health. If Azure leaves the new revision inactive, activate only that revision after
    confirming all old replicas are stopped. Verify sign-in, collections and a saved edit.
 
+   Recheck *all* revisions after the update: the service may reactivate the previous revision
+   while the replacement starts. A revision with zero traffic can still run background jobs
+   against the database. If the platform cannot maintain exclusive access through a rollout,
+   use the VM deployment rather than relying on traffic weights to protect SQLite.
+
 [Single revision mode](https://learn.microsoft.com/en-us/azure/container-apps/revisions)
 keeps traffic on one revision, but may overlap containers during a normal rollout. It does not replace step 2. Avoid routine `az containerapp up` image replacements on a
 running SQLite instance. Do not delete or detach the persistent share to fix an upgrade.
@@ -58,9 +80,21 @@ the running version in Settings and use the in-app updater to select the fixed r
 
 ## Backups and recovery
 
-Nightly and pre-update `.db` backups are automatic, but contain no photo files or instance key.
-Download database backups from the admin page and keep copies away from the share. For full
-recovery, capture a complete instance snapshot with the packaged CLI inside the running container:
+Nightly complete packages contain the database, photos, settings and effective instance key.
+Use **Back up now** in owner Settings to start a background backup; it continues if the page
+is closed and the download appears after completion. Download completed packages and keep
+copies away from the share. Pre-update `.db` rollback files contain only the database.
+
+Interrupted snapshot/archive staging is removed on startup under the instance lock. Completed
+CLI snapshots and published packages are preserved. Automatic retention runs before admission;
+under space pressure, older automatic packages may be removed sooner, but the newest complete
+package and manual/before-restore packages are preserved. Once complete packages exist, only
+the newest legacy daily database copy is retained, alongside the normal pre-update retention.
+If protected files leave insufficient space, the backup fails without taking down the app.
+Failed/interrupted startup jobs have a one-hour catch-up cooldown rather than retrying at every
+restart. Cron schedules and explicit manual retries remain available.
+
+For a directory snapshot suitable for host backup tools, run inside the container:
 
 ```sh
 node /app/bundle/recovery.mjs snapshot
@@ -77,10 +111,11 @@ before relying on backups. Built-in nightly copies are useful protection against
 independent full copies protect the complete collection against storage loss. External backup
 automation is optional and must be configured separately; the app does not upload backups for you.
 
-## Optional: VM with local storage
+## VM with local storage
 
-A VM is an alternative for users who want local filesystem semantics and accept host maintenance.
-It is not required to use PokéTracker on Azure.
+A VM with a persistent data disk is the recommended production Azure deployment for the
+current SQLite architecture. Users must still maintain the host; the included Caddy service
+handles HTTPS and the backup tooling supports independent encrypted recovery copies.
 
 Compile `vm.bicep` and deploy it with a published application image **digest**, your SSH
 public key and a restricted administrator source CIDR. The defaults are a B2s VM and

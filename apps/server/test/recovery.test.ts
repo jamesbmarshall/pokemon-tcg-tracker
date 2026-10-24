@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { createRecoverySnapshot, restoreRecoverySnapshot, validateRecoverySnapshot } from '../src/recovery.ts';
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs';
+import { cleanupInterruptedRecovery, createRecoverySnapshot, restoreRecoverySnapshot, validateRecoverySnapshot } from '../src/recovery.ts';
 import { reconcilePhotos } from '../src/photoStorage.ts';
 import { savePhoto } from '../src/collections.ts';
 import { setPcKey } from '../src/providers/pricecharting.ts';
@@ -64,4 +64,43 @@ it('rejects corrupt bytes and path traversal before creating a restore destinati
   writeFileSync(join(snapshot.path, 'manifest.json'), JSON.stringify(manifest));
   await expect(validateRecoverySnapshot(snapshot.path)).rejects.toThrow('file path');
   rmSync(snapshot.path, { recursive: true, force: true });
+});
+
+it('keeps HTTP health checks responsive while the backup worker waits on SQLite locks', async () => {
+  await setupOwner(s.app);
+  s.ctx.db.exec('PRAGMA journal_mode = DELETE; BEGIN EXCLUSIVE;');
+  let finished = false;
+  const pending = createRecoverySnapshot(s.ctx).finally(() => { finished = true; });
+  let probes = 0;
+  try {
+    const deadline = Date.now() + 700;
+    while (Date.now() < deadline) {
+      expect((await s.app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
+      probes++;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    expect(finished).toBe(false);
+    expect(probes).toBeGreaterThan(10);
+  } finally { s.ctx.db.exec('ROLLBACK'); }
+  const snapshot = await pending;
+  await expect(validateRecoverySnapshot(snapshot.path)).resolves.toMatchObject({ version: 1 });
+});
+
+it('reclaims killed snapshot/package staging without deleting completed recovery points or following links', async () => {
+  const root = join(s.dir, 'recovery-snapshots'); mkdirSync(root);
+  const incomplete = join(root, '.incoming-snapshot-123-abcdefghijklmnop'); mkdirSync(incomplete);
+  const temporary = join(root, '.package-snapshot-123-abcdefghijklmnop'); mkdirSync(temporary);
+  const complete = join(root, 'snapshot-123-abcdefghijklmnop'); mkdirSync(complete);
+  const preserved = join(s.dir, 'preserved'); mkdirSync(preserved); writeFileSync(join(preserved, 'keep'), 'keep');
+  symlinkSync(preserved, join(root, '.incoming-snapshot-456-abcdefghijklmnop'));
+  const packages = join(s.dir, 'backup-packages'); mkdirSync(packages);
+  writeFileSync(join(packages, '.incoming-abcdefghijklmnop'), 'partial archive');
+  writeFileSync(join(packages, 'manual.tar.gz'), 'published archive');
+  await cleanupInterruptedRecovery(s.dir);
+  expect(existsSync(incomplete)).toBe(false);
+  expect(existsSync(temporary)).toBe(false);
+  expect(existsSync(complete)).toBe(true);
+  expect(existsSync(join(preserved, 'keep'))).toBe(true);
+  expect(existsSync(join(packages, '.incoming-abcdefghijklmnop'))).toBe(false);
+  expect(existsSync(join(packages, 'manual.tar.gz'))).toBe(true);
 });

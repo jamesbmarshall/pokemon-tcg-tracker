@@ -1,4 +1,4 @@
-import { createPackage, packagePath, packageStatus, setPackageSync, stageRestore } from './backupPackages.ts';
+import { startPackage, packagePath, packageStatus, setPackageSync, stageRestore } from './backupPackages.ts';
 import { diagnostics } from './diagnostics.ts';
 /**
  * Admin and status routes: job control, storage figures, backups and in-app updates.
@@ -97,9 +97,10 @@ export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
 
   // Complete instance packages (database, accounts, photos, settings and encryption key).
   app.get('/api/admin/backup-packages', async (req) => { requireRole(req, 'owner'); return packageStatus(ctx); });
-  app.post('/api/admin/backup-packages', async (req) => {
+  app.post('/api/admin/backup-packages', async (req, reply) => {
     requireRole(req, 'owner');
-    const result = await createPackage(ctx); audit(ctx, req, 'backup.package_created', result.name); return result;
+    startPackage(ctx); audit(ctx, req, 'backup.package_requested');
+    return reply.code(202).send({ running: true });
   });
   app.put('/api/admin/backup-packages/sync', async (req) => {
     requireRole(req, 'owner'); const { enabled } = (req.body ?? {}) as { enabled?: unknown };
@@ -138,7 +139,7 @@ export function systemRoutes(app: FastifyInstance, ctx: Ctx) {
 
   app.post('/api/admin/backups', async (req) => {
     requireRole(req, 'owner');
-    const file = backupNow(ctx, 'manual');
+    const file = await backupNow(ctx, 'manual');
     audit(ctx, req, 'backup.created', file.split('/').pop());
     return { name: file.split('/').pop() };
   });

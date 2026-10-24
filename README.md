@@ -71,7 +71,7 @@ PokéTracker is one container with a `/data` volume. Pick whichever home suits y
 | Where | Best for | HTTPS |
 | --- | --- | --- |
 | [VPS with Docker](#a-vps-with-docker) | A cheap Linux server with your own domain | Let's Encrypt, automatic |
-| [Azure Container Apps](#azure) | Managed hosting with Azure Files; no VM to maintain | Included |
+| [Azure VM](#azure) | SQLite on a persistent local data disk | Let's Encrypt, automatic |
 | [Unraid, Synology, Portainer](#nas-and-home-servers) | A box you already run at home | Your reverse proxy, if you want it |
 
 Whichever you choose, the first visit asks for a **setup token** before it will create the owner account. That stops a stranger who finds your new instance before you do from claiming it. You can choose the token yourself at deploy time (`SETUP_TOKEN`), or leave it blank and read a random one from the container log:
@@ -107,15 +107,15 @@ Prefer to do it by hand? Copy [`deploy/docker/docker-compose.yml`](deploy/docker
 
 ### Azure
 
-Use the [Azure Container Apps guide](deploy/azure/README.md) for a single container with
-Azure Files persistence and built-in HTTPS. No VM or separate database service is required.
-Keep exactly one instance, use rollback journaling, and stop existing revisions before
-replacing the container image. Prefer in-app updates for routine releases.
+For a new production instance, use the [Azure VM guide](deploy/azure/README.md) and its
+persistent local data disk. This matches SQLite's single-host storage model. Configure
+independent encrypted backups using the supplied host tooling.
 
-Network storage carries additional SQLite locking and recovery risks. The app warns about
-these without blocking startup, and automatically selects rollback journaling for recognised
-network mounts. Nightly database backups remain enabled; keep independent copies of the
-complete instance, including photos and the instance key, for recovery after storage loss.
+The Azure guide also covers existing Container Apps installations. Azure Files is network
+storage and Container Apps can overlap revisions, so that option needs additional operating
+constraints. Prefer in-app updates and never run two revisions against the same database.
+Nightly complete backups include photos and the instance key; keep independent copies for
+recovery after storage loss.
 
 ### NAS and home servers
 

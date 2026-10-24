@@ -1,13 +1,7 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
-  "metadata": {
-    "_generator": {
-      "name": "bicep",
-      "version": "0.47.16.16243",
-      "templateHash": "7239510847885482284"
-    }
-  },
+  "metadata": {},
   "parameters": {
     "appName": {
       "type": "string",
@@ -59,6 +53,14 @@
       "metadata": {
         "description": "IANA time zone used for scheduled jobs and logs, e.g. Europe/London."
       }
+    },
+    "dataShareQuotaGiB": {
+      "type": "int",
+      "defaultValue": 64,
+      "minValue": 20,
+      "metadata": {
+        "description": "Azure Files quota in GiB. Allow room for retained backups and temporary snapshot/compaction files as well as the live database. Review storage costs separately."
+      }
     }
   },
   "variables": {
@@ -100,7 +102,7 @@
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/default/{1}', variables('storageName'), variables('shareName'))]",
       "properties": {
-        "shareQuota": 20
+        "shareQuota": "[parameters('dataShareQuotaGiB')]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
@@ -204,8 +206,9 @@
                     "path": "/health",
                     "port": 3000
                   },
-                  "periodSeconds": 10,
-                  "failureThreshold": 18
+                  "periodSeconds": 60,
+                  "failureThreshold": 10,
+                  "timeoutSeconds": 5
                 },
                 {
                   "type": "Liveness",
@@ -214,7 +217,8 @@
                     "port": 3000
                   },
                   "periodSeconds": 30,
-                  "failureThreshold": 3
+                  "failureThreshold": 10,
+                  "timeoutSeconds": 5
                 }
               ]
             }

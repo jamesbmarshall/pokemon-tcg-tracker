@@ -37,6 +37,10 @@ param registryPassword string = ''
 @description('IANA time zone used for scheduled jobs and logs, e.g. Europe/London.')
 param timeZone string = 'UTC'
 
+@description('Azure Files quota in GiB. Allow room for retained backups and temporary snapshot/compaction files as well as the live database. Review storage costs separately.')
+@minValue(20)
+param dataShareQuotaGiB int = 64
+
 // Storage account names must be globally unique, 3-24 lowercase letters and digits.
 var suffix = uniqueString(resourceGroup().id, appName)
 var storageName = take('pt${toLower(replace(appName, '-', ''))}${suffix}', 24)
@@ -67,7 +71,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
   name: '${storage.name}/default/${shareName}'
   properties: {
-    shareQuota: 20
+    shareQuota: dataShareQuotaGiB
   }
 }
 
@@ -137,8 +141,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           volumeMounts: [{ volumeName: 'data', mountPath: '/data' }]
           probes: [
             // Generous start-up window: the first boot runs migrations and may restore a backup.
-            { type: 'Startup', httpGet: { path: '/health', port: 3000 }, periodSeconds: 10, failureThreshold: 18 }
-            { type: 'Liveness', httpGet: { path: '/health', port: 3000 }, periodSeconds: 30, failureThreshold: 3 }
+            { type: 'Startup', httpGet: { path: '/health', port: 3000 }, timeoutSeconds: 5, periodSeconds: 60, failureThreshold: 10 }
+            { type: 'Liveness', httpGet: { path: '/health', port: 3000 }, timeoutSeconds: 5, periodSeconds: 30, failureThreshold: 10 }
           ]
         }
       ]

@@ -122,3 +122,14 @@ it('reports failed automatic backups without publishing an incomplete package', 
   expect(packageStatus(s.ctx).error).toMatch(/last automatic backup failed/);
   expect(listPackages(s.ctx)).toEqual([]);
 });
+
+it('accepts a manual backup immediately and exposes the completed background result', async () => {
+  const owner = await setupOwner(s.app);
+  const response = await owner.post('/api/admin/backup-packages');
+  expect(response.statusCode).toBe(202);
+  expect(response.json()).toEqual({ running: true });
+  expect(packageStatus(s.ctx).running).toBe(true);
+  await vi.waitFor(() => expect(packageStatus(s.ctx).running).toBe(false), { timeout: 10_000 });
+  expect(packageStatus(s.ctx).error).toBeNull();
+  expect(listPackages(s.ctx)).toHaveLength(1);
+});
