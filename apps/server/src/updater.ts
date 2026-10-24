@@ -240,7 +240,7 @@ export async function applyUpdate(ctx: Ctx, reason = 'manual'): Promise<{ versio
 
     progress('Backing up');
     const backup = join(ctx.config.dataDir, 'backups', `pre-update-${ctx.config.version}-to-${rel.version}-${Date.now()}.db`);
-    ctx.db.backupTo(backup);
+    await ctx.db.backupTo(backup);
 
     progress('Restarting');
     // The launcher restores `backup` if the new version fails its health check.

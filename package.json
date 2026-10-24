@@ -23,7 +23,8 @@
     "test:browser": "playwright test",
     "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "test:crash": "node scripts/crash-rehearsal.mjs",
-    "test:recovery": "node --import tsx scripts/recovery-rehearsal.ts"
+    "test:recovery": "node --import tsx scripts/recovery-rehearsal.ts",
+    "test:backup-reliability": "node --import tsx scripts/backup-responsiveness.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

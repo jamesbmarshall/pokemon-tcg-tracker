@@ -4,6 +4,13 @@ import { join } from 'node:path';
 import type { Ctx } from './context.ts';
 export type PhotoKind = 'photos' | 'sealed-photos';
 const pins = new WeakMap<Ctx, Map<string, number>>();
+const snapshots = new WeakMap<Ctx, number>();
+/** An incremental backup may include photos added after it starts. Defer all orphan
+ * deletion until its copied database and immutable files have both been captured. */
+export function deferPhotoCleanup(ctx: Ctx) {
+  snapshots.set(ctx, (snapshots.get(ctx) ?? 0) + 1);
+  return () => { const count = snapshots.get(ctx)! - 1; if (count) snapshots.set(ctx, count); else snapshots.delete(ctx); };
+}
 const validId = (id: string) => /^[\w-]{1,64}$/.test(id);
 
 export function publishPhoto(ctx: Ctx, kind: PhotoKind, id: string, bytes: Buffer) {
@@ -47,7 +54,7 @@ export function reconcilePhotos(ctx: Ctx, graceMs = 86_400_000) {
     if (!existsSync(dir)) continue;
     for (const file of readdirSync(dir, { withFileTypes: true })) {
       if (!file.isFile() || !/^(?:[\w-]{1,64}|\.upload-[\w-]{1,64}\.tmp)$/.test(file.name)) continue;
-      if (referenced.has(file.name) || pins.get(ctx)?.has(`${kind}/${file.name}`)) continue;
+      if (referenced.has(file.name) || snapshots.has(ctx) || pins.get(ctx)?.has(`${kind}/${file.name}`)) continue;
       const path = join(dir, file.name);
       if (Date.now() - statSync(path).mtimeMs >= graceMs) { unlinkSync(path); removed++; }
     }

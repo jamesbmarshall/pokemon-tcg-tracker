@@ -194,11 +194,11 @@ export const JOBS: JobDef[] = [
 
 const backupDir = (ctx: Ctx) => join(ctx.config.dataDir, 'backups');
 
-/** Writes a backup now. The timestamped name keeps VACUUM INTO from hitting an existing file. */
-export function backupNow(ctx: Ctx, kind: 'daily' | 'manual' = 'manual') {
+/** Writes a consistent online backup. Unique names keep manual and scheduled copies separate. */
+export async function backupNow(ctx: Ctx, kind: 'daily' | 'manual' = 'manual') {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const file = join(backupDir(ctx), `poketracker-${kind}-${stamp}.db`);
-  ctx.db.backupTo(file);
+  await ctx.db.backupTo(file);
   return file;
 }
 
@@ -219,9 +219,9 @@ export function listBackups(ctx: Ctx) {
 }
 
 /** Keeps the newest N daily backups and the newest 3 pre-update ones; manual backups are kept until deleted. */
-export function pruneBackups(ctx: Ctx) {
+export function pruneBackups(ctx: Ctx, dailyToKeep = ctx.config.backupsToKeep) {
   const all = listBackups(ctx);
-  const drop = [...all.filter((b) => b.kind === 'daily').slice(ctx.config.backupsToKeep), ...all.filter((b) => b.kind === 'pre-update').slice(3)];
+  const drop = [...all.filter((b) => b.kind === 'daily').slice(dailyToKeep), ...all.filter((b) => b.kind === 'pre-update').slice(3)];
   for (const b of drop) rmSync(join(backupDir(ctx), b.name), { force: true });
   return drop.length;
 }
@@ -331,12 +331,11 @@ export function startScheduler(ctx: Ctx) {
   // The order is deliberate: fx before prices (values use rates), prices before images (which
   // read the refreshed card data). 'values' is absent because prices runs it.
   const timer = setTimeout(async () => {
-    const rows = new Map(ctx.db.all<JobRow>("SELECT * FROM jobs WHERE last_status = 'ok'").map((r) => [r.name, r]));
+    const rows = new Map(ctx.db.all<JobRow>('SELECT * FROM jobs').map((r) => [r.name, r]));
     for (const j of ['fx', 'sets', 'printings', 'prices', 'update-check', 'images', 'backup', 'cleanup', 'tcg-sets', 'tcg-prices', 'tcg-catalogues']) {
       const def = active.find((d) => d.name === j);
       if (!def) continue; // excluded for this mode (e.g. update-check in demo mode)
-      const last = rows.get(j)?.last_finished_at;
-      if (!last || Date.now() - Date.parse(last) > def.staleMs) await runJob(ctx, j).catch(() => undefined);
+      if (shouldCatchUp(rows.get(j), def.staleMs)) await runJob(ctx, j).catch(() => undefined);
     }
   }, 5_000);
   timer.unref();
@@ -346,4 +345,15 @@ export function startScheduler(ctx: Ctx) {
     crons.forEach((c) => c.stop());
     await Promise.allSettled([...running.values()]);
   };
+}
+
+/** A killed or failed job must not be retried on every restart. Cron/manual runs remain
+ * available, but boot catch-up observes a one-hour cooldown after unsuccessful attempts. */
+export function shouldCatchUp(row: Pick<JobRow, 'last_status' | 'last_started_at' | 'last_finished_at'> | undefined, staleMs: number, at = Date.now()) {
+  if (!row) return true;
+  if (row.last_status !== 'ok') {
+    const lastAttempt = Math.max(Date.parse(row.last_finished_at ?? '') || 0, Date.parse(row.last_started_at ?? '') || 0);
+    return !Number.isFinite(lastAttempt) || at - lastAttempt >= 60 * 60_000;
+  }
+  return !row.last_finished_at || at - Date.parse(row.last_finished_at) > staleMs;
 }

@@ -51,8 +51,8 @@ can invalidate the target; it never becomes a zero-loss storage guarantee.
 ## Optional stronger recovery targets
 
 The following host-tooling checks target installations seeking measured recovery times.
-They are not prerequisites for the low-cost Container Apps setup; see the
-[Azure guide](../deploy/azure/README.md) for its simpler backup and update procedure.
+See the [Azure guide](../deploy/azure/README.md) for the recommended local-disk VM deployment
+and the additional constraints for existing Container Apps installations.
 
 ## Release and deployment acceptance
 

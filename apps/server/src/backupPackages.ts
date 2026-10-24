@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, fsyncSync, openSync, closeSync, chmodSync } from 'node:fs';
-import { copyFile } from 'node:fs/promises';
+import { copyFile, open } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
@@ -7,6 +7,7 @@ import * as tar from 'tar';
 import { bad, HttpError, type Ctx } from './context.ts';
 import { createRecoverySnapshot, restoreRecoverySnapshot, validateRecoverySnapshot } from './recovery.ts';
 import { assertStorage } from './resourceLimits.ts';
+import { pruneBackups } from './jobs.ts';
 import { newId } from './security.ts';
 
 const root = (ctx: Ctx) => join(ctx.config.dataDir, 'backup-packages');
@@ -47,8 +48,47 @@ function setting(ctx: Ctx, key: string) { return ctx.db.get<{ value: string }>('
 function save(ctx: Ctx, key: string, value: string) { ctx.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', key, value); }
 export function packageStatus(ctx: Ctx) {
   const job = ctx.db.get<{ last_status: string }>("SELECT last_status FROM jobs WHERE name = 'backup'");
-  return { files: listPackages(ctx), running: active.has(ctx), error: job?.last_status === 'error' ? 'The last automatic backup failed. Check available storage and try Back up now.' : null, automatic: ctx.config.jobs, schedule: 'Daily at 03:00 (server time)', retention: { daily: 14, monthly: 3, yearly: 1 }, canRestore: ctx.config.supervised && !!ctx.services.requestRestart,
+  return { files: listPackages(ctx), running: active.has(ctx), error: setting(ctx, 'backup_package_error') || (job?.last_status === 'error' ? 'The last automatic backup failed. Try Back up now; your existing backups have been kept.' : null), automatic: ctx.config.jobs, schedule: 'Daily at 03:00 (server time)', retention: { daily: 14, monthly: 3, yearly: 1 }, canRestore: ctx.config.supervised && !!ctx.services.requestRestart,
     sync: { available: !!ctx.config.backupSyncDir, enabled: setting(ctx, 'backup_sync_enabled') === '1', copiedAt: setting(ctx, 'backup_sync_at') ?? null, error: setting(ctx, 'backup_sync_error') ?? null } };
+}
+
+/** Reclaim only automatic copies under pressure. Always retain the newest complete
+ * package and every manual/before-restore package, even when this means refusing a backup. */
+function preparePackageStorage(ctx: Ctx) {
+  prune(ctx);
+  const files = listPackages(ctx);
+  // Once a complete replacement exists, keep just the newest legacy daily DB copy.
+  // Pre-update rollback copies and user-created backups have their own retention.
+  pruneBackups(ctx, files.length > 0 ? 1 : undefined);
+  const required = statSync(ctx.db.file).size * 3;
+  const removable = files.filter(f => f.kind === 'daily' && f.name !== files[0]?.name).reverse();
+  for (;;) {
+    try { assertStorage(ctx, required); return; }
+    catch (error) {
+      const next = removable.shift();
+      if (!next) throw error;
+      rmSync(join(root(ctx), next.name));
+    }
+  }
+}
+
+/** HTTP callers start work and poll status rather than waiting through an ingress timeout. */
+export function startPackage(ctx: Ctx) {
+  const work = createPackage(ctx);
+  void work.catch(error => ctx.log.warn({ err: error }, 'Manual backup failed'));
+}
+
+export async function drainPackageWork(ctx: Ctx) { await active.get(ctx)?.catch(() => undefined); }
+
+/** Called once at boot after the instance lock and staging cleanup. A restart is a
+ * failed attempt, never a successful backup or an instruction to retry immediately. */
+export function settleBackupState(ctx: Ctx) {
+  const interrupted = ctx.db.get("SELECT 1 FROM jobs WHERE name = 'backup' AND last_status = 'running'");
+  ctx.db.run("UPDATE jobs SET last_status = 'error', last_finished_at = ?, last_error = 'Interrupted by server restart; retry delayed' WHERE last_status = 'running'", new Date().toISOString());
+  if (interrupted || setting(ctx, 'backup_package_running') === '1') {
+    save(ctx, 'backup_package_error', 'The previous backup was interrupted by a server restart. Temporary files have been cleaned up; your existing backups are safe.');
+  }
+  save(ctx, 'backup_package_running', '0');
 }
 export function setPackageSync(ctx: Ctx, enabled: boolean) {
   if (enabled && !ctx.config.backupSyncDir) throw bad('Connect a synced backup folder on the server first.');
@@ -86,7 +126,10 @@ export function createPackage(ctx: Ctx, kind: 'daily' | 'manual' | 'before-resto
   if (active.has(ctx)) throw new HttpError(409, 'A backup or restore is already running.');
   const work = (async () => {
     mkdirSync(root(ctx), { recursive: true, mode: 0o700 });
-    const snapshot = await createRecoverySnapshot(ctx);
+    save(ctx, 'backup_package_error', '');
+    save(ctx, 'backup_package_running', '1');
+    preparePackageStorage(ctx);
+    const snapshot = await createRecoverySnapshot(ctx, true);
     const name = `poketracker-${kind}-${snapshot.capturedAt.replace(/[:.]/g, '-')}-${newId()}.tar.gz`;
     const staged = join(root(ctx), `.incoming-${newId()}`);
     try {
@@ -94,14 +137,18 @@ export function createPackage(ctx: Ctx, kind: 'daily' | 'manual' | 'before-resto
       assertStorage(ctx, manifest.files.reduce((sum, f) => sum + f.bytes, 0));
       await tar.c({ gzip: true, file: staged, cwd: snapshot.path, portable: true, noMtime: true, mode: 0o600 }, ['manifest.json', ...manifest.files.map(f => f.path)]);
       chmodSync(staged, 0o600);
-      const fd = openSync(staged, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
+      const fd = await open(staged, 'r'); try { await fd.sync(); } finally { await fd.close(); }
       renameSync(staged, join(root(ctx), name)); syncPath(root(ctx)); syncPath(ctx.config.dataDir);
       prune(ctx);
     } finally { rmSync(staged, { force: true }); rmSync(snapshot.path, { recursive: true, force: true }); }
     try { await syncPackages(ctx); }
     catch { save(ctx, 'backup_sync_error', 'The backup is saved on this server, but copying to the connected folder failed. Check the folder connection and available space.'); }
     return { name };
-  })();
+  })().catch(error => {
+    const message = error instanceof HttpError ? error.message : 'The backup could not finish. Your existing backups are safe. Try again; if it keeps failing, contact the server owner.';
+    save(ctx, 'backup_package_error', message);
+    throw error;
+  }).finally(() => save(ctx, 'backup_package_running', '0'));
   active.set(ctx, work);
   void work.finally(() => { if (active.get(ctx) === work) active.delete(ctx); }).catch(() => {});
   return work;

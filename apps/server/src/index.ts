@@ -1,4 +1,5 @@
-import { applyPendingRestore } from './backupPackages.ts';
+import { applyPendingRestore, settleBackupState } from './backupPackages.ts';
+import { cleanupInterruptedRecovery } from './recovery.ts';
 import { assertWriteProtocol } from './mutations.ts';
 import { startRecoveryControl } from './recoveryControl.ts';
 /**
@@ -24,6 +25,7 @@ import { seedDemo } from './demo.ts';
 async function main() {
   const config = loadConfig();
   const releaseLock = acquireInstanceLock(config.dataDir);
+  await cleanupInterruptedRecovery(config.dataDir);
   applyPendingRestore(config.dataDir);
   assertWriteProtocol(config.dataDir);
   const storage = storagePolicy(config.dataDir, config.journalMode);
@@ -44,6 +46,7 @@ async function main() {
   let stopping = false;
   let shutdownPromise: Promise<void> | undefined;
   const ctx: Ctx = { config, db, sealer, log: console as unknown as Ctx['log'], services: {} };
+  settleBackupState(ctx);
   const app = await buildApp(ctx);
   initCatalog(ctx);
   // Demo instances seed themselves on first boot (and stay seeded across restarts since
