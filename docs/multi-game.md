@@ -44,6 +44,14 @@ catalogue adapter. `PokemonTcgCard` requires detailed variant records, but does
 not certify that the catalogue's coverage is complete. See the
 [field mapping](tcg-field-mapping.md) before migrating a consumer.
 
+`tcg/completion.ts` adds keyed completion reports alongside the existing result
+shapes. Pokémon retains Base/Full/Master/All via its existing policy; generic
+games retain identity/printing/finish measures. Measure slot completion is separate
+from catalogue coverage and uncertainty, and an empty measure is never complete.
+Callers must scope catalogues by language and provide Pokémon's existing eligible
+ownership index, including opted-in slabs. These projections do not change current
+module callbacks or UI; module/provider wiring and caller migration follow later.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.
