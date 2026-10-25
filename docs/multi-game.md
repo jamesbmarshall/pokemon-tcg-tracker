@@ -52,6 +52,28 @@ Callers must scope catalogues by language and provide Pokémon's existing eligib
 ownership index, including opted-in slabs. These projections do not change current
 module callbacks or UI; module/provider wiring and caller migration follow later.
 
+### Module registration and rule context (U05)
+
+Game definitions live under `tcg/modules`; existing exports from `tcg/registry`
+remain supported. Registry construction rejects duplicate language/filter/format
+keys, missing completion/format/scan handlers and advertised deck capabilities
+without formats and deck tools. Sealed and precon declarations require product
+types and attribution respectively. Pokémon explicitly declares its temporary
+controller-owned compatibility behavior until the normalized adapters replace it.
+
+`requireCapability` provides a typed `GameCapabilityError` with a stable
+`unsupported_capability` code. Server boundaries must map that domain error to an
+appropriate HTTP error when they adopt the helper; capabilities never replace
+authorization. Disabled capabilities may retain handlers for compatibility but
+must not be exposed by callers. Provider capabilities are validated separately.
+
+Validators, ownership and analysis accept optional `GameRulesContext` so callers
+can supply catalogue completeness and source-owned settings without global reads.
+Settings are `unknown` until a game adapter validates them; do not assert them into
+a trusted configuration. Existing functions remain valid when no context is used.
+Magic now also registers its keyed completion report; Pokémon's report wiring
+waits for the normalized catalogue adapter.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.
