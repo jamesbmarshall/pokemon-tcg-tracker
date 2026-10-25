@@ -127,6 +127,9 @@ export interface DeckOwnership {
   needed: number;
   owned: number;
   missing: number;
+  /** Ownership cannot be fully established from the supplied catalogue/rule context. */
+  unverified?: boolean;
+  deckCardIds?: string[];
 }
 export interface Holding {
   id: string;
@@ -269,12 +272,20 @@ export interface GameModule {
   completionReport?: (
     cards: TcgCard[], holdings: Holding[], slabs: Slab[], catalogueComplete: boolean,
   ) => CompletionReport;
-  scan: (text: string) => { set?: string; number: string }[];
+  scan: (text: string) => GameScanCandidate[];
+}
+export interface GameScanCandidate {
+  set?: string;
+  number: string;
+  total?: string;
+  confidence?: number;
+  raw?: string;
 }
 /** Game adapters validate/narrow settings at their boundary; rules never read global settings.
  * Unknown completeness must not certify legality. Settings stay source-owned and extensible.
  */
 export interface GameRulesContext {
+  format?: string;
   catalogueComplete?: boolean;
   settings?: unknown;
 }
