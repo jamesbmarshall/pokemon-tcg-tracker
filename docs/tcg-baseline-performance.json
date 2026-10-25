@@ -1,0 +1,245 @@
+{
+  "date": "2026-10-25",
+  "method": "Offline synthetic file-backed SQLite; five warm state reads, one import per game, one worker backup; dataset sizes run concurrently. Timings are exploratory, not release budgets. RSS is process high-water, not isolated operation peak.",
+  "results": [
+    {
+      "recordsPerGame": 1000,
+      "node": "v24.19.0",
+      "platform": "linux",
+      "arch": "x64",
+      "reads": {
+        "pokemon": {
+          "medianMs": 7.6957459999999855,
+          "maxMs": 40.333222999999975,
+          "samples": 5
+        },
+        "mtg": {
+          "medianMs": 5.243337999999994,
+          "maxMs": 5.640830999999935,
+          "samples": 5
+        }
+      },
+      "importMs": {
+        "pokemon": 51.28320099999996,
+        "mtg": 117.89677300000017
+      },
+      "backupMs": 188.49546299999997,
+      "backupBytes": 2809856,
+      "processHighWaterRssKiB": 207580,
+      "setupNetworkRequests": 0,
+      "networkRequests": 1,
+      "verified": true
+    },
+    {
+      "recordsPerGame": 10000,
+      "node": "v24.19.0",
+      "platform": "linux",
+      "arch": "x64",
+      "reads": {
+        "pokemon": {
+          "medianMs": 148.33094600000004,
+          "maxMs": 210.81258300000013,
+          "samples": 5
+        },
+        "mtg": {
+          "medianMs": 98.36422300000004,
+          "maxMs": 106.23228500000005,
+          "samples": 5
+        }
+      },
+      "importMs": {
+        "pokemon": 214.47018100000014,
+        "mtg": 665.3923560000003
+      },
+      "backupMs": 183.77536400000008,
+      "backupBytes": 24248320,
+      "processHighWaterRssKiB": 465896,
+      "setupNetworkRequests": 0,
+      "networkRequests": 2,
+      "verified": true
+    },
+    {
+      "recordsPerGame": 20000,
+      "node": "v24.19.0",
+      "platform": "linux",
+      "arch": "x64",
+      "reads": {
+        "pokemon": {
+          "medianMs": 165.94360499999993,
+          "maxMs": 226.01205899999968,
+          "samples": 5
+        },
+        "mtg": {
+          "medianMs": 153.03775399999995,
+          "maxMs": 192.4216449999999,
+          "samples": 5
+        }
+      },
+      "importMs": {
+        "pokemon": 347.5336419999994,
+        "mtg": 1047.1198550000008
+      },
+      "backupMs": 114.49135000000024,
+      "backupBytes": 48480256,
+      "processHighWaterRssKiB": 719320,
+      "setupNetworkRequests": 0,
+      "networkRequests": 3,
+      "verified": true
+    }
+  ],
+  "sequentialFollowup": {
+    "method": "Sequential fresh processes; current printing-version snapshots; one warmup and five state samples. Query counts include Db.all/get/run calls on the main connection, excluding worker SQL. Imports measured once; RSS includes setup. No lock-duration or per-operation peak claim.",
+    "results": [
+      {
+        "recordsPerGame": 1000,
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "reads": {
+          "pokemon": {
+            "medianMs": 3.7578829999999925,
+            "maxMs": 4.03889300000003,
+            "samples": 5,
+            "querySamples": [
+              12,
+              12,
+              12,
+              12,
+              12
+            ]
+          },
+          "mtg": {
+            "medianMs": 4.304778999999996,
+            "maxMs": 6.046385999999984,
+            "samples": 5,
+            "querySamples": [
+              6,
+              6,
+              6,
+              6,
+              6
+            ]
+          }
+        },
+        "imports": {
+          "pokemon": {
+            "elapsedMs": 48.62981300000001,
+            "queries": 1033,
+            "networkAttempts": 0
+          },
+          "mtg": {
+            "elapsedMs": 70.17571699999996,
+            "queries": 1032,
+            "networkAttempts": 0
+          }
+        },
+        "backupMs": 76.31278100000009,
+        "backupBytes": 2846720,
+        "processHighWaterRssKiB": 183548,
+        "setupNetworkRequests": 0,
+        "networkRequests": 0,
+        "verified": true
+      },
+      {
+        "recordsPerGame": 10000,
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "reads": {
+          "pokemon": {
+            "medianMs": 50.817233999999985,
+            "maxMs": 58.81487000000004,
+            "samples": 5,
+            "querySamples": [
+              30,
+              30,
+              30,
+              30,
+              30
+            ]
+          },
+          "mtg": {
+            "medianMs": 74.96198700000002,
+            "maxMs": 137.77101300000004,
+            "samples": 5,
+            "querySamples": [
+              28,
+              28,
+              28,
+              28,
+              28
+            ]
+          }
+        },
+        "imports": {
+          "pokemon": {
+            "elapsedMs": 338.59835,
+            "queries": 10069,
+            "networkAttempts": 0
+          },
+          "mtg": {
+            "elapsedMs": 829.4703509999999,
+            "queries": 10098,
+            "networkAttempts": 0
+          }
+        },
+        "backupMs": 184.96426199999996,
+        "backupBytes": 24678400,
+        "processHighWaterRssKiB": 509396,
+        "setupNetworkRequests": 0,
+        "networkRequests": 0,
+        "verified": true
+      },
+      {
+        "recordsPerGame": 20000,
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "reads": {
+          "pokemon": {
+            "medianMs": 156.33817299999987,
+            "maxMs": 187.16824300000007,
+            "samples": 5,
+            "querySamples": [
+              50,
+              50,
+              50,
+              50,
+              50
+            ]
+          },
+          "mtg": {
+            "medianMs": 195.44191,
+            "maxMs": 215.03072999999995,
+            "samples": 5,
+            "querySamples": [
+              53,
+              53,
+              53,
+              53,
+              53
+            ]
+          }
+        },
+        "imports": {
+          "pokemon": {
+            "elapsedMs": 649.975543,
+            "queries": 20109,
+            "networkAttempts": 0
+          },
+          "mtg": {
+            "elapsedMs": 1522.1588280000005,
+            "queries": 20173,
+            "networkAttempts": 0
+          }
+        },
+        "backupMs": 195.10675399999946,
+        "backupBytes": 49225728,
+        "processHighWaterRssKiB": 678720,
+        "setupNetworkRequests": 0,
+        "networkRequests": 0,
+        "verified": true
+      }
+    ]
+  }
+}

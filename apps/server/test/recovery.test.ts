@@ -20,6 +20,13 @@ it('restores complete collector data, photos and encrypted integration secrets i
   setPcKey(s.ctx, 'synthetic-provider-key');
   const share = await c.post('/api/shares', { collectionId: id, scope: 'graded', audience: 'public' });
   expect(share.statusCode).toBe(200);
+  // Recovery must include generic game records and files alongside legacy Pokémon data.
+  const magicSlab = { cardId: 'mtg:synthetic', finish: 'foil', certNumber: '000456', valueUsd: 99 };
+  s.ctx.db.run("INSERT INTO tcg_records VALUES (?, 'mtg', 'graded', 'magic-slab', ?, NULL)", id, JSON.stringify(magicSlab));
+  s.ctx.db.run("INSERT INTO tcg_records VALUES (?, 'mtg', 'entry', 'deleted-entry', '{}', '2026-01-02')", id);
+  const magicBytes = Buffer.from([0xff, 0xd8, 0xff, 9, 8, 7]);
+  writeFileSync(join(s.dir, 'photos', 'magic-photo'), magicBytes);
+  s.ctx.db.run("INSERT INTO tcg_photos VALUES ('magic-photo', ?, 'mtg', 'graded', 'magic-slab', 'image/jpeg', '2026-01-02')", id);
   const snapshot = await createRecoverySnapshot(s.ctx);
   expect((await validateRecoverySnapshot(snapshot.path)).files.some((f) => f.path === `photos/${photo.id}`)).toBe(true);
   const target = join(s.dir, 'restored');
@@ -34,6 +41,11 @@ it('restores complete collector data, photos and encrypted integration secrets i
     expect(() => validateInstanceSecrets(db, sealer)).not.toThrow();
     expect(sealer.open(db.get<{ value: string }>("SELECT value FROM settings WHERE key = 'pricecharting_key'")!.value)).toBe('synthetic-provider-key');
     expect(readFileSync(join(target, 'photos', photo.id))).toEqual(readFileSync(join(s.dir, 'photos', photo.id)));
+    expect(db.get('SELECT data FROM tcg_records WHERE id = ?', 'magic-slab')).toEqual({ data: JSON.stringify(magicSlab) });
+    expect(db.get('SELECT deleted_at FROM tcg_records WHERE id = ?', 'deleted-entry')).toEqual({ deleted_at: '2026-01-02' });
+    expect(db.get('SELECT collection_id,game,kind,record_id FROM tcg_photos WHERE id = ?', 'magic-photo')).toEqual({ collection_id: id, game: 'mtg', kind: 'graded', record_id: 'magic-slab' });
+    expect(readFileSync(join(target, 'photos', 'magic-photo'))).toEqual(magicBytes);
+    expect(db.all('PRAGMA foreign_key_check')).toEqual([]);
   } finally { db.close(); }
   await expect(restoreRecoverySnapshot(snapshot.path, target)).rejects.toThrow('new or empty destination');
 });
