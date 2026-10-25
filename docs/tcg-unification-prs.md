@@ -6,6 +6,8 @@ Implementation started: U01 is in progress; see the [baseline inventory and outs
 
 U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossless field mapping](tcg-field-mapping.md) for additive implementation. Remaining U01 WebKit/manual checks gate affected caller cutovers and release, while additive types can proceed against the established preservation fixtures. This sequencing clarification does not waive those checks or authorize data deletion.
 
+U03 implements additive physical-variant types and compatibility projections with preservation tests. Existing routes, caches and holdings have not switched formats; the Pokémon provider adapter remains U08 work.
+
 ## Merge and release rules
 
 Every PR leaves both Pokémon and Magic usable. New abstractions initially coexist with compatibility adapters; callers move only after their prerequisites pass. Preserve one authoritative write path throughout. A read/UI rollout switch must not select a second independent writer. Legacy URLs and exported formats remain supported.

@@ -25,6 +25,25 @@ mutation receipts with Pokémon. A game ID is a stable string; adding a game doe
 not require changing SQL enum constraints. New IDs must be namespaced by game;
 Pokémon IDs must never be rewritten.
 
+### Additive physical-variant contracts (U03)
+
+`tcg/printing.ts` owns `CollectibleVariant`; the legacy `CardPrinting` name is a
+type alias to preserve existing consumers. `TcgCard.variants` is optional so old
+cached records remain valid. `tcg/variants.ts` projects detailed Pokémon printings
+or older generic finish lists into independent cloned variant records. Detailed
+evidence and aliases are preserved; summary finishes do not establish size,
+release distribution or completion eligibility. Explicit empty generic variant
+lists remain empty, rather than being unioned with summary flags. Duplicate or
+empty identities fail projection before ownership could collapse.
+
+These helpers consume trusted typed domain records; provider runtime validation
+remains required at the server boundary. They do not rewrite stored cards,
+holdings, prices or API responses. `PokemonDetails` retains game facts, complete
+source price blocks, set/image metadata and printing context for the future
+catalogue adapter. `PokemonTcgCard` requires detailed variant records, but does
+not certify that the catalogue's coverage is complete. See the
+[field mapping](tcg-field-mapping.md) before migrating a consumer.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.
