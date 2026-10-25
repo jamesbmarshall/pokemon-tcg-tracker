@@ -1,5 +1,5 @@
 import type { CardSnapshot } from '../types';
-import { checkDeckLegality, normalizedCardName, type DeckCard, type DeckFormat, type LegalityOptions } from '../decks/legality';
+import { checkDeckLegality, DEFAULT_BANNED_CARDS, normalizedCardName, type DeckCard, type DeckFormat, type LegalityOptions } from '../decks/legality';
 import { computeDeckOwnership } from '../decks/ownership';
 import { formatDeckText, isDeckTextMetadataLine, parseDeckText } from '../decks/ptcgl';
 import { parseScanText } from '../scan';
@@ -95,7 +95,15 @@ export function validatePokemonDeck(items: DeckItem[], cards: Map<string, TcgCar
     else known.push({ card: ruleCard.snapshot, qty: item.quantity });
   }
   const legacy = checkDeckLegality(known, format, options);
+  // A configured printing ban is proof even without catalogue details. Check the
+  // requested IDs once, independently of the subset usable for other rules.
+  if (format === 'expanded') {
+    const banned = new Set(options.bannedCardIds ?? DEFAULT_BANNED_CARDS);
+    const cardIds = [...new Set(main.filter((item) => banned.has(item.cardId)).map((item) => item.cardId))];
+    if (cardIds.length) issues.push({ code: 'banned', message: `${cardIds.length} card${cardIds.length === 1 ? ' is' : 's are'} banned in Expanded.`, cardIds });
+  }
   for (const issue of legacy.issues) {
+    if (issue.code === 'banned') continue;
     // Missing cards may be Basic Pokémon and contribute to deck size. Other violations
     // established by the known subset (e.g. five copies) remain definite violations.
     if (missing.length && ['deck-size', 'basic-required'].includes(issue.code)) continue;
@@ -131,6 +139,14 @@ export const pokemonDeckTools: NonNullable<GameModule['deckTools']> = {
       const card = cards.get(item.cardId);
       const ruleCard = card && pokemonRuleCard(card);
       if (!ruleCard) throw new PokemonRuleError('invalid_deck_export', `Missing Pokémon details for ${item.cardId}`);
+      // Validate against the actual shared grammar, including names that could
+      // inject extra rows. Never silently fall back to a name-only export.
+      const snapshot = ruleCard.snapshot;
+      const parsed = parseDeckText(formatDeckText([{ card: snapshot, qty: item.quantity }])).lines;
+      if (!snapshot.setCode || !snapshot.number || parsed.length !== 1 ||
+        parsed[0].qty !== item.quantity || parsed[0].name !== snapshot.name ||
+        parsed[0].setCode !== snapshot.setCode.toUpperCase() || parsed[0].number !== snapshot.number)
+        throw new PokemonRuleError('invalid_deck_export', `PTCGL cannot preserve the name and printing identifiers for ${item.cardId}`);
       return { card: ruleCard.snapshot, qty: item.quantity };
     });
     return formatDeckText(rows);
@@ -141,7 +157,11 @@ export const pokemonDeckTools: NonNullable<GameModule['deckTools']> = {
     const uncertainNames = new Set<string>();
     for (const card of cards.values()) {
       const ruleCard = pokemonRuleCard(card);
-      if (ruleCard?.complete) known.set(card.id, ruleCard.snapshot);
+      if (ruleCard?.complete) {
+        known.set(card.id, ruleCard.snapshot);
+        if (checkDeckLegality([{ card: ruleCard.snapshot, qty: 1 }], format, options).issues.some((issue) => issue.code === 'format-unknown'))
+          uncertainNames.add(normalizedCardName(card.name));
+      }
       else if (card.game === 'pokemon') uncertainNames.add(normalizedCardName(card.name));
     }
     const quantities = new Map<string, number>();

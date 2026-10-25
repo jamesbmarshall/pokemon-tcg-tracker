@@ -52,6 +52,22 @@ describe('Pokémon shared rule adapters', () => {
     expect(result.issues).toMatchObject([{ code: 'copy-limit', cardIds: [basic.id, reprint.id] }]);
   });
 
+  it.each(['missing', 'incomplete', 'complete'])('enforces explicit Expanded bans with %s card details', (state) => {
+    const map = new Map(cards);
+    if (state === 'missing') map.delete(basic.id);
+    if (state === 'incomplete') map.set(basic.id, { ...basic, details: { ...basic.details, detailed: false } });
+    const settings = { bannedCardIds: [basic.id, 'maybeboard-only'] };
+    const items: DeckItem[] = [...deck, { cardId: 'maybeboard-only', quantity: 1, zone: 'maybeboard' }];
+    const result = validatePokemonDeck(items, map, 'expanded', { ...context, settings });
+    expect(result.status).toBe('illegal');
+    expect(result.issues.filter((issue) => issue.code === 'banned')).toEqual([
+      { code: 'banned', message: '1 card is banned in Expanded.', cardIds: [basic.id] },
+    ]);
+    if (state !== 'complete') expect(result.issues).toContainEqual(expect.objectContaining({ code: 'rules-missing', unverified: true }));
+    for (const format of ['standard', 'unlimited'] as const)
+      expect(validatePokemonDeck(items, map, format, { ...context, settings }).issues.some((issue) => issue.code === 'banned')).toBe(false);
+  });
+
   it.each(['ACE SPEC', 'Radiant'])('retains the %s construction limit', (subtype) => {
     const restricted = card('restricted', 'Restricted', { supertype: subtype === 'ACE SPEC' ? 'Trainer' : 'Pokémon', subtypes: [subtype] });
     const result = validatePokemonDeck([deck[0], { ...deck[1], quantity: 54 }, { cardId: restricted.id, quantity: 2, zone: 'main' }], new Map([...cards, [restricted.id, restricted]]), 'standard', context);
@@ -109,6 +125,25 @@ describe('Pokémon shared rule adapters', () => {
     expect(rows).toEqual([{ name: basic.name, cardId: basic.id, deckCardIds: [basic.id, unknown.id], needed: 5, owned: 2, missing: 3, unverified: true }]);
   });
 
+  it.each(['standard', 'expanded'] as const)('marks unknown %s eligibility uncertain while excluding unverified copies', (format) => {
+    const unknown = card('unknown-format', basic.name, { regulationMark: undefined });
+    const map = new Map([...cards, [unknown.id, unknown] as const]);
+    const holdings = [entry(unknown.id, 10), entry(basic.id, 2)];
+    const row = pokemonDeckTools.ownership(deck, map, holdings, { ...context, format })[0];
+    expect(row).toMatchObject({ owned: 2, missing: 2, unverified: true });
+    const ownDeck: DeckItem[] = [{ cardId: unknown.id, quantity: 4, zone: 'main' }];
+    expect(pokemonDeckTools.ownership(ownDeck, new Map([[unknown.id, unknown]]), holdings, { ...context, format })[0])
+      .toMatchObject({ owned: 0, missing: 4, unverified: true });
+    expect(pokemonDeckTools.ownership(deck, map, holdings, { ...context, format: 'unlimited' })[0])
+      .toEqual({ name: basic.name, cardId: basic.id, deckCardIds: [basic.id], needed: 4, owned: 12, missing: 0 });
+    for (const flag of [true, false]) {
+      const explicit = { ...unknown, details: { ...unknown.details, legal: { [format]: flag } } };
+      const result = pokemonDeckTools.ownership(deck, new Map([...cards, [unknown.id, explicit]]), holdings, { ...context, format })[0];
+      expect(result.owned).toBe(flag ? 12 : 2);
+      expect(result.unverified).toBeUndefined();
+    }
+  });
+
   it('reuses PTCGL grammar with original line numbers, normalized Energy and visible row errors', () => {
     const text = 'Pokémon: 4\r\n4 Basic Pokémon SVI 001\r\n\r\n// comment\r\nEnergy: 56\r\n56 Basic {R} Energy SVI 002\r\nTotal Cards: 60\r\ninvalid row';
     const parsed = pokemonDeckTools.parse(text);
@@ -130,6 +165,27 @@ describe('Pokémon shared rule adapters', () => {
     expect(() => pokemonDeckTools.format([...deck, { cardId: 'missing', quantity: 1, zone: 'main' }], cards)).toThrow('Missing Pokémon');
     expect(() => pokemonDeckTools.format([{ ...deck[0], zone: 'maybeboard' }], cards)).toThrow('PTCGL export');
     expect(pokemonDeckTools.analyze([...deck, { ...deck[0], quantity: 10, zone: 'maybeboard' }], cards)).toEqual({ categories: { Pokémon: 4, Energy: 56 }, types: {} });
+  });
+
+  it.each([
+    { setCode: 'SVI', number: '' },
+    { setCode: 'SHF', number: 'SV045' },
+    { setCode: '', number: '001' },
+    { setCode: 'INVALID CODE', number: '001' },
+    { number: '1/198' },
+    { name: 'Basic Pokémon\n1 Injected SVI 002' },
+  ])('rejects exports whose printing or name cannot round-trip: %j', (fields) => {
+    const invalid = { ...basic, ...fields };
+    expect(() => pokemonDeckTools.format([deck[0]], new Map([[basic.id, invalid]])))
+      .toThrow(expect.objectContaining({ code: 'invalid_deck_export' }));
+  });
+
+  it('round-trips supported alphanumeric collector numbers and normalized set codes', () => {
+    const supported = { ...basic, setCode: 'swsh', number: 'TG05' };
+    const text = pokemonDeckTools.format([deck[0]], new Map([[basic.id, supported]]));
+    expect(pokemonDeckTools.parse(text).rows).toEqual([
+      { name: basic.name, quantity: 4, zone: 'main', set: 'SWSH', number: 'TG05', line: 2 },
+    ]);
   });
 
   it.each(['OBF 045/197', 'TG05/TG30', 'SVP 064', '12O/198 SVI'])('preserves scan evidence for %s', (text) => {
