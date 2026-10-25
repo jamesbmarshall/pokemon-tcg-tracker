@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-25",
+  "method": "Offline synthetic file-backed SQLite; five warm state reads, one import per game, one worker backup; dataset sizes run concurrently. Timings are exploratory, not release budgets. RSS is process high-water, not isolated operation peak.",
+  "results": [
+    {
+      "recordsPerGame": 1000,
+      "node": "v24.19.0",
+      "platform": "linux",
+      "arch": "x64",
+      "reads": {
+        "pokemon": {
+          "medianMs": 7.6957459999999855,
+          "maxMs": 40.333222999999975,
+          "samples": 5
+        },
+        "mtg": {
+          "medianMs": 5.243337999999994,
+          "maxMs": 5.640830999999935,
+          "samples": 5
+        }
+      },
+      "importMs": {
+        "pokemon": 51.28320099999996,
+        "mtg": 117.89677300000017
+      },
+      "backupMs": 188.49546299999997,
+      "backupBytes": 2809856,
+      "processHighWaterRssKiB": 207580,
+      "setupNetworkRequests": 0,
+      "networkRequests": 1,
+      "verified": true
+    },
+    {
+      "recordsPerGame": 10000,
+      "node": "v24.19.0",
+      "platform": "linux",
+      "arch": "x64",
+      "reads": {
+        "pokemon": {
+          "medianMs": 148.33094600000004,
+          "maxMs": 210.81258300000013,
+          "samples": 5
+        },
+        "mtg": {
+          "medianMs": 98.36422300000004,
+          "maxMs": 106.23228500000005,
+          "samples": 5
+        }
+      },
+      "importMs": {
+        "pokemon": 214.47018100000014,
+        "mtg": 665.3923560000003
+      },
+      "backupMs": 183.77536400000008,
+      "backupBytes": 24248320,
+      "processHighWaterRssKiB": 465896,
+      "setupNetworkRequests": 0,
+      "networkRequests": 2,
+      "verified": true
+    },
+    {
+      "recordsPerGame": 20000,
+      "node": "v24.19.0",
+      "platform": "linux",
+      "arch": "x64",
+      "reads": {
+        "pokemon": {
+          "medianMs": 165.94360499999993,
+          "maxMs": 226.01205899999968,
+          "samples": 5
+        },
+        "mtg": {
+          "medianMs": 153.03775399999995,
+          "maxMs": 192.4216449999999,
+          "samples": 5
+        }
+      },
+      "importMs": {
+        "pokemon": 347.5336419999994,
+        "mtg": 1047.1198550000008
+      },
+      "backupMs": 114.49135000000024,
+      "backupBytes": 48480256,
+      "processHighWaterRssKiB": 719320,
+      "setupNetworkRequests": 0,
+      "networkRequests": 3,
+      "verified": true
+    }
+  ]
+}
