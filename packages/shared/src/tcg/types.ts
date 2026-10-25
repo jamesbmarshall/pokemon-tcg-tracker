@@ -1,4 +1,7 @@
 /** Game-neutral collection contracts. Provider IDs and playable identities are distinct. */
+import type { PokemonCard } from '../types';
+import type { CollectibleVariant } from './printing';
+export type { CollectibleVariant } from './printing';
 export type GameId = string;
 export interface TcgSet {
   game: GameId;
@@ -46,6 +49,8 @@ export interface TcgCard {
   image: string;
   faces: CardFace[];
   finishes: string[];
+  /** Additive detailed physical variants; absent on older normalized cache records. */
+  variants?: CollectibleVariant[];
   treatments: string[];
   extra: boolean;
   paper: boolean;
@@ -69,6 +74,17 @@ export interface MagicDetails {
   producedMana: string[];
 }
 export type MagicCard = TcgCard & { details: MagicDetails };
+/** Preserve all Pokémon-specific facts, source price blocks and catalogue metadata.
+ * Common identity/display fields and physical variants live on the normalized card.
+ */
+export type PokemonDetails = { kind: 'pokemon' } & Omit<
+  PokemonCard,
+  'id' | 'name' | 'number' | 'rarity' | 'artist' | 'variants' | 'printings'
+>;
+export type PokemonTcgCard = TcgCard & {
+  details: PokemonDetails;
+  variants: CollectibleVariant[];
+};
 export interface SearchField {
   key: string;
   label: string;

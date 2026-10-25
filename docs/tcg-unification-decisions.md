@@ -2,6 +2,8 @@
 
 Status: proposed implementation decisions, 25 October 2026. Prepared alongside U01; contract changes remain gated on the baseline inventory and relevant regression evidence. Parent: [refactoring plan](tcg-unification-plan.md). No persisted format changes are introduced by this document.
 
+The [field mapping](tcg-field-mapping.md) specifies preservation requirements and the boundary between additive contract work and caller cutover. Decisions here guide that additive work; review and remaining baseline gates continue before deployment/cutover.
+
 ## 1. Preserve external identity; scope internal operations explicitly
 
 Public Pokémon card IDs and ownership keys remain unchanged. Existing Magic IDs remain unchanged. Server operations carry a game ID explicitly and verify referenced records against that game's catalogue; textual prefixes alone do not establish ownership. Never derive set membership from ID parsing in shared domain logic.
