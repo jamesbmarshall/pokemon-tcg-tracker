@@ -101,6 +101,25 @@ its display defaults must not replace the source metadata documented in the fiel
 mapping. Existing Pokémon UI, routes and data formats remain in service until their
 planned cutover.
 
+### Server provider registry (U07)
+
+`apps/server/src/tcg/providerRegistry.ts` provides an injectable source-owned
+registry. Catalogue selection receives instance context, game and optional
+language. Factory construction receives that language for providers whose set
+catalogue is language-specific. Stored card/set references resolve through declared
+ownership independently of today's selection. Unknown or ambiguous ownership fails
+before construction or HTTP; an explicit provider attribution can resolve a genuine
+namespace overlap, but cannot claim an unrelated ID.
+
+The default registration remains Scryfall for Magic. Pokémon's provider adapter is
+added in U08. Card detail hydration, uncached imports and tracked-price refreshes
+now use stored-card dispatch; set detail uses stored-set dispatch. Provider URL
+construction, runtime JSON validation, cache policy, pagination limits, resilience
+and image allowlists stay inside existing adapters/helpers. Registrations are
+copied and validated, and invalid game/factory combinations fail closed. No
+runtime plugin loader, provider switch, ID conversion or new external host is
+introduced.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.

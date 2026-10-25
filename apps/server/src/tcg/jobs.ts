@@ -3,7 +3,7 @@ import type { ScryfallCard } from '@poketracker/shared/tcg/scryfall';
 import type { Ctx } from '../context.ts';
 import { assertStorage } from '../resourceLimits.ts';
 import { recordGameValue } from './state.ts';
-import { providerFor, scryfallJson, normalizeScryfall } from './provider.ts';
+import { providerFor, providerForCard, scryfallJson, normalizeScryfall } from './provider.ts';
 import {
   pcConfigured,
   pcProduct,
@@ -195,7 +195,7 @@ export async function refreshGamePrices(ctx: Ctx) {
   for (const [game, cards] of ids)
     for (const id of cards) {
       try {
-        const card = await providerFor(ctx, game).card(id);
+        const card = await providerForCard(ctx, game, id).card(id);
         if (Date.now() - Date.parse(card.fetchedAt) < 6 * 3600_000) refreshed++;
       } catch {
         /* retain last quote */

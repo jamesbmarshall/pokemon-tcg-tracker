@@ -16,6 +16,8 @@ U06 registers Pokémon's deck/scan adapters against existing algorithms, with ex
 
 U06 validation: all 179 shared tests passed, including 16 adapter cases; 35 selected server deck/TCG tests, typecheck, lint and production build passed. Existing UI and schema remain unchanged; normalized adapters are registered for later shared-service adoption.
 
+U07 introduces centralized catalogue selection and stored card/set dispatch, with source-owned provider factories, language-aware construction and ambiguity rejection. Existing Scryfall HTTP/cache safeguards remain authoritative. Pokémon registration follows in U08; current selection is unchanged.
+
 Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
 
 ## Merge and release rules
