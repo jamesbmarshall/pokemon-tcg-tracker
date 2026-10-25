@@ -2,7 +2,7 @@
 
 Status: proposed, 25 October 2026. These identifiers are planning IDs, not GitHub PR numbers. Parent: [TCG unification plan](tcg-unification-plan.md).
 
-Implementation status: U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U04 have been implemented as stacked PRs #66–#68; U05 adds module validation as the next stack entry. U06 is next. These changes await review/merge; later PRs remain proposed.
+Implementation status (25 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. U06 review fixes were pushed as `90e3a77`. U07 is committed locally on `codex/tcg-provider-registry`; it needs the U06 fixes incorporated and publication verified before U08 begins. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
 
 U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossless field mapping](tcg-field-mapping.md) for additive implementation. Remaining U01 WebKit/manual checks gate affected caller cutovers and release, while additive types can proceed against the established preservation fixtures. This sequencing clarification does not waive those checks or authorize data deletion.
 
@@ -15,6 +15,8 @@ U05 separates module definitions from registry wiring, validates advertised hand
 U06 registers Pokémon's deck/scan adapters against existing algorithms, with explicit settings, conservative unverified outcomes, bounded PTCGL parsing and format-aware ownership. Its rule snapshot is intentionally not a persistent-card converter. Completion/provider/state compatibility remains until U08 and later caller migrations.
 
 U06 validation: all 179 shared tests passed, including 16 adapter cases; 35 selected server deck/TCG tests, typecheck, lint and production build passed. Existing UI and schema remain unchanged; normalized adapters are registered for later shared-service adoption.
+
+U06 review follow-up: explicit Expanded bans now apply even without complete catalogue records; unknown format eligibility marks ownership uncertain; exports must round-trip through the shared PTCGL grammar without losing printing identifiers. After these fixes, all 191 shared tests (28 adapter cases), typecheck and lint passed. The follow-up did not complete another server/build run.
 
 Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
 
