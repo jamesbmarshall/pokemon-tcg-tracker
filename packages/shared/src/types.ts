@@ -4,35 +4,9 @@
  */
 export type PriceBlock = { low?: number; mid?: number; high?: number; market?: number; directLow?: number };
 
-/** Printing identity is separate from finish and completion eligibility. */
-export interface CardPrinting {
-  id: string;
-  label: string;
-  finish: string;
-  size: string;
-  stamp?: string;
-  edition?: string;
-  distribution: 'expansion' | 'exclusive' | 'unknown';
-  status: 'verified' | 'inferred' | 'unverified';
-  /** Checklist membership is independent of historical release origin. */
-  role?: 'core' | 'parallel' | 'additional' | 'unresolved';
-  decision?: {
-    policyVersion: number;
-    rule: string;
-    reason: string;
-    profile?: string;
-    peers?: number;
-    occurrences?: number;
-    products?: string[];
-  };
-  dataQuality?: 'detailed' | 'generated' | 'flags' | 'invalid' | 'conflict';
-  sourceProduct?: string;
-  evidence?: string;
-  providerId?: string;
-  legacyAliases?: string[];
-  raw?: { type: string; subtype?: string; size?: string; stamp?: string | string[]; foil?: string };
-  productIds?: { tcgplayer?: number; cardmarket?: number; cardtrader?: number };
-}
+import type { CollectibleVariant } from './tcg/printing';
+/** Compatibility name; existing Pokémon keys and persisted fields are unchanged. */
+export type CardPrinting = CollectibleVariant;
 
 export interface PrintingContext {
   setId: string;
