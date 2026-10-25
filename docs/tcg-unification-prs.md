@@ -8,6 +8,8 @@ U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossle
 
 U03 implements additive physical-variant types and compatibility projections with preservation tests. Existing routes, caches and holdings have not switched formats; the Pokémon provider adapter remains U08 work.
 
+U04 adds keyed completion reports through the existing Pokémon and generic policies, preserving existing callback/result shapes until module and UI callers migrate. Coverage/uncertainty are separate from owned-slot completion.
+
 ## Merge and release rules
 
 Every PR leaves both Pokémon and Magic usable. New abstractions initially coexist with compatibility adapters; callers move only after their prerequisites pass. Preserve one authoritative write path throughout. A read/UI rollout switch must not select a second independent writer. Legacy URLs and exported formats remain supported.

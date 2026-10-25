@@ -201,6 +201,24 @@ export interface Completion {
   finishes: { owned: number; total: number };
   complete: boolean;
 }
+/** A game chooses its own stable keys; callers must not assume a fixed measure list. */
+export interface CompletionMeasure {
+  key: string;
+  label: string;
+  owned: number;
+  total: number;
+  /** Slot completion only; catalogue coverage is reported separately. Zero slots is false. */
+  complete: boolean;
+}
+export interface CompletionReport {
+  measures: CompletionMeasure[];
+  coverage: {
+    complete: boolean;
+    provisional?: boolean;
+    unresolved?: number;
+    additional?: number;
+  };
+}
 export interface GameModule {
   id: GameId;
   name: string;
