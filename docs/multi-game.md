@@ -83,6 +83,8 @@ construction logic. Normalized Pokémon details must explicitly be detailed and
 carry subtype data before they count as complete rule evidence. Missing details,
 unknown source legality and unverified catalogue completeness cannot produce a
 legal result. Proven violations remain illegal even when other rows are unknown.
+Explicit Expanded bans apply to requested main-deck IDs even when their catalogue
+records are missing or incomplete.
 
 Pass `GameRulesContext.format` for ownership and validated `settings` containing
 the existing `regulationMarks` and `bannedCardIds` options. Provider flags retain
@@ -91,9 +93,16 @@ precedence over regulation-mark fallback. The adapter never reads global setting
 for later API error mapping; no server route adopts it in this PR.
 
 Ownership uses ungraded entries across eligible reprints and finishes; it retains
-all source deck IDs and marks incomplete name groups unverified. Maybeboard is
+all reprints of requested main-deck names and skips unrelated catalogue details.
+Empty main decks return before scanning the catalogue. The result retains
+all source deck IDs and marks incomplete name groups or unknown format eligibility
+unverified. Copies of unknown eligibility do not count as verified ownership. Maybeboard is
 excluded from construction/ownership/analysis. PTCGL export rejects unsupported
-zones and missing details instead of silently dropping them. Import retains source
+zones and missing details instead of silently dropping them. Each exported row must
+round-trip through the shared parser with its name, quantity, set code and number
+intact. Missing printing identifiers and collector numbers outside the existing
+one-to-four-character grammar (such as `SV045`) produce `invalid_deck_export`.
+Import retains source
 line numbers and reports malformed rows, with bounded text and row counts. Scan
 results preserve number padding, printed total, confidence and raw OCR evidence.
 The rule-only snapshot projection is never a persistence or catalogue converter:
