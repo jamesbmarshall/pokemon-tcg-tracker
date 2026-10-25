@@ -2,13 +2,17 @@
 
 Status: proposed, 25 October 2026. These identifiers are planning IDs, not GitHub PR numbers. Parent: [TCG unification plan](tcg-unification-plan.md).
 
-Implementation started: U01 is in progress; see the [baseline inventory and outstanding gates](tcg-unification-baseline.md). Later PRs remain proposed.
+Implementation status: U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U04 have been implemented as stacked PRs #66–#68; U05 adds module validation as the next stack entry. U06 is next. These changes await review/merge; later PRs remain proposed.
 
 U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossless field mapping](tcg-field-mapping.md) for additive implementation. Remaining U01 WebKit/manual checks gate affected caller cutovers and release, while additive types can proceed against the established preservation fixtures. This sequencing clarification does not waive those checks or authorize data deletion.
 
 U03 implements additive physical-variant types and compatibility projections with preservation tests. Existing routes, caches and holdings have not switched formats; the Pokémon provider adapter remains U08 work.
 
 U04 adds keyed completion reports through the existing Pokémon and generic policies, preserving existing callback/result shapes until module and UI callers migrate. Coverage/uncertainty are separate from owned-slot completion.
+
+U05 separates module definitions from registry wiring, validates advertised handlers and source configuration, introduces explicit rule context/capability errors, and names Pokémon's temporary controller compatibility. U06 installs its rule adapters; shared API authorization remains later work.
+
+Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
 
 ## Merge and release rules
 

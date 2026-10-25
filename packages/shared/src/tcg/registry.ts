@@ -1,19 +1,71 @@
-import { parseMagicDeck, formatMagicDeck } from './deckText';
 import type { GameModule } from './types';
-import { catalogCompletion } from './collection';
-import { checkCommander, deckOwnership, deckAnalysis } from './commander';
-import { LANGUAGES } from '../languages';
+import { pokemonModule } from './modules/pokemon';
+import { magicModule } from './modules/magic';
+export { pokemonModule, magicModule };
+
+export type GameCapability = keyof GameModule['capabilities'];
+export class GameCapabilityError extends Error {
+  readonly code = 'unsupported_capability';
+  readonly game: string;
+  readonly capability: GameCapability;
+  constructor(game: string, capability: GameCapability) {
+    super(`${game} does not support ${capability}`);
+    this.name = 'GameCapabilityError';
+    this.game = game;
+    this.capability = capability;
+  }
+}
+
+function unique(values: string[], label: string, game: string) {
+  if (values.some((v) => !v.trim()) || new Set(values).size !== values.length)
+    throw new Error(`${game}: empty or duplicate ${label}`);
+}
+
+/** Validate source-owned configuration; external provider payload validation is separate. */
+function validateModule(module: GameModule) {
+  if (!module.languages.length) throw new Error(`${module.id}: no supported languages`);
+  unique(module.languages.map((l) => l.code), 'language', module.id);
+  unique(module.formats.map((f) => f.id), 'format', module.id);
+  unique(module.searchFields.map((f) => f.key), 'search field', module.id);
+  if (typeof module.complete !== 'function') throw new Error(`${module.id}: missing completion policy`);
+  if (module.completionReport !== undefined && typeof module.completionReport !== 'function')
+    throw new Error(`${module.id}: invalid completion report policy`);
+  if (module.compatibility && !module.compatibility.reason.trim())
+    throw new Error(`${module.id}: compatibility requires a reason`);
+  if (module.formats.some((f) => typeof f.validate !== 'function'))
+    throw new Error(`${module.id}: missing format validator`);
+  if (module.capabilities.scanning && typeof module.scan !== 'function')
+    throw new Error(`${module.id}: scanning requires a parser`);
+  if (module.capabilities.sealed && !module.sealedTypes.length)
+    throw new Error(`${module.id}: sealed requires product types`);
+  if (module.capabilities.precons && !module.preconCatalogue)
+    throw new Error(`${module.id}: precons requires catalogue attribution`);
+  if (module.capabilities.decks && !module.compatibility) {
+    const tools = module.deckTools;
+    if (!module.formats.length || !tools ||
+      [tools.parse, tools.format, tools.ownership, tools.analyze].some((tool) => typeof tool !== 'function'))
+      throw new Error(`${module.id}: decks requires formats and complete deck tools`);
+  }
+}
+
 /** Registry is injectable in tests; extensions never mutate a process-wide singleton. */
 export function createGameRegistry(modules: GameModule[]) {
   const registry = new Map<string, GameModule>();
   for (const module of modules) {
     if (!/^[a-z][a-z0-9-]*$/.test(module.id) || registry.has(module.id))
       throw new Error(`Invalid or duplicate game: ${module.id}`);
+    validateModule(module);
     registry.set(module.id, module);
   }
   return {
     all: () => [...registry.values()],
     get: (id: string) => registry.get(id),
+    requireCapability: (id: string, capability: GameCapability) => {
+      const module = registry.get(id);
+      if (!module) throw new Error(`Unsupported game: ${id}`);
+      if (!module.capabilities[capability]) throw new GameCapabilityError(id, capability);
+      return module;
+    },
     require: (id: string) => {
       const module = registry.get(id);
       if (!module) throw new Error(`Unsupported game: ${id}`);
@@ -21,153 +73,4 @@ export function createGameRegistry(modules: GameModule[]) {
     },
   };
 }
-export const pokemonModule: GameModule = {
-  id: 'pokemon',
-  name: 'Pokémon',
-  shortName: 'Pokémon',
-  languages: LANGUAGES.map((l) => ({ code: l.code, name: l.name })),
-  capabilities: { decks: true, scanning: true, sealed: true, graded: true },
-  searchFields: [
-    { key: 'type', label: 'Type' },
-    { key: 'rarity', label: 'Rarity' },
-    { key: 'artist', label: 'Artist' },
-  ],
-  sealedTypes: [
-    'booster_box',
-    'etb',
-    'booster_bundle',
-    'tin',
-    'collection_box',
-    'blister',
-    'booster_pack',
-    'other',
-  ],
-  // Existing Pokémon UI and deck validators remain the compatibility implementation.
-  formats: [],
-  complete: catalogCompletion,
-  scan: () => [],
-};
-export const magicModule: GameModule = {
-  id: 'mtg',
-  name: 'Magic: The Gathering',
-  shortName: 'Magic',
-  attribution:
-    'Card data, images and prices from Scryfall (TCGplayer & Cardmarket). Magic: The Gathering © Wizards of the Coast.',
-  searchHint: 'Card name or Scryfall query',
-  preconCatalogue: {
-    name: 'MTGJSON',
-    url: 'https://mtgjson.com/',
-    description: 'Paper Commander preconstructed decks',
-  },
-  cardFacts: (card) => [
-    { label: 'Mana value', value: String(card.details.manaValue ?? '') },
-    {
-      label: 'Color identity',
-      value:
-        ((card.details.colorIdentity as string[]) ?? []).join(', ') ||
-        'Colorless',
-    },
-    {
-      label: 'Commander',
-      value: String(
-        (card.details.legalities as Record<string, string> | undefined)
-          ?.commander ?? 'Unverified',
-      ),
-    },
-  ],
-  languages: [
-    ['en', 'English'],
-    ['es', 'Spanish'],
-    ['fr', 'French'],
-    ['de', 'German'],
-    ['it', 'Italian'],
-    ['pt', 'Portuguese'],
-    ['ja', 'Japanese'],
-    ['ko', 'Korean'],
-    ['ru', 'Russian'],
-    ['zhs', 'Chinese (Simplified)'],
-    ['zht', 'Chinese (Traditional)'],
-    ['he', 'Hebrew'],
-    ['la', 'Latin'],
-    ['grc', 'Ancient Greek'],
-    ['ar', 'Arabic'],
-    ['sa', 'Sanskrit'],
-    ['ph', 'Phyrexian'],
-    ['qya', 'Quenya'],
-  ].map(([code, name]) => ({ code, name })),
-  capabilities: {
-    decks: true,
-    precons: true,
-    scanning: true,
-    sealed: true,
-    graded: true,
-  },
-  searchFields: [
-    { key: 'text', label: 'Rules text' },
-    { key: 'type', label: 'Card type' },
-    { key: 'color', label: 'Colors (WUBRG)' },
-    { key: 'identity', label: 'Color identity (WUBRG)' },
-    { key: 'mv', label: 'Mana value' },
-    { key: 'rarity', label: 'Rarity' },
-    { key: 'artist', label: 'Artist' },
-    {
-      key: 'finish',
-      label: 'Finish',
-      options: ['nonfoil', 'foil', 'etched'].map((value) => ({
-        value,
-        label: value,
-      })),
-    },
-    {
-      key: 'legal',
-      label: 'Commander legality',
-      options: [{ value: 'commander', label: 'Legal in Commander' }],
-    },
-  ],
-  sealedTypes: [
-    'play_booster_box',
-    'draft_booster_box',
-    'set_booster_box',
-    'collector_booster_box',
-    'booster_pack',
-    'bundle',
-    'commander_precon',
-    'other',
-  ],
-  formats: [
-    { id: 'commander', size: 100, name: 'Commander', validate: checkCommander },
-  ],
-  deckTools: {
-    parse: parseMagicDeck,
-    format: formatMagicDeck,
-    ownership: deckOwnership,
-    analyze: deckAnalysis,
-  },
-  complete: catalogCompletion,
-  scan: (text) => {
-    const rows: { set?: string; number: string }[] = [];
-    for (const line of text.toUpperCase().split(/\n/)) {
-      // Modern cards place rarity/collector number and set/language on adjacent lines.
-      const match =
-        /\b([A-Z0-9]{2,6})\s*[•·]?\s+(?:EN|FR|DE|IT|ES|PT|JA|JP|KO|RU|ZHS|ZHT)\b/.exec(
-          line,
-        );
-      if (match) {
-        const number = /\b(?:[CURMLT]\s+)?(\d{1,5}[A-Z]?)\b/.exec(
-          text.toUpperCase(),
-        );
-        if (number)
-          rows.push({
-            set: match[1].toLowerCase(),
-            number: number[1].replace(/^0+(?=\d)/, ''),
-          });
-      }
-    }
-    const plain = /\b([A-Z0-9]{2,6})\s+(\d{1,5}[A-Z]?)\b/g;
-    for (const m of text.toUpperCase().matchAll(plain))
-      if (/[A-Z]/.test(m[1]))
-        rows.push({ set: m[1].toLowerCase(), number: m[2] });
-    return rows;
-  },
-};
 export const games = createGameRegistry([pokemonModule, magicModule]);

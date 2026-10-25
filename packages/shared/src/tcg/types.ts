@@ -223,6 +223,8 @@ export interface GameModule {
   id: GameId;
   name: string;
   shortName: string;
+  /** Temporary controller-owned behavior; remove when shared adapters implement all advertised operations. */
+  compatibility?: { reason: string };
   attribution?: string;
   searchHint?: string;
   preconCatalogue?: { name: string; url: string; description?: string };
@@ -241,7 +243,7 @@ export interface GameModule {
     id: string;
     name: string;
     size?: number;
-    validate: (items: DeckItem[], cards: Map<string, TcgCard>) => DeckResult;
+    validate: (items: DeckItem[], cards: Map<string, TcgCard>, context?: GameRulesContext) => DeckResult;
   }[];
   deckTools?: {
     parse(text: string): { rows: DeckTextRow[]; errors: string[] };
@@ -250,10 +252,12 @@ export interface GameModule {
       items: DeckItem[],
       cards: Map<string, TcgCard>,
       entries: Holding[],
+      context?: GameRulesContext,
     ): DeckOwnership[];
     analyze(
       items: DeckItem[],
       cards: Map<string, TcgCard>,
+      context?: GameRulesContext,
     ): Record<string, Record<string, number>>;
   };
   complete: (
@@ -262,7 +266,17 @@ export interface GameModule {
     slabs: Slab[],
     complete: boolean,
   ) => Completion;
+  completionReport?: (
+    cards: TcgCard[], holdings: Holding[], slabs: Slab[], catalogueComplete: boolean,
+  ) => CompletionReport;
   scan: (text: string) => { set?: string; number: string }[];
+}
+/** Game adapters validate/narrow settings at their boundary; rules never read global settings.
+ * Unknown completeness must not certify legality. Settings stay source-owned and extensible.
+ */
+export interface GameRulesContext {
+  catalogueComplete?: boolean;
+  settings?: unknown;
 }
 export interface GameState {
   game: GameId;
