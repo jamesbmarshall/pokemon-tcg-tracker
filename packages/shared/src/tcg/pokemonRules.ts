@@ -153,9 +153,15 @@ export const pokemonDeckTools: NonNullable<GameModule['deckTools']> = {
   },
   ownership(items, cards, entries, context) {
     const format = selectedFormat(context), options = pokemonRuleOptions(context);
+    const main = items.filter((item) => item.zone === 'main' && validQuantity(item.quantity));
+    if (!main.length) return [];
+    const requestedNames = new Set(main.map((item) => normalizedCardName(cards.get(item.cardId)?.name ?? item.cardId)));
     const known = new Map<string, CardSnapshot>();
     const uncertainNames = new Set<string>();
     for (const card of cards.values()) {
+      // Only requested names can contribute ownership or uncertainty. Retain all
+      // their reprints, but do not project unrelated catalogue details.
+      if (!requestedNames.has(normalizedCardName(card.name))) continue;
       const ruleCard = pokemonRuleCard(card);
       if (ruleCard?.complete) {
         known.set(card.id, ruleCard.snapshot);
@@ -167,7 +173,6 @@ export const pokemonDeckTools: NonNullable<GameModule['deckTools']> = {
     const quantities = new Map<string, number>();
     for (const entry of entries) if (known.has(entry.cardId) && Number.isSafeInteger(entry.quantity) && entry.quantity > 0)
       quantities.set(entry.cardId, (quantities.get(entry.cardId) ?? 0) + entry.quantity);
-    const main = items.filter((item) => item.zone === 'main' && validQuantity(item.quantity));
     const deck = main.map((item) => {
       const card = known.get(item.cardId);
       if (card) return { card, qty: item.quantity };

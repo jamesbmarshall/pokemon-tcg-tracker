@@ -17,8 +17,10 @@ and migrations only where necessary. Work in incremental logical PRs.
 - [Developer extension guide](multi-game.md)
 
 The user has authorized implementation, commits and pushes. Most recently they
-asked to address PR #70's recommended changes before continuing. Those fixes have
-now been pushed. No new UI cutover, schema migration or production-data mutation
+asked to address PR #70's recommended changes before continuing. The first three
+fixes were pushed; a second review identified unnecessary ownership work across
+unrelated catalogue cards, addressed in the follow-up accompanying this note.
+No new UI cutover, schema migration or production-data mutation
 has been performed in this work.
 
 ## Branch and PR stack
@@ -75,8 +77,13 @@ All three Copilot findings were valid and fixed in `90e3a77`:
    those copies from verified ownership. Unlimited and explicit legal/illegal
    flags retain their existing semantics.
 
-Regression tests and developer docs accompany the fixes. No review reply was
-posted and review threads were not manually resolved; check subsequent review/CI.
+The reviewer subsequently resolved those three threads. A fourth recommendation
+identified full eligibility checks for unrelated catalogue cards. The follow-up
+filters to valid main-deck names before projecting details, retains all matching
+reprints, and returns immediately for an empty main deck. Regression tests verify
+that unrelated detail getters and empty-deck catalogue iteration are not invoked.
+No review reply was posted and threads were not manually resolved; check subsequent
+review/CI and verify the latest remote commit on resume.
 
 ## Validation evidence and limits
 
@@ -85,6 +92,9 @@ posted and review threads were not manually resolved; check subsequent review/CI
 - U06 review follow-up: 191 shared tests, including 28 Pokémon adapter cases,
   typecheck and lint passed. An attempted server rerun was interrupted; no new
   server/build result is claimed for the follow-up.
+- U06 second review follow-up: 193 shared tests, including 30 Pokémon adapter
+  cases, typecheck, lint and production build passed after limiting ownership
+  catalogue work.
 - U07 before review fixes: 41 provider-registry/TCG/precon server tests, typecheck,
   lint and production build passed. Recheck affected tests after incorporating U06.
 - Through U05: full run passed 163 shared, 258 server, 8 launcher and 823 web tests;

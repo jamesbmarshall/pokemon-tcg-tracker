@@ -18,6 +18,8 @@ U06 validation: all 179 shared tests passed, including 16 adapter cases; 35 sele
 
 U06 review follow-up: explicit Expanded bans now apply even without complete catalogue records; unknown format eligibility marks ownership uncertain; exports must round-trip through the shared PTCGL grammar without losing printing identifiers. After these fixes, all 191 shared tests (28 adapter cases), typecheck and lint passed. The follow-up did not complete another server/build run.
 
+U06 second review follow-up: ownership projects only requested main-deck names, retains matching reprints and avoids catalogue iteration for empty main decks. All 193 shared tests (30 adapter cases), typecheck, lint and production build passed.
+
 Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
 
 ## Merge and release rules

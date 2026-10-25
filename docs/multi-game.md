@@ -93,6 +93,8 @@ precedence over regulation-mark fallback. The adapter never reads global setting
 for later API error mapping; no server route adopts it in this PR.
 
 Ownership uses ungraded entries across eligible reprints and finishes; it retains
+all reprints of requested main-deck names and skips unrelated catalogue details.
+Empty main decks return before scanning the catalogue. The result retains
 all source deck IDs and marks incomplete name groups or unknown format eligibility
 unverified. Copies of unknown eligibility do not count as verified ownership. Maybeboard is
 excluded from construction/ownership/analysis. PTCGL export rejects unsupported

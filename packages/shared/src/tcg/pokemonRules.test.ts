@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { checkDeckLegality } from '../decks/legality';
 import { parseDeckText, formatDeckText } from '../decks/ptcgl';
 import { parseScanText } from '../scan';
@@ -123,6 +123,25 @@ describe('Pokémon shared rule adapters', () => {
     const map = new Map([...cards, [unknown.id, unknown] as const]);
     const rows = pokemonDeckTools.ownership([deck[0], { cardId: unknown.id, quantity: 1, zone: 'main' }], map, [entry(unknown.id, 10), entry(basic.id, 2)], context);
     expect(rows).toEqual([{ name: basic.name, cardId: basic.id, deckCardIds: [basic.id, unknown.id], needed: 5, owned: 2, missing: 3, unverified: true }]);
+  });
+
+  it('skips unrelated catalogue details while retaining every requested-name reprint', () => {
+    const reprint = { ...basic, id: 'matching-reprint', name: `  ${basic.name}  ` };
+    const unrelated = card('unrelated', 'Unrelated Pokémon');
+    const details = vi.fn(() => { throw new Error('Unrelated details must not be projected'); });
+    Object.defineProperty(unrelated, 'details', { get: details });
+    const map = new Map([...cards, [reprint.id, reprint] as const, [unrelated.id, unrelated] as const]);
+    const rows = pokemonDeckTools.ownership([deck[0]], map, [entry(basic.id, 1), entry(reprint.id, 2), entry(unrelated.id, 100)], context);
+    expect(rows).toEqual([{ name: basic.name, cardId: basic.id, deckCardIds: [basic.id], needed: 4, owned: 3, missing: 1 }]);
+    expect(details).not.toHaveBeenCalled();
+  });
+
+  it('does not scan the catalogue when no valid main-deck rows are requested', () => {
+    const map = new Map(cards);
+    const values = vi.spyOn(map, 'values');
+    for (const items of [[], [{ ...deck[0], zone: 'maybeboard' as const }], [{ ...deck[0], quantity: 0 }]])
+      expect(pokemonDeckTools.ownership(items, map, [], context)).toEqual([]);
+    expect(values).not.toHaveBeenCalled();
   });
 
   it.each(['standard', 'expanded'] as const)('marks unknown %s eligibility uncertain while excluding unverified copies', (format) => {
