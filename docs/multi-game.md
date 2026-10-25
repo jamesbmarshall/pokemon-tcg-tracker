@@ -74,6 +74,33 @@ a trusted configuration. Existing functions remain valid when no context is used
 Magic now also registers its keyed completion report; Pokémon's report wiring
 waits for the normalized catalogue adapter.
 
+### Pokémon deck and scan adapters (U06)
+
+The Pokémon module now registers Standard, Expanded and Unlimited formats,
+PTCGL text tools, format-aware raw ownership and the existing OCR parser.
+`tcg/pokemonRules.ts` wraps the current shared rules rather than duplicating their
+construction logic. Normalized Pokémon details must explicitly be detailed and
+carry subtype data before they count as complete rule evidence. Missing details,
+unknown source legality and unverified catalogue completeness cannot produce a
+legal result. Proven violations remain illegal even when other rows are unknown.
+
+Pass `GameRulesContext.format` for ownership and validated `settings` containing
+the existing `regulationMarks` and `bannedCardIds` options. Provider flags retain
+precedence over regulation-mark fallback. The adapter never reads global settings.
+`PokemonRuleError` identifies invalid configuration or an unrepresentable export
+for later API error mapping; no server route adopts it in this PR.
+
+Ownership uses ungraded entries across eligible reprints and finishes; it retains
+all source deck IDs and marks incomplete name groups unverified. Maybeboard is
+excluded from construction/ownership/analysis. PTCGL export rejects unsupported
+zones and missing details instead of silently dropping them. Import retains source
+line numbers and reports malformed rows, with bounded text and row counts. Scan
+results preserve number padding, printed total, confidence and raw OCR evidence.
+The rule-only snapshot projection is never a persistence or catalogue converter:
+its display defaults must not replace the source metadata documented in the field
+mapping. Existing Pokémon UI, routes and data formats remain in service until their
+planned cutover.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.

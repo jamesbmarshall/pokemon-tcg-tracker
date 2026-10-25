@@ -57,6 +57,11 @@ const LINE_PLAIN_RE = /^(\d+)\s+(.+)$/;
 const BASIC_ENERGY_RE = /^Basic\s*\{([A-Za-z])\}\s*Energy$/i;
 const ENERGY_SYMBOLS: Record<string, string> = { R: 'Fire', W: 'Water', G: 'Grass', L: 'Lightning', P: 'Psychic', F: 'Fighting', D: 'Darkness', M: 'Metal', Y: 'Fairy', N: 'Dragon', C: 'Colorless' };
 
+/** Shared adapters may report malformed rows without duplicating the legacy grammar. */
+export function isDeckTextMetadataLine(line: string): boolean {
+  return SECTION_RE.test(line.trim()) || TOTAL_RE.test(line.trim());
+}
+
 function normalizeSection(raw: string): DeckSection {
   const s = raw.toLowerCase();
   if (s.startsWith('pok')) return 'Pokémon';

@@ -12,6 +12,10 @@ U04 adds keyed completion reports through the existing Pokémon and generic poli
 
 U05 separates module definitions from registry wiring, validates advertised handlers and source configuration, introduces explicit rule context/capability errors, and names Pokémon's temporary controller compatibility. U06 installs its rule adapters; shared API authorization remains later work.
 
+U06 registers Pokémon's deck/scan adapters against existing algorithms, with explicit settings, conservative unverified outcomes, bounded PTCGL parsing and format-aware ownership. Its rule snapshot is intentionally not a persistent-card converter. Completion/provider/state compatibility remains until U08 and later caller migrations.
+
+U06 validation: all 179 shared tests passed, including 16 adapter cases; 35 selected server deck/TCG tests, typecheck, lint and production build passed. Existing UI and schema remain unchanged; normalized adapters are registered for later shared-service adoption.
+
 Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
 
 ## Merge and release rules

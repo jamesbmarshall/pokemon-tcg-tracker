@@ -1,12 +1,13 @@
 import type { GameModule } from '../types';
 import { catalogCompletion } from '../collection';
 import { LANGUAGES } from '../../languages';
+import { pokemonDeckTools, scanPokemon, validatePokemonDeck } from '../pokemonRules';
 
 export const pokemonModule: GameModule = {
   id: 'pokemon',
   name: 'Pokémon',
   shortName: 'Pokémon',
-  compatibility: { reason: 'Existing Pokémon controllers own deck formats and scan lookup until shared adapters are installed.' },
+  compatibility: { reason: 'Existing Pokémon controllers and catalogue storage remain until the normalized provider and state adapters are installed.' },
   languages: LANGUAGES.map((l) => ({ code: l.code, name: l.name })),
   capabilities: { decks: true, scanning: true, sealed: true, graded: true },
   searchFields: [
@@ -24,8 +25,11 @@ export const pokemonModule: GameModule = {
     'booster_pack',
     'other',
   ],
-  // Existing Pokémon UI and deck validators remain the compatibility implementation.
-  formats: [],
+  formats: (['standard', 'expanded', 'unlimited'] as const).map((id) => ({
+    id, name: id[0].toUpperCase() + id.slice(1), size: 60,
+    validate: (items, cards, context) => validatePokemonDeck(items, cards, id, context),
+  })),
+  deckTools: pokemonDeckTools,
   complete: catalogCompletion,
-  scan: () => [],
+  scan: scanPokemon,
 };
