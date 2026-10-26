@@ -1,6 +1,6 @@
 # TCG unification continuation handoff
 
-Updated 25 October 2026. Read this before continuing in a fresh context.
+Updated 26 October 2026. Read this before continuing in a fresh context.
 
 ## Goal and controlling documents
 
@@ -26,7 +26,7 @@ has been performed in this work.
 ## Branch and PR stack
 
 Repository: `jamesbmarshall/pokemon-tcg-tracker`, workspace
-`/workspace/pokemon-tcg-tracker`. Current branch: `codex/pokemon-rule-adapters`.
+`/workspace/pokemon-tcg-tracker`. Current branch: `codex/tcg-provider-registry`.
 Initial base: `8da7d5b` (PR #64 merge). Each PR targets the preceding stack branch.
 The stack has not been merged during this session; verify current remote state on resume.
 
@@ -40,7 +40,7 @@ The stack has not been merged during this session; verify current remote state o
 | U06 | `codex/pokemon-rule-adapters` | `90e3a77` | [#70](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/70) |
 | U07 | `codex/tcg-provider-registry` | `78e5f57` | No PR created in this session |
 
-U07 branched from U06's original `c221c02`, before the review fixes. Its initial
+U07 originally branched from U06's `c221c02`; merge `1dcce32` now incorporates all U06 review fixes and this handoff. Its initial
 push failed authentication; a later retry was interrupted. Do not assume it is
 published. The explicit U06 push succeeded: `c221c02..90e3a77` on the remote branch.
 
@@ -106,11 +106,11 @@ review/CI and verify the latest remote commit on resume.
 
 ## Resume sequence
 
-1. Inspect worktree, remote PR #70 review/CI and branch publication state. Complete
+1. All four PR #70 review threads were resolved by the reviewer as of 26 October. Inspect worktree, current review/CI and branch publication state. Complete
    any new legitimate review fixes before advancing.
-2. Incorporate updated U06 into `codex/tcg-provider-registry` without losing the
-   U07 implementation or this handoff. Prefer merging the parent if the branch is
-   already published; avoid unnecessary history rewriting.
+2. U06 is already merged into U07 (`1dcce32`). Do not repeat that work. The merged
+   branch passed 57 selected server tests, 193 shared tests, typecheck, lint and
+   production build. Check publication state before creating a duplicate PR.
 3. Validate affected tests, typecheck/lint/build as appropriate. Push U07 and create
    its stacked PR targeting `codex/pokemon-rule-adapters`, if no PR already exists.
 4. Begin U08 on a new branch from U07: normalized Pokémon catalogue adapter using
