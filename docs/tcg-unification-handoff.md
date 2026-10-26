@@ -38,11 +38,11 @@ The stack has not been merged during this session; verify current remote state o
 | U04 | `codex/tcg-completion-measures` | `61406e3` | [#68](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/68) |
 | U05 | `codex/tcg-module-validation` | `ad05187` | [#69](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/69) |
 | U06 | `codex/pokemon-rule-adapters` | `90e3a77` | [#70](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/70) |
-| U07 | `codex/tcg-provider-registry` | `78e5f57` | No PR created in this session |
+| U07 | `codex/tcg-provider-registry` | `613e5ba` | [#71](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/71) |
 
 U07 originally branched from U06's `c221c02`; merge `1dcce32` now incorporates all U06 review fixes and this handoff. Its initial
-push failed authentication; a later retry was interrupted. Do not assume it is
-published. The explicit U06 push succeeded: `c221c02..90e3a77` on the remote branch.
+push failed authentication; a later retry was interrupted. Publication subsequently
+succeeded on 26 October: PR #71 targets `codex/pokemon-rule-adapters`. The explicit U06 push succeeded: `c221c02..90e3a77` on the remote branch.
 
 ## Implemented work
 
@@ -111,8 +111,8 @@ review/CI and verify the latest remote commit on resume.
 2. U06 is already merged into U07 (`1dcce32`). Do not repeat that work. The merged
    branch passed 57 selected server tests, 193 shared tests, typecheck, lint and
    production build. Check publication state before creating a duplicate PR.
-3. Validate affected tests, typecheck/lint/build as appropriate. Push U07 and create
-   its stacked PR targeting `codex/pokemon-rule-adapters`, if no PR already exists.
+3. U07 is published as PR #71 targeting `codex/pokemon-rule-adapters`. Inspect
+   review/CI and address legitimate findings before advancing; do not create a duplicate.
 4. Begin U08 on a new branch from U07: normalized Pokémon catalogue adapter using
    existing authoritative catalogue/cache/printing services. Preserve historical
    IDs, multilingual behavior, detailed versus summary evidence, quote provenance,

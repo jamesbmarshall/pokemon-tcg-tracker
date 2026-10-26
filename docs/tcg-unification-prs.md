@@ -2,7 +2,7 @@
 
 Status: proposed, 25 October 2026. These identifiers are planning IDs, not GitHub PR numbers. Parent: [TCG unification plan](tcg-unification-plan.md).
 
-Implementation status (25 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is ready for its stacked PR. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
+Implementation status (25 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is published as stacked PR #71. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
 
 U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossless field mapping](tcg-field-mapping.md) for additive implementation. Remaining U01 WebKit/manual checks gate affected caller cutovers and release, while additive types can proceed against the established preservation fixtures. This sequencing clarification does not waive those checks or authorize data deletion.
 
