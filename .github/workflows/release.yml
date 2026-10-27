@@ -127,7 +127,7 @@ jobs:
           # Same Docker Hub congestion as above, this time for the buildkit image
           # itself: pull it from the mirror too instead of registry-1.docker.io.
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
