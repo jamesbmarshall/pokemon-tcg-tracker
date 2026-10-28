@@ -53,12 +53,19 @@ function cachedSetCode(ctx: Ctx, setId: string): string | undefined {
   return cachedSetCodeObservation(ctx, setId)?.code;
 }
 
+function observedSetCode(ctx: Ctx, setId: string, code: string | undefined, at: number, fallback: string) {
+  const cached = cachedSetCodeObservation(ctx, setId);
+  const staticCode = SET_CODES[splitId(setId).raw];
+  const liveCode = code && code !== staticCode ? { code, at } : undefined;
+  if (liveCode && (!cached || liveCode.at > cached.at)) return liveCode.code;
+  return cached?.code || code || fallback;
+}
+
 export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider {
   const lang = language(selectedLanguage);
   const projectCard = (card: PokemonCard, at: string) => {
     const projected = fromPokemon(card, at);
-    const live = cachedSetCodeObservation(ctx, card.set.id);
-    const code = live && live.at >= Date.parse(at) ? live.code : card.set.ptcgoCode || projected.setCode;
+    const code = observedSetCode(ctx, card.set.id, card.set.ptcgoCode, Date.parse(at), projected.setCode);
     return { ...projected, setCode: code };
   };
   async function setPage(id: string, requestedLanguage: string) {
@@ -142,8 +149,7 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
       return sets.map((set) => {
         if (splitId(set.id).lang !== lang) throw new HttpError(502, 'Mismatched Pokémon language', 'upstream');
         const projected = pokemonSet(set);
-        const live = cachedSetCodeObservation(ctx, set.id);
-        const code = live && live.at >= at ? live.code : set.ptcgoCode || projected.code;
+        const code = observedSetCode(ctx, set.id, set.ptcgoCode, at, projected.code);
         return { ...projected, code, fetchedAt: new Date(at).toISOString(), stale: Date.now() - at >= 6 * HOUR };
       });
     },

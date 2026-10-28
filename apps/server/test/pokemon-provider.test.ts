@@ -227,6 +227,21 @@ it('uses newer live abbreviations for cards and sets without letting older metad
   expect(await provider.sets()).toMatchObject([{ id: card.set.id, code: 'EXM' }]);
 });
 
+it.each([
+  ['no abbreviation', undefined],
+  ['a static fallback', 'SVI'],
+])('retains a cached live abbreviation over a newer observation with %s', async (_description, ptcgoCode) => {
+  const setCard = { ...card, id: 'sv01-001', set: { ...card.set, id: 'sv01', ptcgoCode } };
+  const at = Date.now();
+  complete(setCard, at);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([setCard.set]), at);
+  cache(`${prefix}:metadata:${setCard.set.id}`, { ...setCard.set, ptcgoCode: 'LIVE' }, at - 10_000);
+
+  const provider = providerFor(server.ctx, 'pokemon');
+  expect(await provider.card(setCard.id)).toMatchObject({ setCode: 'LIVE' });
+  expect(await provider.sets()).toMatchObject([{ id: setCard.set.id, code: 'LIVE' }]);
+});
+
 it('skips successful metadata without abbreviations while building the live code index', async () => {
   const target = { ...card, id: 'live-index-proof-001', set: { ...card.set, id: 'live-index-proof', ptcgoCode: undefined } };
   complete(target);
