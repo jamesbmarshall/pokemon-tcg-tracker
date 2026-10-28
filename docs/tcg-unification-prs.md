@@ -28,7 +28,7 @@ U08 adds lossless Pokémon card/set projections, TCGdex registration, existing-c
 
 U08 validation: 211 shared tests, 280 tests in the full server run and 823 web tests passed. The final provider suite has 13 tests, including set-list outage provenance; final focused tests, typecheck, lint and build passed.
 
-U09 implements internal read repositories over existing tables, with native-state preservation inside a common metadata/valuation envelope, member authorization and snapshot-consistent photo reads. Routes and writes remain on their current paths. See the [repository contract](collection-repositories.md) for the explicit DTO-parity boundary and query budgets.
+U09 (stacked PR #82) implements internal read repositories over existing tables, with native-state preservation inside a common metadata/valuation envelope, member authorization and snapshot-consistent photo reads. Routes and writes remain on their current paths. See the [repository contract](collection-repositories.md) for the explicit DTO-parity boundary and query budgets.
 
 U09 validation: all 294 server tests passed, including 13 repository tests with 20,000-card query budgets and concurrent-write snapshot isolation. Typecheck, lint and production build passed. No new UI/browser or manual accessibility result is claimed.
 

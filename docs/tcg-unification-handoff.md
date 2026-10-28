@@ -39,7 +39,8 @@ The stack has not been merged during this session; verify current remote state o
 | U05 | `codex/tcg-module-validation` | `ad05187` | [#69](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/69) |
 | U06 | `codex/pokemon-rule-adapters` | `90e3a77` | [#70](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/70) |
 | U07 | `codex/tcg-provider-registry` | `02da50f` | [#71](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/71) |
-| U08 | `codex/pokemon-catalogue-adapter` | `64cbb9a` | [#81](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/81) |
+| U08 | `codex/pokemon-catalogue-adapter` | `462b3ee` | [#81](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/81) |
+| U09 | `codex/tcg-collection-repositories` | `0f1f5e0` | [#82](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/82) |
 
 U07 originally branched from U06's `c221c02`; merge `1dcce32` now incorporates all U06 review fixes and this handoff. Its initial
 push failed authentication; a later retry was interrupted. Publication subsequently
@@ -167,3 +168,6 @@ passed. Typecheck, lint and production build passed. Both stores met the 80-quer
 budget and three-second test guard for 20,000 cached cards/holdings. Existing
 WebKit/manual accessibility gates remain open; U09 changes no UI flows. PR #81
 had no review threads at the final pre-publication check on 28 October.
+
+U09 is published as PR #82, targeting the U08 branch. Check its review and CI
+before beginning U10. No PR was merged during this continuation.
