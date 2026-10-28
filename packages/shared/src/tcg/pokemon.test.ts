@@ -48,6 +48,15 @@ describe('Pokémon catalogue projections', () => {
     source.tcgplayer!.prices.normal.market = NaN;
     expect(() => fromPokemon(source, '2026-03-01')).toThrow('quote');
   });
+  it.each([
+    ['name', ''],
+    ['name', '   '],
+    ['number', ''],
+    ['number', ' \t '],
+  ])('rejects an empty or whitespace-only %s', (field, value) => {
+    const source = fixture();
+    expect(() => fromPokemon({ ...source, [field]: value } as PokemonCard, '2026-03-01')).toThrow('Invalid Pokémon card');
+  });
   it('does not treat prototype-shaped variant names as object properties', () => {
     const source = fixture();
     source.tcgplayer!.prices = JSON.parse('{"__proto__":{"market":2}}');

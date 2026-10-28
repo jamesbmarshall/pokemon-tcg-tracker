@@ -212,6 +212,56 @@ it('consults and caches live abbreviations for newly released sets', async () =>
   expect(metadata).toHaveBeenCalledTimes(1);
 });
 
+it('uses newer live abbreviations for cards and sets without letting older metadata win', async () => {
+  const provider = providerFor(server.ctx, 'pokemon');
+  complete(card, Date.now() - 10_000);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([card.set]), Date.now() - 10_000);
+  cache(`${prefix}:metadata:${card.set.id}`, { ...card.set, ptcgoCode: 'NEW' }, Date.now());
+  expect(await provider.card(card.id)).toMatchObject({ setCode: 'NEW' });
+  expect(await provider.sets()).toMatchObject([{ id: card.set.id, code: 'NEW' }]);
+
+  complete(card, Date.now());
+  cache(`${prefix}:metadata:${card.set.id}`, { ...card.set, ptcgoCode: 'OLD' }, Date.now() - 10_000);
+  server.ctx.db.run('UPDATE catalogue_set_lists SET fetched_at = ?', Date.now());
+  expect(await provider.card(card.id)).toMatchObject({ setCode: 'EXM' });
+  expect(await provider.sets()).toMatchObject([{ id: card.set.id, code: 'EXM' }]);
+});
+
+it('skips successful metadata without abbreviations while building the live code index', async () => {
+  const target = { ...card, id: 'live-index-proof-001', set: { ...card.set, id: 'live-index-proof', ptcgoCode: undefined } };
+  complete(target);
+  const noCode = { ...target.set, id: 'no-code-proof', name: 'No code' };
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([noCode, target.set]), Date.now());
+  const metadata = vi.spyOn(catalog, 'getSet').mockImplementation(async (id) => ({
+    ...target.set, id, ptcgoCode: id === target.set.id ? 'NEW' : undefined,
+  }));
+  const result = await providerFor(server.ctx, 'pokemon').resolve!({
+    name: target.name, set: 'NEW', number: target.number, quantity: 1, zone: 'main', line: 1,
+  });
+  expect(result).toMatchObject([{ id: target.id }]);
+  expect(metadata).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  ['DP', ['dp1-001', 'dpp-001']],
+  ['HS', ['hgss1-001', 'hgssp-001']],
+  ['XY', ['xy1-001', 'xyp-001']],
+])('matches both the %s promo prefix and its expansion sets', async (code, expected) => {
+  const setIds = ['dp1', 'dpp', 'hgss1', 'hgssp', 'xy1', 'xyp'];
+  const candidates = setIds.map((id) => ({
+    ...card,
+    id: `${id}-001`,
+    set: { ...card.set, id, name: id, ptcgoCode: undefined },
+  }));
+  for (const candidate of candidates) complete(candidate);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify(candidates.map(({ set }) => set)), Date.now());
+
+  const result = await providerFor(server.ctx, 'pokemon').resolve!({
+    name: card.name, set: code, number: '001', quantity: 1, zone: 'main', line: 1,
+  });
+  expect(result.map(({ id }) => id).sort()).toEqual(expected);
+});
+
 it.each(['card', 'set'])('rejects malformed %s refreshes before cache publication', async (kind) => {
   complete(card);
   server.ctx.db.run('DELETE FROM printing_catalogues');
@@ -260,6 +310,7 @@ it('retains published catalogue and list observations when scheduled data is inv
   vi.spyOn(catalog, 'getSets').mockResolvedValue([{ ...card.set, total: 1.5 }]);
   await expect(discoverSets(server.ctx, 'en')).rejects.toThrow('Invalid Pokémon set');
   expect(server.ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM catalogue_set_lists')!.fetched_at).toBe(123);
+  expect(() => persistCatalogue(server.ctx, card.set.id, [{ ...card, set: { ...card.set, total: 2 } }])).toThrow('incomplete catalogue');
 });
 
 it('resolves an explicit set without unrelated metadata and applies cached live codes to projections', async () => {

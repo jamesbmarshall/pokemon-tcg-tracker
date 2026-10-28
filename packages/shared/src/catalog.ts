@@ -9,7 +9,7 @@ import { applyPrintingProfile, buildPrintingProfile, type PrintingProfile } from
 import { PRINTING_VERSION, resolvePrintings, type RawPrinting } from './printings';
 export { standardVariants, printingLabel } from './printings';
 import { LEGACY_SET_MAP, SET_CODES } from './legacySets';
-import { pokemonSet } from './tcg/pokemon';
+import { fromPokemon, pokemonSet } from './tcg/pokemon';
 import { fromEnglishCategory, fromEnglishType, splitId, toEnglishCategory, toEnglishType, withLang, type Lang } from './languages';
 
 export type { Lang } from './languages';
@@ -21,8 +21,9 @@ let GRAPHQL = `${TCGDEX_API}/graphql`;
 const profiles = new Map<string, PrintingProfile>();
 interface CatalogueStorage {
   profile: (setId: string) => PrintingProfile | undefined;
-  rawCard: (cardId: string) => RawCard | undefined;
-  saveRawCard: (cardId: string, raw: RawCard) => void;
+  rawCard: (cardId: string) => { data: RawCard; at: number } | undefined;
+  saveRawCard: (cardId: string, raw: RawCard, at: number) => void;
+  invalidateRawCard?: (cardId: string) => void;
 }
 let storage: CatalogueStorage | undefined;
 let extraHeaders: () => Record<string, string> = () => ({});
@@ -221,6 +222,16 @@ function toSet(raw: RawSet, lang: Lang = 'en'): CardSet {
   };
 }
 
+function projectSet(raw: RawSet, lang: Lang): CardSet {
+  const set = toSet(raw, lang);
+  const projected = {
+    ...set,
+    ptcgoCode: raw.abbreviation?.official ?? setIndex.get(set.id)?.ptcgoCode ?? SET_CODES[raw.id],
+  };
+  pokemonSet(projected);
+  return projected;
+}
+
 /** Seeds the set index from a cached list so cards can be dated without a request. */
 export function primeSets(sets: CardSet[] | undefined, lang: Lang = 'en') {
   if (!sets?.length || loadedLangs.has(lang)) return;
@@ -239,18 +250,15 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
       // List results use the static English set-code fallback in toSet().
       `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } } }`,
     )
-      .then(({ sets }) => {
-        const list = sets
-          // Drop digital-only and empty (announced but not yet catalogued) sets.
-          .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
-          .map((s) => {
-            const next = toSet(s, lang);
-            return { ...next, ptcgoCode: setIndex.get(next.id)?.ptcgoCode ?? next.ptcgoCode };
-          })
-          .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
-        for (const set of list) pokemonSet(set);
-        // A successful observation replaces this language index, including removed sets.
-        for (const id of setIndex.keys()) if (splitId(id).lang === lang) setIndex.delete(id);
+    .then(({ sets }) => {
+      if (new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('Duplicate set in catalogue response');
+      const list = sets
+        // Drop digital-only and empty (announced but not yet catalogued) sets.
+        .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
+        .map((s) => projectSet(s, lang))
+        .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
+      // A successful observation replaces this language index, including removed sets.
+      for (const id of setIndex.keys()) if (splitId(id).lang === lang) setIndex.delete(id);
         for (const s of list) setIndex.set(s.id, s);
         loadedLangs.add(lang);
         return list;
@@ -268,8 +276,8 @@ async function ensureSets(lang: Lang = 'en') {
 
 export async function getSet(setId: string): Promise<CardSet> {
   const { lang, raw } = splitId(setId);
-  const set = toSet(await rest<RawSet>(`/sets/${encodeURIComponent(raw)}`, undefined, undefined, lang), lang);
-  setIndex.set(set.id, { ...setIndex.get(set.id), ...set });
+  const set = projectSet(await rest<RawSet>(`/sets/${encodeURIComponent(raw)}`, undefined, undefined, lang), lang);
+  setIndex.set(set.id, set);
   return set;
 }
 
@@ -491,11 +499,9 @@ export async function getCard(cardId: string, signal?: AbortSignal): Promise<Pok
 export async function getCardDetails(cardId: string, signal?: AbortSignal, options?: { fresh?: boolean }): Promise<PokemonCard> {
   const { lang, raw } = splitId(cardId);
   // Display observations must reflect a current fetch and must not publish unvalidated raw data.
-  const source = options?.fresh
-    ? await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, signal, lang)
-    : await getRawCard(raw, lang, signal);
-  if (source.id !== raw || !source.localId || !source.name) throw new Error('Incomplete card response');
-  return toCard(source, true, lang);
+  if (!options?.fresh) return (await getRawCard(raw, lang, signal)).card;
+  const source = await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, signal, lang);
+  return validateRawCard(source, raw, lang);
 }
 
 /** Lightweight cards (no text/prices) for many ids in one round trip. Unknown ids are skipped. */
@@ -527,14 +533,31 @@ export async function getCardsByIds(ids: string[]): Promise<PokemonCard[]> {
 }
 
 /** Full records are cached per card so an interrupted set import can resume. */
-async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal): Promise<RawCard> {
+interface RawCardObservation { data: RawCard; at: number; card: PokemonCard }
+
+function validateRawCard(raw: RawCard, rawId: string, lang: Lang): PokemonCard {
+  if (!raw || raw.id !== rawId || typeof raw.localId !== 'string' || !raw.localId.trim() ||
+    typeof raw.name !== 'string' || !raw.name.trim()) throw new Error('Incomplete card response');
+  const card = toCard(raw, true, lang);
+  fromPokemon(card, new Date().toISOString());
+  return card;
+}
+
+async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal, options?: { fresh?: boolean }): Promise<RawCardObservation> {
   const id = withLang(lang, rawId);
-  const cached = storage?.rawCard(id);
-  if (cached) return cached;
+  const cached = options?.fresh ? undefined : storage?.rawCard(id);
+  if (cached) {
+    try {
+      return { ...cached, card: validateRawCard(cached.data, rawId, lang) };
+    } catch {
+      storage?.invalidateRawCard?.(id);
+    }
+  }
   const raw = await rest<RawCard>(`/cards/${encodeURIComponent(rawId)}`, undefined, signal, lang);
-  if (raw.id !== rawId || !raw.localId || !raw.name) throw new Error('Incomplete card response');
-  storage?.saveRawCard(id, raw);
-  return raw;
+  const card = validateRawCard(raw, rawId, lang);
+  const at = Date.now();
+  storage?.saveRawCard(id, raw, at);
+  return { data: raw, at, card };
 }
 
 /** Lightweight lookup candidates; not a complete printing catalogue. */
@@ -545,8 +568,8 @@ export async function getSetCardsBrief(setId: string, requireComplete = false): 
     ? rest<RawSet>(`/sets/${encodeURIComponent(rawSetId)}`, undefined, undefined, lang).then((raw) => {
       if (raw.id !== rawSetId || !Number.isSafeInteger(raw.cardCount?.total) || raw.cardCount!.total! < 0)
         throw new Error('Invalid set completeness metadata');
-      const set = toSet(raw, lang);
-      setIndex.set(set.id, { ...setIndex.get(set.id), ...set });
+      const set = projectSet(raw, lang);
+      setIndex.set(set.id, set);
       return set;
     })
     : getSet(setId);
@@ -563,9 +586,12 @@ export async function getSetCardsBrief(setId: string, requireComplete = false): 
 }
 
 /** Every card in a set, with one profile built from a complete import. */
-export async function getSetCards(setId: string): Promise<PokemonCard[]> {
+export async function getSetCardsObservation(setId: string): Promise<{ cards: PokemonCard[]; at: number }> {
   const { lang, raw: rawSetId } = splitId(setId);
-  const set = await getSet(setId);
+  const rawSet = await rest<RawSet>(`/sets/${encodeURIComponent(rawSetId)}`, undefined, undefined, lang);
+  if (rawSet.id !== rawSetId || !Number.isSafeInteger(rawSet.cardCount?.total) || rawSet.cardCount!.total! < 0)
+    throw new Error('Invalid set completeness metadata');
+  const set = projectSet(rawSet, lang);
   const ids = new Set<string>();
   let exhausted = false;
   for (let page = 1; page < 20; page++) {
@@ -575,14 +601,22 @@ export async function getSetCards(setId: string): Promise<PokemonCard[]> {
     for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) ids.add(c.id);
     if (cards.length < 250) { exhausted = true; break; }
   }
-  if (!exhausted || !ids.size || (set.total > 0 && ids.size !== set.total)) throw new Error('Set import is incomplete; retaining the previous catalogue');
-  const results = await pool([...ids], 12, async (id) => toCard(await getRawCard(id, lang), true, lang));
+  if (!exhausted || !ids.size || ids.size !== set.total) throw new Error('Set import is incomplete; retaining the previous catalogue');
+  setIndex.set(set.id, set);
+  const results = await pool([...ids], 12, (id) => getRawCard(id, lang));
   const failed = results.find((r) => r.status === 'rejected');
   if (failed?.status === 'rejected') throw failed.reason;
-  const cards = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
+  const observations = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
+  const cards = observations.map(({ card }) => card);
+  if (cards.length !== set.total || new Set(cards.map((card) => card.id)).size !== cards.length)
+    throw new Error('Set import is incomplete; retaining the previous catalogue');
   const profile = buildPrintingProfile(setId, cards, true);
   profiles.set(setId, profile);
-  return cards.map((card) => applyPrintingProfile(card, profile)).sort(compareCardNumber);
+  return { cards: cards.map((card) => applyPrintingProfile(card, profile)).sort(compareCardNumber), at: Math.min(...observations.map(({ at }) => at)) };
+}
+
+export async function getSetCards(setId: string): Promise<PokemonCard[]> {
+  return (await getSetCardsObservation(setId)).cards;
 }
 
 // ---------------------------------------------------------------- search

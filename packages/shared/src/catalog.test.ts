@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cardVariants, configureCatalog, getCardDetails, getSet, getSetCards, getSets, getSetCardsBrief, searchCards, SEARCH_OBSERVATION_TTL, type RawCard } from './catalog';
+import { cardVariants, configureCatalog, getCardDetails, getSet, getSetCards, getSetCardsBrief, getSetCardsObservation, getSets, searchCards, SEARCH_OBSERVATION_TTL, type RawCard } from './catalog';
 import { fromPokemon } from './tcg/pokemon';
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { configureCatalog({ storage: null }); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('set catalogue', () => {
   it('loads sets without requesting the REST-only abbreviation field', async () => {
@@ -23,6 +23,38 @@ describe('set catalogue', () => {
       id: 'new-set', name: 'New set', abbreviation: { official: 'NEW' },
     }))));
     expect(await getSet('new-set')).toMatchObject({ ptcgoCode: 'NEW' });
+  });
+
+  it('rejects duplicate set IDs without replacing the prior set index', async () => {
+    const set = { id: 'duplicate-set-proof', name: 'Duplicate proof', abbreviation: { official: 'KEEP' }, cardCount: { official: 1, total: 1 } };
+    const card = { id: `${set.id}-001`, localId: '001', name: 'Card', category: 'Pokemon', set };
+    vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => init?.method === 'POST'
+      ? Response.json({ data: { sets: [set, set] } })
+      : String(_url).includes('/sets/')
+        ? Response.json(set)
+        : Response.json(card)));
+
+    await getSet(set.id);
+    await expect(getSets()).rejects.toThrow('Duplicate set');
+    expect((await getCardDetails(card.id)).set.ptcgoCode).toBe('KEEP');
+  });
+
+  it('validates strict set metadata before updating the index and preserves live codes', async () => {
+    const set = { id: 'sv01', name: 'Live code proof', cardCount: { official: 1, total: 1 } };
+    const card = { id: 'sv01-001', localId: '001', name: 'Card', category: 'Pokemon', set };
+    let strictSet: unknown = { ...set, abbreviation: { official: 'LIVE' } };
+    vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ data: { cards: [{ id: card.id, localId: card.localId, name: card.name, category: card.category, set }] } });
+      if (String(_url).includes('/sets/')) return Response.json(strictSet);
+      return Response.json(card);
+    }));
+
+    await getSet('sv01').then((value) => expect(value.ptcgoCode).toBe('LIVE'));
+    strictSet = { ...set, abbreviation: { official: {} } };
+    await expect(getSetCardsBrief('sv01', true)).rejects.toThrow('Invalid Pokémon set');
+    expect((await getCardDetails(card.id)).set.ptcgoCode).toBe('LIVE');
+    strictSet = set;
+    expect((await getSetCardsBrief('sv01', true))[0].set.ptcgoCode).toBe('LIVE');
   });
 
   it('fetches set cards with a bounded pool of twelve concurrent requests', async () => {
@@ -142,6 +174,53 @@ it('rejects set listings missing advertised cards', async () => {
   await expect(getSetCardsBrief('incomplete-proof', true)).rejects.toThrow('Incomplete set listing');
 });
 
+it('retains the oldest raw-card observation time when a complete listing reuses cached records', async () => {
+  const setId = 'import-observation-proof';
+  const raw: RawCard = { id: `${setId}-1`, localId: '1', name: 'Card', category: 'Pokemon', set: { id: setId, name: 'Observation' } };
+  const set = { id: setId, name: 'Observation', releaseDate: '2026-01-01', cardCount: { official: 1, total: 1 } };
+  const at = Date.now() - 3 * 3600_000;
+  configureCatalog({ storage: {
+    profile: () => undefined,
+    rawCard: () => ({ data: raw, at }),
+    saveRawCard: vi.fn(),
+  } });
+  vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => init?.method === 'POST'
+    ? Response.json({ data: { cards: [{ id: raw.id }] } })
+    : Response.json(set)));
+
+  const observation = await getSetCardsObservation(setId);
+  expect(observation).toMatchObject({ at, cards: [{ id: raw.id }] });
+});
+
+it('invalidates malformed raw cache entries and validates fetched cards before saving them', async () => {
+  const raw: RawCard = { id: 'raw-validation-proof-1', localId: '1', name: 'Card', category: 'Pokemon', set: { id: 'raw-validation-proof', name: 'Raw validation' } };
+  const invalid = { ...raw, illustrator: {} } as unknown as RawCard;
+  const invalidateRawCard = vi.fn();
+  const saveRawCard = vi.fn();
+  configureCatalog({ storage: {
+    profile: () => undefined,
+    rawCard: () => ({ data: invalid, at: Date.now() - 1000 }),
+    saveRawCard,
+    invalidateRawCard,
+  } });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(raw)));
+
+  expect((await getCardDetails(raw.id)).name).toBe('Card');
+  expect(invalidateRawCard).toHaveBeenCalledWith(raw.id);
+  expect(saveRawCard).toHaveBeenCalledWith(raw.id, raw, expect.any(Number));
+
+  configureCatalog({ storage: { profile: () => undefined, rawCard: () => undefined, saveRawCard } });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(invalid)));
+  saveRawCard.mockClear();
+  await expect(getCardDetails(raw.id)).rejects.toThrow('Invalid Pokémon card');
+  expect(saveRawCard).not.toHaveBeenCalled();
+});
+
+it('rejects complete imports when set metadata omits the advertised total', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'missing-import-total', name: 'Missing total' })));
+  await expect(getSetCards('missing-import-total')).rejects.toThrow('Invalid set completeness metadata');
+});
+
 
 it.each([
   { id: 'wrong-set', name: 'Wrong', cardCount: { total: 0 } },
@@ -155,7 +234,7 @@ it.each([
 it('fresh detail reads bypass old raw cards without publishing an unchecked response', async () => {
   const saveRawCard = vi.fn();
   const raw = { id: 'fresh-proof-1', localId: '1', name: 'Fresh', category: 'Pokemon', set: { id: 'fresh-proof', name: 'Fresh' } };
-  configureCatalog({ storage: { profile: () => undefined, rawCard: () => ({ ...raw, name: 'Old' }), saveRawCard } });
+  configureCatalog({ storage: { profile: () => undefined, rawCard: () => ({ data: { ...raw, name: 'Old' }, at: Date.now() - 3 * 3600_000 }), saveRawCard } });
   vi.stubGlobal('fetch', vi.fn(async () => Response.json(raw)));
   expect((await getCardDetails(raw.id, undefined, { fresh: true })).name).toBe('Fresh');
   expect(saveRawCard).not.toHaveBeenCalled();

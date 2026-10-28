@@ -3,7 +3,7 @@
  * profile and completion totals together; an incomplete refresh must not replace a catalogue.
  * See docs/printings.md for refresh schedules and the identity-preserving migration policy.
  */
-import { getCardDetails, getSet, getSetCards, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
+import { getCardDetails, getSet, getSetCardsBrief, getSetCardsObservation, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
 import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type PrintingProfile } from '@poketracker/shared/printingRules';
 import { fromPokemon, pokemonSet } from '@poketracker/shared/tcg/pokemon';
 import { splitId } from '@poketracker/shared/languages';
@@ -24,7 +24,10 @@ async function importWithSlot(ctx: Ctx, setId: string) {
   if (!pool) { pool = { active: 0, waiting: [] }; slots.set(ctx.db, pool); }
   if (pool.active >= 2) await new Promise<void>((resolve) => pool!.waiting.push(resolve));
   else pool.active++;
-  try { return persistCatalogue(ctx, setId, await getSetCards(setId)); }
+  try {
+    const observation = await getSetCardsObservation(setId);
+    return persistCatalogue(ctx, setId, observation.cards, observation.at);
+  }
   finally { const next = pool.waiting.shift(); if (next) next(); else pool.active--; }
 }
 export function readPrintingProfile(db: Db, setId: string): PrintingProfile | undefined {
@@ -36,15 +39,19 @@ export function readCatalogCards(db: Db, setId: string): PokemonCard[] | undefin
   const row = db.get<{ data: string }>('SELECT data FROM printing_catalogues WHERE set_id = ? AND printing_version = ? AND policy_version = ?', setId, PRINTING_VERSION, POLICY_VERSION);
   return json<PokemonCard[] | undefined>(row?.data, undefined);
 }
-export function persistCatalogue(ctx: Ctx, setId: string, cards: PokemonCard[]) {
-  if (!cards.length || cards.some((c) => c.set.id !== setId || c.printingCoverage !== 'complete')) throw new Error('Refusing an incomplete catalogue');
+export function persistCatalogue(ctx: Ctx, setId: string, cards: PokemonCard[], observedAt = Date.now()) {
+  const total = cards[0]?.set.total;
+  if (!cards.length || !Number.isSafeInteger(total) || total !== cards.length ||
+    new Set(cards.map((card) => card.id)).size !== cards.length ||
+    cards.some((c) => c.set.id !== setId || c.set.total !== total || c.printingCoverage !== 'complete') ||
+    !Number.isFinite(observedAt)) throw new Error('Refusing an incomplete catalogue');
   const profile = buildPrintingProfile(setId, cards, true);
   const classified = cards.map((c) => applyPrintingProfile(c, profile));
   for (const card of classified) fromPokemon(card, new Date().toISOString());
   const progress = setProgress(classified, new Map());
-  const syncedAt = new Date().toISOString();
+  const syncedAt = new Date(observedAt).toISOString();
   ctx.db.tx(() => {
-    ctx.db.run('INSERT OR REPLACE INTO printing_catalogues (set_id, data, profile, printing_version, policy_version, synced_at) VALUES (?, ?, ?, ?, ?, ?)', setId, JSON.stringify(classified), JSON.stringify(profile), PRINTING_VERSION, POLICY_VERSION, Date.now());
+    ctx.db.run('INSERT OR REPLACE INTO printing_catalogues (set_id, data, profile, printing_version, policy_version, synced_at) VALUES (?, ?, ?, ?, ?, ?)', setId, JSON.stringify(classified), JSON.stringify(profile), PRINTING_VERSION, POLICY_VERSION, observedAt);
     ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, all_total, provisional, unresolved_total, additional_total, profile, printing_version, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', setId, progress.master.total, progress.all.total, progress.provisional ? 1 : 0, progress.unresolved, progress.additional, profile.fingerprint, PRINTING_VERSION, syncedAt);
     saveSnapshots(ctx.db, classified.map((c) => toSnapshot(c)));
     const recent = Date.parse(cards[0].set.releaseDate) > Date.now() - 90 * 24 * HOUR;
@@ -159,6 +166,7 @@ export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonC
 }
 export async function discoverSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
   const sets = await getSets(lang);
+  if (new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('Duplicate set in catalogue response');
   for (const set of sets) {
     pokemonSet(set);
     if (splitId(set.id).lang !== lang) throw new Error('Mismatched set language');

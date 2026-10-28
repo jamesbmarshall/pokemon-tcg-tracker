@@ -41,17 +41,25 @@ function cachedDetail(ctx: Ctx, id: string): PokemonCard | undefined {
   return card?.id === id && card.detailed === true ? card : undefined;
 }
 
-function cachedSetCode(ctx: Ctx, setId: string): string | undefined {
-  const row = ctx.db.get<{ body: Uint8Array }>('SELECT body FROM http_cache WHERE key = ?', `${prefix}:metadata:${setId}`);
+function cachedSetCodeObservation(ctx: Ctx, setId: string): { code: string; at: number } | undefined {
+  const row = ctx.db.get<{ body: Uint8Array; fetched_at: number }>('SELECT body, fetched_at FROM http_cache WHERE key = ?', `${prefix}:metadata:${setId}`);
   const value = row ? json<{ id?: string; ptcgoCode?: unknown } | undefined>(Buffer.from(row.body).toString(), undefined) : undefined;
-  return value?.id === setId && typeof value.ptcgoCode === 'string' ? value.ptcgoCode : undefined;
+  return value?.id === setId && typeof value.ptcgoCode === 'string' && row
+    ? { code: value.ptcgoCode, at: row.fetched_at }
+    : undefined;
+}
+
+function cachedSetCode(ctx: Ctx, setId: string): string | undefined {
+  return cachedSetCodeObservation(ctx, setId)?.code;
 }
 
 export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider {
   const lang = language(selectedLanguage);
   const projectCard = (card: PokemonCard, at: string) => {
     const projected = fromPokemon(card, at);
-    return { ...projected, setCode: card.set.ptcgoCode || cachedSetCode(ctx, card.set.id) || projected.setCode };
+    const live = cachedSetCodeObservation(ctx, card.set.id);
+    const code = live && live.at >= Date.parse(at) ? live.code : card.set.ptcgoCode || projected.setCode;
+    return { ...projected, setCode: code };
   };
   async function setPage(id: string, requestedLanguage: string) {
     reference(id, 'set');
@@ -134,7 +142,9 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
       return sets.map((set) => {
         if (splitId(set.id).lang !== lang) throw new HttpError(502, 'Mismatched Pokémon language', 'upstream');
         const projected = pokemonSet(set);
-        return { ...projected, code: set.ptcgoCode || cachedSetCode(ctx, set.id) || projected.code, fetchedAt: new Date(at).toISOString(), stale: Date.now() - at >= 6 * HOUR };
+        const live = cachedSetCodeObservation(ctx, set.id);
+        const code = live && live.at >= at ? live.code : set.ptcgoCode || projected.code;
+        return { ...projected, code, fetchedAt: new Date(at).toISOString(), stale: Date.now() - at >= 6 * HOUR };
       });
     },
     async card(id) {
@@ -151,7 +161,7 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
         const index = await catalogSets(ctx, lang);
         const direct = index.find((set) => set.id === row.set);
         if (direct) return (await setCards(direct.id, lang)).filter((card) => nameMatches(card.name, row.name) && (!row.number || numberMatches(row.number, card.number)));
-        const unknown = index.filter((set) => !set.ptcgoCode && !SET_CODES[splitId(set.id).raw]);
+        const unknown = index.filter((set) => !set.ptcgoCode && !cachedSetCode(ctx, set.id) && !SET_CODES[splitId(set.id).raw]);
         if (unknown.length > 1000) throw bad('Set code lookup exceeded catalogue limit');
         // Reuse one bounded index observation across deck rows; an incomplete refresh fails explicitly.
         const codes = await displayCached(ctx, `${prefix}:code-index:${lang}:${sha256(JSON.stringify(unknown.map((set) => set.id).sort()))}`, async () => {
@@ -166,15 +176,20 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
                 if (value.id !== set.id) throw bad('Mismatched live set metadata');
                 return value;
               });
-              if (!live.ptcgoCode) throw new HttpError(502, 'Incomplete Pokémon set code index', 'upstream');
-              returnCode[set.id] = live.ptcgoCode;
+              if (live.ptcgoCode) returnCode[set.id] = live.ptcgoCode;
             }
           }));
           return returnCode;
         });
         const requested = row.set.toUpperCase();
-        const code = PROMO_PREFIXES[requested]?.toUpperCase() ?? requested;
-        const sets = index.filter((set) => [set.ptcgoCode, cachedSetCode(ctx, set.id), SET_CODES[splitId(set.id).raw], codes[set.id]].some((value) => value?.toUpperCase() === code));
+        const promoTarget = PROMO_PREFIXES[requested]?.toUpperCase();
+        const codesToMatch = new Set([requested, ...(promoTarget ? [promoTarget] : [])]);
+        const sets = index.filter((set) => {
+          const setId = splitId(set.id).raw.toUpperCase();
+          return codesToMatch.has(setId) ||
+            [set.ptcgoCode, cachedSetCode(ctx, set.id), SET_CODES[splitId(set.id).raw], codes[set.id]]
+              .some((value) => value && codesToMatch.has(value.toUpperCase()));
+        });
         if (sets.length > 20) throw bad('Ambiguous Pokémon deck set');
         const candidates = [];
         for (const set of sets) candidates.push(...(await setCards(set.id, lang)).filter((card) => nameMatches(card.name, row.name) && (!row.number || numberMatches(row.number, card.number))).map((card) => ({ ...card, setCode: card.setCode || codes[set.id] || '' })));

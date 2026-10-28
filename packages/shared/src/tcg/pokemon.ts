@@ -53,10 +53,10 @@ function quotes(source: PriceSource | undefined, currency: Quote['currency'], na
 }
 
 export function fromPokemon(card: PokemonCard, fetchedAt: string): PokemonTcgCard {
-  if (!card || !pokemonReference(card.id, 'card') || typeof card.name !== 'string' ||
+  if (!card || !pokemonReference(card.id, 'card') || typeof card.name !== 'string' || !card.name.trim() ||
     (card.rarity !== undefined && typeof card.rarity !== 'string') ||
     (card.artist !== undefined && typeof card.artist !== 'string') ||
-    typeof card.supertype !== 'string' || typeof card.number !== 'string' || !card.images || typeof card.images.small !== 'string' || typeof card.images.large !== 'string' ||
+    typeof card.supertype !== 'string' || typeof card.number !== 'string' || !card.number.trim() || !card.images || typeof card.images.small !== 'string' || typeof card.images.large !== 'string' ||
     !Array.isArray(card.variants) || card.variants.some((v) => typeof v !== 'string') ||
     !['Pokémon', 'Trainer', 'Energy'].includes(card.supertype) || !Number.isFinite(Date.parse(fetchedAt)))
     throw new Error('Invalid Pokémon card data');

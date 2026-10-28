@@ -32,9 +32,11 @@ export function initCatalog(ctx: Ctx) {
     profile: (setId) => readPrintingProfile(ctx.db, setId),
     rawCard: (cardId) => {
       const row = ctx.db.get<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM printing_raw_cards WHERE card_id = ?', cardId);
-      return row && Date.now() - row.fetched_at < 6 * 3600_000 ? json(row.data, undefined) : undefined;
+      const data = row && Date.now() - row.fetched_at < 6 * 3600_000 ? json(row.data, undefined) : undefined;
+      return row && data ? { data, at: row.fetched_at } : undefined;
     },
-    saveRawCard: (cardId, raw) => { ctx.db.run('INSERT OR REPLACE INTO printing_raw_cards (card_id, data, fetched_at) VALUES (?, ?, ?)', cardId, JSON.stringify(raw), Date.now()); },
+    saveRawCard: (cardId, raw, at) => { ctx.db.run('INSERT OR REPLACE INTO printing_raw_cards (card_id, data, fetched_at) VALUES (?, ?, ?)', cardId, JSON.stringify(raw), at); },
+    invalidateRawCard: (cardId) => { ctx.db.run('DELETE FROM printing_raw_cards WHERE card_id = ?', cardId); },
   } });
 }
 
