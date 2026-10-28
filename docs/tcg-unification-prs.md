@@ -2,7 +2,7 @@
 
 Status: proposed, 25 October 2026. These identifiers are planning IDs, not GitHub PR numbers. Parent: [TCG unification plan](tcg-unification-plan.md).
 
-Implementation status (25 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is published as stacked PR #71. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
+Implementation status (28 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is published as stacked PR #71. U08 now implements the internal Pokémon catalogue adapter on `codex/pokemon-catalogue-adapter`. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
 
 U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossless field mapping](tcg-field-mapping.md) for additive implementation. Remaining U01 WebKit/manual checks gate affected caller cutovers and release, while additive types can proceed against the established preservation fixtures. This sequencing clarification does not waive those checks or authorize data deletion.
 
@@ -23,6 +23,10 @@ U06 review follow-up: explicit Expanded bans now apply even without complete cat
 U06 second review follow-up: ownership projects only requested main-deck names, retains matching reprints and avoids catalogue iteration for empty main decks. All 193 shared tests (30 adapter cases), typecheck, lint and production build passed.
 
 Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
+
+U08 adds lossless Pokémon card/set projections, TCGdex registration, existing-cache reads, bounded search and ambiguity-preserving deck resolution. Source quote provenance and stale observation times remain explicit. Generic Pokémon routes stay closed until U11; there is no storage migration. The shared catalogue transport rejects redirects and bounds streamed JSON.
+
+U08 validation: 211 shared tests, 280 tests in the full server run and 823 web tests passed. The final provider suite has 13 tests, including set-list outage provenance; final focused tests, typecheck, lint and build passed.
 
 ## Merge and release rules
 

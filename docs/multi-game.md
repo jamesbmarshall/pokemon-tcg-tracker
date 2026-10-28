@@ -120,14 +120,60 @@ ownership independently of today's selection. Unknown or ambiguous ownership fai
 before construction or HTTP; an explicit provider attribution can resolve a genuine
 namespace overlap, but cannot claim an unrelated ID.
 
-The default registration remains Scryfall for Magic. Pokémon's provider adapter is
-added in U08. Card detail hydration, uncached imports and tracked-price refreshes
+The default registrations are Scryfall for Magic and TCGdex for Pokémon (U08). Card detail hydration, uncached imports and tracked-price refreshes
 now use stored-card dispatch; set detail uses stored-set dispatch. Provider URL
 construction, runtime JSON validation, cache policy, pagination limits, resilience
 and image allowlists stay inside existing adapters/helpers. Registrations are
 copied and validated, and invalid game/factory combinations fail closed. No
 runtime plugin loader, provider switch, ID conversion or new external host is
 introduced.
+
+### Pokémon catalogue adapter (U08)
+
+`apps/server/src/tcg/pokemonProvider.ts` adapts the existing `printingCatalog.ts`
+services into the shared provider contract. It does not configure a second client,
+write normalized Pokémon rows into `tcg_cards`, or introduce a new holdings writer.
+The existing server initializes the process-level catalogue client once; provider
+factories receive context for the existing database/cache services. Multiple
+independently configured catalogue clients in one process are not supported by
+this legacy client and must not be simulated by reconfiguring it per request.
+
+`tcg/pokemon.ts` projects the source records without rekeying IDs. English IDs stay
+bare and other languages keep their existing prefixes. Set membership is checked
+inside this provider-specific adapter, not inferred in shared domain code. Playable
+identity remains the printing ID until rules establish equivalence; names do not
+invent cross-language identity. Full set metadata, rule details, source price
+blocks, variant aliases, raw evidence and policy metadata survive projection.
+Normalized quotes retain native USD/EUR, source URL and source update time. Zero
+is a price; missing quotes remain absent. No quote is copied to another variant.
+
+Sets, card details and set browsing reuse authoritative catalogue/display caches
+and their existing background refresh/import behavior. Search adds a versioned,
+query-hashed entry to the same display cache. Validation rejects malformed search
+pages before caching. Summary search/set responses are enriched from complete
+catalogues or detailed card caches without replacing those records. `fetchedAt`
+is the existing cache observation timestamp; `stale` indicates evidence older than
+six hours. Source quote dates remain separate. Outages retain stale search data and
+do not advance its timestamp; cold failures propagate.
+
+Search supports existing Pokémon name/type/supertype/rarity/artist/sort filters and
+36-card pages, with a 1–1000 page bound. Collector-number search requires a set and
+optional language/page, so it cannot silently ignore other filters. Stored set IDs
+must agree with requested language. Deck resolution returns all matching printings
+rather than selecting the first one, with bounds of 20 matching sets or 14 name
+search pages. Numeric collector numbers match despite zero padding; alphanumeric
+numbers compare case-insensitively. Responses preserve original number strings.
+
+The shared TCGdex transport now rejects redirects, retains its existing timeout,
+retry and configured-host behavior, and limits decompressed JSON to 16 MiB even
+when Content-Length is absent or false. This applies to both existing callers and
+the new adapter. No additional upstream host or credential configuration is added.
+
+The adapter remains internal: `/api/games/pokemon/*` continues to reject requests
+until U11 installs authorized shared services. Existing UI, URLs, exports,
+completion policy and authoritative storage remain on their compatibility paths.
+There is no migration or accessibility interaction change in U08. Existing manual
+and WebKit accessibility gates still apply before affected caller cutovers.
 
 ## Adding another game
 

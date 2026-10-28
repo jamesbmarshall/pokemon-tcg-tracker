@@ -3,6 +3,7 @@
  * Everything that talks to the card data provider lives here, so the rest of the app only
  * ever sees PokemonCard / CardSet / CardSnapshot.
  */
+import { catalogueJson } from './catalogTransport';
 import type { ApiResponse, CardSet, CardSnapshot, PokemonCard, PriceBlock, PriceSource } from './types';
 import { applyPrintingProfile, buildPrintingProfile, type PrintingProfile } from './printingRules';
 import { PRINTING_VERSION, resolvePrintings, type RawPrinting } from './printings';
@@ -58,13 +59,14 @@ async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSig
     let res: Response;
     try {
       const headers = { ...extraHeaders(), ...(init.headers as Record<string, string> | undefined) };
-      res = await fetch(url, { ...init, headers, signal: signal ?? AbortSignal.timeout(30_000) });
+      res = await fetch(url, { ...init, redirect: 'error', headers, signal: signal ?? AbortSignal.timeout(30_000) });
     } catch (err) {
       if (signal?.aborted || attempt >= 3) throw err;
       await backoff(attempt);
       continue;
     }
-    if (res.ok) return res.json();
+    if (res.ok) return catalogueJson<T>(res);
+    await res.body?.cancel();
     if ((res.status === 429 || res.status >= 500) && attempt < 3) {
       await backoff(attempt);
       continue;

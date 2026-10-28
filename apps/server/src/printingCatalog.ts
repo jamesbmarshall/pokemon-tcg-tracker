@@ -84,7 +84,8 @@ function refreshCatalogueInBackground(ctx: Ctx, setId: string, hasCatalogue = fa
   if (retry?.last_error && retry.next_at > Date.now()) return;
   void getCatalogSet(ctx, setId).catch((err) => ctx.log.warn({ err, setId }, 'Background catalogue import will retry'));
 }
-function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
+/** Shared stale-while-revalidate cache for internal catalogue projections. */
+export function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
   const row = ctx.db.get<{ body: Uint8Array; fetched_at: number }>('SELECT body, fetched_at FROM http_cache WHERE key = ?', key);
   const previous = row ? json<T | undefined>(Buffer.from(row.body).toString(), undefined) : undefined;
   if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve(previous);

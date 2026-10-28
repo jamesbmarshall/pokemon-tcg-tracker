@@ -1,6 +1,6 @@
 # TCG unification continuation handoff
 
-Updated 26 October 2026. Read this before continuing in a fresh context.
+Updated 28 October 2026. Read this before continuing in a fresh context.
 
 ## Goal and controlling documents
 
@@ -26,7 +26,7 @@ has been performed in this work.
 ## Branch and PR stack
 
 Repository: `jamesbmarshall/pokemon-tcg-tracker`, workspace
-`/workspace/pokemon-tcg-tracker`. Current branch: `codex/tcg-provider-registry`.
+`/workspace/pokemon-tcg-tracker`. Current branch: `codex/pokemon-catalogue-adapter`.
 Initial base: `8da7d5b` (PR #64 merge). Each PR targets the preceding stack branch.
 The stack has not been merged during this session; verify current remote state on resume.
 
@@ -58,7 +58,7 @@ succeeded on 26 October: PR #71 targets `codex/pokemon-rule-adapters`. The expli
   rule context. Pokémon controller compatibility remains intentional.
 - U06: Pokémon format validation, PTCGL parse/export, format-aware ownership,
   analysis and OCR adapters. Rule snapshots are not persistent-card converters.
-- U07 (local branch): provider registry separates configurable catalogue selection
+- U07 (published PR #71): provider registry separates configurable catalogue selection
   from stored card/set ID ownership. Rejects ambiguity, isolates games and passes
   language to factories. Magic routes/jobs use it; existing Scryfall transport,
   caching and safeguards remain. Pokémon registration is U08 work.
@@ -87,6 +87,11 @@ review/CI and verify the latest remote commit on resume.
 
 ## Validation evidence and limits
 
+- U08: all 211 shared tests, the full 280-test server suite and all 823 web tests
+  passed. A final set-list provenance case brings the focused Pokémon provider
+  suite to 13 tests; that suite, typecheck, lint and build passed for the final
+  implementation. No new browser/manual accessibility result is claimed.
+
 - U06 original implementation: 179 shared tests, 35 selected server tests,
   typecheck, lint and production build passed.
 - U06 review follow-up: 191 shared tests, including 28 Pokémon adapter cases,
@@ -113,15 +118,15 @@ review/CI and verify the latest remote commit on resume.
    production build. Check publication state before creating a duplicate PR.
 3. U07 is published as PR #71 targeting `codex/pokemon-rule-adapters`. Inspect
    review/CI and address legitimate findings before advancing; do not create a duplicate.
-4. Begin U08 on a new branch from U07: normalized Pokémon catalogue adapter using
-   existing authoritative catalogue/cache/printing services. Preserve historical
-   IDs, multilingual behavior, detailed versus summary evidence, quote provenance,
-   stale fallback and cache quality. Add contract and hostile-response fixtures.
+4. U08 implementation is on `codex/pokemon-catalogue-adapter` from U07. It adds
+   `tcg/pokemon.ts`, `tcg/pokemonProvider.ts` and bounded catalogue JSON transport,
+   with preservation, language, outage, paging and malformed-response tests. Check
+   its PR/review status before beginning U09. PR #71 had no review threads on 28 October.
 5. U09 repositories/common reads, U10 authorized commands, U11 shared API and then
    the later UI/import/sharing/jobs phases follow the incremental plan. Optional
    storage consolidation is not a prerequisite for a successful unification.
 
-U08 has not been implemented. Relevant starting files are
+U08 is implemented internally on `codex/pokemon-catalogue-adapter`; publication and validation status should be checked below before continuing. Relevant source files are
 `apps/server/src/providers/tcgdex.ts`, `apps/server/src/cards.ts`,
 `packages/shared/src/catalog.ts`, `packages/shared/src/languages.ts`,
 `packages/shared/src/tcg/types.ts` and `tcg/variants.ts`. The existing shared
