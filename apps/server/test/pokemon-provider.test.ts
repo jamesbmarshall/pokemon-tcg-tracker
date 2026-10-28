@@ -167,7 +167,7 @@ describe('internal Pokémon catalogue provider', () => {
     complete(card);
     server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'fr', JSON.stringify([card.set]), Date.now());
     expect(await providerFor(server.ctx, 'pokemon', 'fr').resolve!({ name: card.name, set: 'SVI', number: '1', quantity: 1, zone: 'main', line: 1 }))
-      .toMatchObject([{ id: card.id, language: 'fr' }]);
+      .toMatchObject([{ id: card.id, language: 'fr', setCode: 'SVI' }]);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -186,4 +186,65 @@ describe('internal Pokémon catalogue provider', () => {
     expect(response.statusCode).toBe(200);
     expect(upstream).toHaveBeenCalledWith(expect.stringContaining('http://tcgdex.test/v2'), expect.objectContaining({ redirect: 'error' }));
   });
+});
+
+it('requires normalized names as well as supplied collector numbers', async () => {
+  complete(card);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([card.set]), Date.now());
+  const provider = providerFor(server.ctx, 'pokemon');
+  const row = { name: 'wrong name', set: 'EXM', number: '1', quantity: 1, zone: 'main' as const, line: 1 };
+  expect(await provider.resolve!(row)).toEqual([]);
+  expect(await provider.resolve!({ ...row, name: '  example  ' })).toMatchObject([{ id: card.id }]);
+  vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [card], page: 1, pageSize: 36, totalCount: 1 });
+  expect(await provider.resolve!({ ...row, name: 'example', set: undefined })).toMatchObject([{ id: card.id }]);
+});
+
+it('consults and caches live abbreviations for newly released sets', async () => {
+  complete(card);
+  const set = { ...card.set, ptcgoCode: undefined };
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([set]), Date.now());
+  const metadata = vi.spyOn(catalog, 'getSet').mockResolvedValue({ ...set, ptcgoCode: 'NEW' });
+  const provider = providerFor(server.ctx, 'pokemon');
+  const row = { name: card.name, set: 'NEW', number: '1', quantity: 1, zone: 'main' as const, line: 1 };
+  expect(await provider.resolve!(row)).toMatchObject([{ id: card.id }]);
+  expect(await provider.resolve!(row)).toHaveLength(1);
+  expect(metadata).toHaveBeenCalledTimes(1);
+});
+
+it.each(['card', 'set'])('rejects malformed %s refreshes before cache publication', async (kind) => {
+  complete(card);
+  server.ctx.db.run('DELETE FROM printing_catalogues');
+  const key = `${prefix}:${kind}:${kind === 'card' ? card.id : card.set.id}`;
+  const at = Date.now() - 7 * 3600_000;
+  cache(key, kind === 'card' ? card : [card], at);
+  const before = server.ctx.db.get('SELECT body,fetched_at FROM http_cache WHERE key = ?', key);
+  vi.spyOn(catalog, 'getSet').mockResolvedValue(card.set);
+  const malformed = { ...card, rarity: {} } as unknown as PokemonCard;
+  vi.spyOn(catalog, 'getCardDetails').mockResolvedValue(malformed);
+  vi.spyOn(catalog, 'getSetCardsBrief').mockResolvedValue([malformed]);
+  const warn = vi.spyOn(server.ctx.log, 'warn').mockImplementation(() => {});
+  const provider = providerFor(server.ctx, 'pokemon');
+  if (kind === 'card') expect((await provider.card(card.id)).stale).toBe(true);
+  else expect((await provider.setCards(card.set.id, 'en'))[0].stale).toBe(true);
+  await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+  expect(server.ctx.db.get('SELECT body,fetched_at FROM http_cache WHERE key = ?', key)).toEqual(before);
+});
+
+it.each(['card', 'set'])('keeps %s display observation provenance during a concurrent catalogue import', async (kind) => {
+  complete(card);
+  server.ctx.db.run('DELETE FROM printing_catalogues');
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const loader = kind === 'card'
+    ? vi.spyOn(catalog, 'getCardDetails').mockImplementation(async () => { await blocked; return card; })
+    : vi.spyOn(catalog, 'getSetCardsBrief').mockImplementation(async () => { await blocked; return [card]; });
+  vi.spyOn(catalog, 'getSet').mockResolvedValue(card.set);
+  const provider = providerFor(server.ctx, 'pokemon');
+  const pending = kind === 'card' ? provider.card(card.id).then((c) => [c]) : provider.setCards(card.set.id, 'en');
+  await vi.waitFor(() => expect(loader).toHaveBeenCalled());
+  complete({ ...card, name: 'Different catalogue observation' }, Date.now() - 7 * 3600_000);
+  release();
+  const result = await pending;
+  const at = server.ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM http_cache WHERE key = ?', `${prefix}:${kind}:${kind === 'card' ? card.id : card.set.id}`)!.fetched_at;
+  expect(result[0]).toMatchObject({ name: 'Example', stale: false, fetchedAt: new Date(at).toISOString() });
 });

@@ -1,5 +1,6 @@
 /** Internal adapter over Pokémon's authoritative catalogue services and caches. */
-import { searchCards, type SearchFilters } from '@poketracker/shared/catalog';
+import { getSet, searchCards, type SearchFilters } from '@poketracker/shared/catalog';
+import { normalizeDeckCardName } from '@poketracker/shared/decks/ptcgl';
 import { SET_CODES } from '@poketracker/shared/legacySets';
 import { isLang, splitId } from '@poketracker/shared/languages';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
@@ -8,7 +9,7 @@ import { fromPokemon, pokemonReference, pokemonSet } from '@poketracker/shared/t
 import type { TcgProvider, TcgSearch, TcgPage } from '@poketracker/shared/tcg/types';
 import type { PokemonCard } from '@poketracker/shared/types';
 import { bad, HttpError, type Ctx } from '../context.ts';
-import { catalogSets, displayCached, getCatalogCard, getCatalogSetForDisplay, readCatalogCards } from '../printingCatalog.ts';
+import { catalogSets, displayCached, displayObservation, catalogCardObservation, catalogSetObservation, readCatalogCards } from '../printingCatalog.ts';
 import { sha256 } from '../security.ts';
 import { json } from '../db.ts';
 
@@ -21,11 +22,14 @@ function language(value: string) {
 function reference(id: string, kind: 'card' | 'set') {
   if (!pokemonReference(id, kind)) throw bad('Invalid Pokémon catalogue reference');
 }
-function observed(ctx: Ctx, setId: string, key: string, source: 'catalogue' | 'display' | 'prefer-catalogue' = 'prefer-catalogue') {
+function observed(ctx: Ctx, setId: string, key: string, source: 'catalogue' | 'display') {
   const catalogueAt = source !== 'display' ? ctx.db.get<{ synced_at: number }>('SELECT synced_at FROM printing_catalogues WHERE set_id = ? AND printing_version = ? AND policy_version = ?', setId, PRINTING_VERSION, POLICY_VERSION)?.synced_at : undefined;
   const at = catalogueAt ?? (source !== 'catalogue' ? ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM http_cache WHERE key = ?', key)?.fetched_at : undefined);
   if (at === undefined) throw new HttpError(502, 'Missing Pokémon cache provenance', 'upstream');
   return { at: new Date(at).toISOString(), stale: Date.now() - at >= 6 * HOUR };
+}
+function nameMatches(a: string, b: string) {
+  return normalizeDeckCardName(a).replace(/\s+/g, ' ').toLowerCase() === normalizeDeckCardName(b).replace(/\s+/g, ' ').toLowerCase();
 }
 function numberMatches(a: string, b: string) {
   return /^\d+$/.test(a) && /^\d+$/.test(b) ? a.replace(/^0+(?=\d)/, '') === b.replace(/^0+(?=\d)/, '') : a.toUpperCase() === b.toUpperCase();
@@ -41,10 +45,11 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
   async function setPage(id: string, requestedLanguage: string) {
     reference(id, 'set');
     if (language(requestedLanguage) !== splitId(id).lang) throw bad('Set ID and language disagree');
-    const cards = await getCatalogSetForDisplay(ctx, id);
+    const observation = await catalogSetObservation(ctx, id);
+    const cards = observation.data;
     if (!Array.isArray(cards) || cards.length > 5000 || new Set(cards.map((card) => card.id)).size !== cards.length)
       throw new HttpError(502, 'Invalid Pokémon set response', 'upstream');
-    const metadata = observed(ctx, id, `${prefix}:set:${id}`);
+    const metadata = { at: new Date(observation.at).toISOString(), stale: Date.now() - observation.at >= 6 * HOUR };
     const normalized = cards.map((card) => {
       if (card.set.id !== id) throw new HttpError(502, 'Mismatched Pokémon set response', 'upstream');
       if (card.detailed !== true) {
@@ -86,7 +91,7 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
       types: query.type ? [String(query.type)] : undefined, supertype: query.supertype as string | undefined,
       rarity: query.rarity as string | undefined, artist: query.artist as string | undefined, sort };
     const key = `${prefix}:search:${sha256(JSON.stringify([filters, page]))}`;
-    const result = await displayCached(ctx, key, async () => {
+    const observation = await displayObservation(ctx, key, async () => {
       const result = await searchCards(filters, page, undefined, { refresh: true });
       if (!Array.isArray(result.data) || !Number.isSafeInteger(result.totalCount) || result.totalCount < 0 || result.page !== page || result.pageSize !== 36 || result.data.length !== Math.min(36, Math.max(0, result.totalCount - (page - 1) * 36)) || new Set(result.data.map((card) => card.id)).size !== result.data.length)
         throw new HttpError(502, 'Invalid Pokémon search response', 'upstream');
@@ -96,7 +101,8 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
       }
       return result;
     });
-    const timestamp = ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM http_cache WHERE key = ?', key)!.fetched_at;
+    const result = observation.data;
+    const timestamp = observation.at;
     // Complete catalogues remain authoritative when search returns summary records.
     const sets = new Map<string, Map<string, PokemonCard>>();
     const cards = result.data.map((brief) => {
@@ -122,24 +128,42 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
     },
     async card(id) {
       reference(id, 'card');
-      const card = await getCatalogCard(ctx, id);
+      const observation = await catalogCardObservation(ctx, id);
+      const card = observation.data;
       if (card.id !== id) throw new HttpError(502, 'Mismatched Pokémon card response', 'upstream');
-      const metadata = observed(ctx, card.set.id, `${prefix}:card:${id}`);
+      const metadata = { at: new Date(observation.at).toISOString(), stale: Date.now() - observation.at >= 6 * HOUR };
       return { ...fromPokemon(card, metadata.at), stale: metadata.stale };
     },
     async resolve(row) {
       if (!row.name || row.name.length > 180 || row.set && row.set.length > 180 || row.number && row.number.length > 180) throw bad('Invalid Pokémon deck reference');
       if (row.set) {
-        const sets = (await catalogSets(ctx, lang)).filter((set) => set.id === row.set || set.ptcgoCode?.toUpperCase() === row.set!.toUpperCase() || SET_CODES[splitId(set.id).raw]?.toUpperCase() === row.set!.toUpperCase());
+        const index = await catalogSets(ctx, lang);
+        const unknown = index.filter((set) => !set.ptcgoCode && !SET_CODES[splitId(set.id).raw]);
+        if (unknown.length > 1000) throw bad('Set code lookup exceeded catalogue limit');
+        // Four concurrent, cached metadata lookups for newly released sets.
+        let cursor = 0;
+        await Promise.all(Array.from({ length: Math.min(4, unknown.length) }, async () => {
+          while (cursor < unknown.length) {
+            const set = unknown[cursor++];
+            const live = await displayCached(ctx, `${prefix}:metadata:${set.id}`, async () => {
+              const value = await getSet(set.id);
+              pokemonSet(value);
+              if (value.id !== set.id) throw bad('Mismatched live set metadata');
+              return value;
+            });
+            set.ptcgoCode = live.ptcgoCode;
+          }
+        }));
+        const sets = index.filter((set) => set.id === row.set || set.ptcgoCode?.toUpperCase() === row.set!.toUpperCase() || SET_CODES[splitId(set.id).raw]?.toUpperCase() === row.set!.toUpperCase());
         if (sets.length > 20) throw bad('Ambiguous Pokémon deck set');
         const candidates = [];
-        for (const set of sets) candidates.push(...(await setCards(set.id, lang)).filter((card) => row.number ? numberMatches(row.number, card.number) : card.name === row.name));
+        for (const set of sets) candidates.push(...(await setCards(set.id, lang)).filter((card) => nameMatches(card.name, row.name) && (!row.number || numberMatches(row.number, card.number))));
         return candidates; // Never pick the first of several valid printings.
       }
       const candidates = [];
       for (let page = 1; page <= 14; page++) {
         const result = await search({ q: row.name, language: lang, page });
-        candidates.push(...result.cards.filter((card) => card.name === row.name && (!row.number || numberMatches(row.number, card.number))));
+        candidates.push(...result.cards.filter((card) => nameMatches(card.name, row.name) && (!row.number || numberMatches(row.number, card.number))));
         if (!result.hasMore) return candidates;
       }
       throw bad('Pokémon deck lookup exceeded candidate limit');

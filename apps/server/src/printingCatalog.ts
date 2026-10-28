@@ -5,6 +5,7 @@
  */
 import { getCardDetails, getSet, getSetCards, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
 import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type PrintingProfile } from '@poketracker/shared/printingRules';
+import { fromPokemon } from '@poketracker/shared/tcg/pokemon';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
 import type { CardSet, PokemonCard } from '@poketracker/shared/types';
@@ -85,48 +86,74 @@ function refreshCatalogueInBackground(ctx: Ctx, setId: string, hasCatalogue = fa
   void getCatalogSet(ctx, setId).catch((err) => ctx.log.warn({ err, setId }, 'Background catalogue import will retry'));
 }
 /** Shared stale-while-revalidate cache for internal catalogue projections. */
-export function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
+export interface CatalogueObservation<T> { data: T; at: number }
+export function displayObservation<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<CatalogueObservation<T>> {
   const row = ctx.db.get<{ body: Uint8Array; fetched_at: number }>('SELECT body, fetched_at FROM http_cache WHERE key = ?', key);
   const previous = row ? json<T | undefined>(Buffer.from(row.body).toString(), undefined) : undefined;
-  if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve(previous);
+  if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve({ data: previous, at: row!.fetched_at });
   let requests = displayRequests.get(ctx.db);
   if (!requests) { requests = new Map(); displayRequests.set(ctx.db, requests); }
-  let request = requests.get(key) as Promise<T> | undefined;
+  let request = requests.get(key) as Promise<CatalogueObservation<T>> | undefined;
   if (!request) {
     request = load().then((data) => {
-      ctx.db.run('INSERT OR REPLACE INTO http_cache (key, status, content_type, body, fetched_at) VALUES (?, 200, ?, ?, ?)', key, 'application/json', Buffer.from(JSON.stringify(data)), Date.now());
-      return data;
+      const at = Date.now();
+      ctx.db.run('INSERT OR REPLACE INTO http_cache (key, status, content_type, body, fetched_at) VALUES (?, 200, ?, ?, ?)', key, 'application/json', Buffer.from(JSON.stringify(data)), at);
+      return { data, at };
     }).finally(() => requests!.delete(key));
     requests.set(key, request);
   }
   if (previous !== undefined) {
     void request.catch((err) => ctx.log.warn({ err }, 'Background catalogue display refresh failed'));
-    return Promise.resolve(previous);
+    return Promise.resolve({ data: previous, at: row!.fetched_at });
   }
   return request;
 }
-export async function getCatalogSetForDisplay(ctx: Ctx, setId: string): Promise<PokemonCard[]> {
-  const previous = readCatalogCards(ctx.db, setId);
-  if (previous) { refreshCatalogueInBackground(ctx, setId, true); return previous; }
-  const cards = await displayCached(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set:${setId}`, () => getSetCardsBrief(setId));
-  refreshCatalogueInBackground(ctx, setId);
-  return cards;
+export async function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
+  return (await displayObservation(ctx, key, load)).data;
 }
-export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonCard> {
-  const setId = setIdFromCardId(cardId);
-  const previous = readCatalogCards(ctx.db, setId);
-  if (previous) {
-    refreshCatalogueInBackground(ctx, setId, true);
-    const card = previous.find((c) => c.id === cardId);
-    if (!card) throw notFound('Card not found in this set');
-    return card;
-  }
-  const card = await displayCached(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:card:${cardId}`, async () => {
-    const [card, set] = await Promise.all([getCardDetails(cardId), getSet(setId)]);
-    return { ...card, set };
+function storedCatalogue(ctx: Ctx, setId: string): CatalogueObservation<PokemonCard[]> | undefined {
+  const row = ctx.db.get<{ data: string; synced_at: number }>('SELECT data,synced_at FROM printing_catalogues WHERE set_id = ? AND printing_version = ? AND policy_version = ?', setId, PRINTING_VERSION, POLICY_VERSION);
+  const data = json<PokemonCard[] | undefined>(row?.data, undefined);
+  return data && row ? { data, at: row.synced_at } : undefined;
+}
+export async function catalogSetObservation(ctx: Ctx, setId: string): Promise<CatalogueObservation<PokemonCard[]>> {
+  const previous = storedCatalogue(ctx, setId);
+  if (previous) { refreshCatalogueInBackground(ctx, setId, true); return previous; }
+  const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set:${setId}`, async () => {
+    const cards = await getSetCardsBrief(setId, true);
+    for (const card of cards) {
+      if (card.set.id !== setId) throw new Error('Mismatched set listing');
+      fromPokemon(card, new Date().toISOString());
+    }
+    return cards;
   });
   refreshCatalogueInBackground(ctx, setId);
-  return card;
+  return result;
+}
+export async function getCatalogSetForDisplay(ctx: Ctx, setId: string): Promise<PokemonCard[]> {
+  return (await catalogSetObservation(ctx, setId)).data;
+}
+export async function catalogCardObservation(ctx: Ctx, cardId: string): Promise<CatalogueObservation<PokemonCard>> {
+  const setId = setIdFromCardId(cardId);
+  const previous = storedCatalogue(ctx, setId);
+  if (previous) {
+    refreshCatalogueInBackground(ctx, setId, true);
+    const card = previous.data.find((c) => c.id === cardId);
+    if (!card) throw notFound('Card not found in this set');
+    return { data: card, at: previous.at };
+  }
+  const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:card:${cardId}`, async () => {
+    const [card, set] = await Promise.all([getCardDetails(cardId), getSet(setId)]);
+    const data = { ...card, set };
+    if (data.id !== cardId || set.id !== setId) throw new Error('Mismatched card details');
+    fromPokemon(data, new Date().toISOString());
+    return data;
+  });
+  refreshCatalogueInBackground(ctx, setId);
+  return result;
+}
+export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonCard> {
+  return (await catalogCardObservation(ctx, cardId)).data;
 }
 export async function discoverSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
   const sets = await getSets(lang);

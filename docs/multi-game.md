@@ -342,3 +342,27 @@ seeded database and closes it on teardown. This prevents shared collection edits
 revision state and login rate limits from leaking between tests or browser
 projects; production authentication limits remain enabled. Card-layout checks
 also add an owned copy before running axe so purchase/value controls are covered.
+
+### U08 second review: publication and observation guarantees
+
+Display cache helpers now return `{ data, at }` observations together. Set/card
+reads and search retain those timestamps even if a concurrent catalogue import or
+background refresh publishes newer data before the caller resumes. Validation of
+card and set projections runs inside cache loaders before publication; rejected
+refreshes retain the prior body and timestamp. Published display set listings must match
+the advertised set total; legacy scan/deck candidate reads keep their intentional
+partial-list behavior. Error-bearing GraphQL responses are rejected rather
+than interpreted as complete observations.
+
+Revalidating search pages share a bounded five-minute matching-ID observation,
+including its refreshed set index, across adjacent pages. The existing 30-query
+cache limit remains. Expired observations reload sets and matching IDs; hydration
+must return exactly the selected IDs in order. This avoids repeated full-index
+requests for each page without treating process-lifetime matches as current.
+
+Deck resolution compares both normalized names and supplied collector numbers.
+Name comparison reuses PTCGL energy-name normalization and ignores case and
+incidental whitespace. Newly released sets absent from the static code index use
+cached REST metadata lookups (four concurrent, at most 1,000 sets). Static raw-ID
+code fallbacks also populate normalized cards/sets, enabling localized deck export
+without altering original source metadata.

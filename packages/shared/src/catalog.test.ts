@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cardVariants, configureCatalog, getCardDetails, getSet, getSetCards, getSets, searchCards, type RawCard } from './catalog';
+import { cardVariants, configureCatalog, getCardDetails, getSet, getSetCards, getSets, getSetCardsBrief, searchCards, SEARCH_OBSERVATION_TTL, type RawCard } from './catalog';
 import { fromPokemon } from './tcg/pokemon';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('set catalogue', () => {
   it('loads sets without requesting the REST-only abbreviation field', async () => {
@@ -62,6 +62,8 @@ describe('API-listed printings', () => {
 
 it('refreshes both cached empty matches and the set index before renewing search', async () => {
   let stage = 0;
+  let clock = Date.now();
+  vi.spyOn(Date, "now").mockImplementation(() => clock);
   const set = { id: 'new-search-set', name: 'New', cardCount: { official: 1, total: 1 } };
   const raw = { id: 'new-search-set-001', localId: '001', name: 'Fresh', category: 'Pokemon', set: { id: set.id, name: 'New' } };
   const upstream = vi.fn(async (url: string | URL, init?: RequestInit) => {
@@ -79,9 +81,11 @@ it('refreshes both cached empty matches and the set index before renewing search
   stage = 1;
   // Ordinary paging reuses one matching observation; revalidation must bypass it.
   expect((await searchCards(filter, 1)).totalCount).toBe(0);
+  clock += SEARCH_OBSERVATION_TTL;
   const refreshed = await searchCards(filter, 1, undefined, { refresh: true });
   expect(refreshed).toMatchObject({ totalCount: 1, data: [{ id: raw.id }] });
   stage = 2;
+  clock += SEARCH_OBSERVATION_TTL;
   expect((await searchCards(filter, 1, undefined, { refresh: true })).totalCount).toBe(0);
   expect(upstream.mock.calls.filter(([, init]) => init?.body?.toString().includes('sets {'))).toHaveLength(3);
 });
@@ -104,4 +108,36 @@ it('preserves separate detailed-printing price dates and product links through c
     { amount: 7, currency: 'USD', source: 'tcgplayer', at: '2026-02-01', url: 'https://www.tcgplayer.com/product/22' },
     { amount: 6, currency: 'EUR', source: 'cardmarket', at: '2026-02-02', url: expect.any(String) },
   ]);
+});
+
+it('shares fresh matches across pages, rejects swapped hydration IDs and partial GraphQL sets', async () => {
+  let swapped = false, errors = false;
+  let clock = Date.now();
+  vi.spyOn(Date, 'now').mockImplementation(() => clock);
+  const set = { id: 'paging-proof', name: 'Paging', cardCount: { official: 37, total: 37 } };
+  const cards = Array.from({ length: 37 }, (_, i) => ({ id: `paging-proof-${i}`, localId: String(i), name: 'Proof', category: 'Pokemon', set }));
+  const upstream = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+    if (!init?.body) return Response.json(cards);
+    const query = JSON.parse(String(init.body)).query as string;
+    if (query.includes('sets {')) return Response.json({ data: { sets: [set] }, ...(errors ? { errors: [{ message: 'Partial result' }] } : {}) });
+    const ids = [...query.matchAll(/c(\d+): card\(id: "([^"]+)"\)/g)];
+    return Response.json({ data: Object.fromEntries(ids.map(([, alias, id]) => [`c${alias}`, swapped ? cards[1] : cards.find((card) => card.id === id)])) });
+  });
+  vi.stubGlobal('fetch', upstream);
+  const query = { name: 'paging-proof' };
+  expect((await searchCards(query, 1, undefined, { refresh: true })).data).toHaveLength(36);
+  expect((await searchCards(query, 2, undefined, { refresh: true })).data).toHaveLength(1);
+  expect(upstream.mock.calls.filter(([, init]) => init?.body?.toString().includes('sets {'))).toHaveLength(1);
+  swapped = true;
+  await expect(searchCards(query, 2, undefined, { refresh: true })).rejects.toThrow('requested card IDs');
+  clock += SEARCH_OBSERVATION_TTL;
+  errors = true;
+  await expect(searchCards(query, 1, undefined, { refresh: true })).rejects.toThrow('Partial result');
+});
+
+it('rejects set listings missing advertised cards', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => init?.body
+    ? Response.json({ data: { cards: [null] } })
+    : Response.json({ id: 'incomplete-proof', name: 'Incomplete', cardCount: { official: 1, total: 1 } })));
+  await expect(getSetCardsBrief('incomplete-proof', true)).rejects.toThrow('Incomplete set listing');
 });

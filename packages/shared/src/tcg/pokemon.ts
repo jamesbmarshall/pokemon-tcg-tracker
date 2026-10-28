@@ -1,5 +1,6 @@
 /** Lossless projections of the existing Pokémon catalogue. Never a storage migration. */
 import type { CardSet, PokemonCard, PriceSource } from '../types';
+import { SET_CODES } from '../legacySets';
 import { splitId, isLang } from '../languages';
 import { pokemonVariants } from './variants';
 import type { PokemonTcgCard, Quote, TcgSet } from './types';
@@ -24,7 +25,7 @@ export function pokemonSet(set: CardSet): TcgSet {
     !Number.isSafeInteger(set.total) || set.total < 0 || typeof set.releaseDate !== 'string')
     throw new Error('Invalid Pokémon set data');
   return { game: 'pokemon', id: set.id, providerId: splitId(set.id).raw,
-    code: set.ptcgoCode ?? '', name: set.name, releaseDate: set.releaseDate,
+    code: set.ptcgoCode ?? SET_CODES[splitId(set.id).raw] ?? '', name: set.name, releaseDate: set.releaseDate,
     total: set.total, type: set.series, details: { ...structuredClone(set), kind: 'pokemon' } };
 }
 
@@ -76,7 +77,7 @@ export function fromPokemon(card: PokemonCard, fetchedAt: string): PokemonTcgCar
   quotes(card.tcgplayer, 'USD', 'tcgplayer', prices);
   quotes(card.cardmarket, 'EUR', 'cardmarket', prices);
   return { game: 'pokemon', id, providerId: raw, identity: id, name, printedName: name,
-    setId: card.set.id, setName: card.set.name, setCode: card.set.ptcgoCode ?? '', number,
+    setId: card.set.id, setName: card.set.name, setCode: card.set.ptcgoCode ?? SET_CODES[splitId(card.set.id).raw] ?? '', number,
     language: lang, rarity: rarity ?? '', artist: artist ?? '', image: card.images.large || card.images.small,
     faces: [], finishes: variants, variants: physical, treatments: [],
     extra: false, paper: true, prices, fetchedAt, details: { ...details, kind: 'pokemon' } };

@@ -88,7 +88,7 @@ async function gql<T>(query: string, signal?: AbortSignal): Promise<T> {
     { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) },
     signal,
   );
-  if (!res.data) throw new Error(res.errors?.[0]?.message ?? 'Card API error');
+  if (res.errors?.length || !res.data) throw new Error(res.errors?.[0]?.message ?? 'Card API error');
   return res.data;
 }
 
@@ -528,15 +528,18 @@ async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal): Prom
 }
 
 /** Lightweight lookup candidates; not a complete printing catalogue. */
-export async function getSetCardsBrief(setId: string): Promise<PokemonCard[]> {
+export async function getSetCardsBrief(setId: string, requireComplete = false): Promise<PokemonCard[]> {
   const { lang, raw: rawSetId } = splitId(setId);
   // A targeted metadata request avoids loading the entire language's set index on first open.
   const metadata = getSet(setId);
   const found = new Map<string, PokemonCard>();
   for (let page = 1; page < 20; page++) {
-    const [{ cards }] = await Promise.all([gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`), metadata]);
+    const [{ cards }, set] = await Promise.all([gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`), metadata]);
     for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) found.set(c.id, toCard(c, false, lang));
-    if (cards.length < 250) return [...found.values()].sort(compareCardNumber);
+    if (cards.length < 250) {
+      if (requireComplete && found.size !== set.total) throw new Error('Incomplete set listing');
+      return [...found.values()].sort(compareCardNumber);
+    }
   }
   throw new Error('Set lookup exceeded the page limit');
 }
@@ -587,6 +590,8 @@ interface Brief {
 
 const SEARCH_PAGE = 36;
 const matchCache = new Map<string, Promise<Brief[]>>();
+const matchObserved = new Map<string, number>();
+export const SEARCH_OBSERVATION_TTL = 5 * 60_000;
 
 function byRelease(sets: Map<string, CardSet>, dir: 1 | -1) {
   return (a: Brief, b: Brief) => {
@@ -649,7 +654,8 @@ async function matchesInLang(f: SearchFilters, lang: Lang, signal?: AbortSignal)
 function matchingCards(f: SearchFilters, signal?: AbortSignal, refresh = false): Promise<Brief[]> {
   const langs: Lang[] = f.langs?.length ? f.langs : ['en'];
   const key = JSON.stringify([f.name, f.types, f.supertype, f.rarity, f.artist, f.setId, f.sort, langs]);
-  let hit = refresh ? undefined : matchCache.get(key);
+  const expired = Date.now() - (matchObserved.get(key) ?? 0) >= SEARCH_OBSERVATION_TTL;
+  let hit = refresh && expired ? undefined : matchCache.get(key);
   if (!hit) {
     hit = (async () => {
       if (refresh) {
@@ -670,11 +676,13 @@ function matchingCards(f: SearchFilters, signal?: AbortSignal, refresh = false):
       } else out.sort(byRelease(setIndex, f.sort === 'oldest' ? 1 : -1));
       return out;
     })();
+    if (refresh) matchObserved.set(key, Date.now());
+    else matchObserved.delete(key);
     const current = hit;
-    hit.catch(() => { if (matchCache.get(key) === current) matchCache.delete(key); });
+    hit.catch(() => { if (matchCache.get(key) === current) { matchCache.delete(key); matchObserved.delete(key); } });
     matchCache.set(key, hit);
     // Keep the cache bounded: evict the oldest query (Map preserves insertion order).
-    if (matchCache.size > 30) matchCache.delete(matchCache.keys().next().value!);
+    if (matchCache.size > 30) { const oldest = matchCache.keys().next().value!; matchCache.delete(oldest); matchObserved.delete(oldest); }
   }
   return hit;
 }
@@ -685,6 +693,8 @@ export async function searchCards(f: SearchFilters, page: number, signal?: Abort
   const all = await matchingCards(f, signal, options.refresh);
   const slice = all.slice((page - 1) * SEARCH_PAGE, page * SEARCH_PAGE);
   const cards = await getCardsBrief(slice.map((c) => c.id), signal);
+  if (options.refresh && (cards.length !== slice.length || cards.some((card, i) => card.id !== slice[i].id)))
+    throw new Error('Search hydration did not match requested card IDs');
   return { data: cards, page, pageSize: SEARCH_PAGE, totalCount: all.length };
 }
 

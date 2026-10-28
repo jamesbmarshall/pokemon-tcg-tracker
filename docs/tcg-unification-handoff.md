@@ -170,3 +170,14 @@ the affected suites; do not lose its repository implementation or handoff notes.
 U08 review validation: all 215 shared, 293 server and 823 web tests passed, plus
 typecheck, lint and production build. Fixes are on `codex/pokemon-catalogue-adapter`;
 review threads are left for the reviewer to reassess after the update.
+
+## U08 second review follow-up
+
+Nine additional PR #81 findings are implemented: strict name/number resolution,
+hydrated ID verification, paired record/timestamp observations, validation before
+cache publication, complete set listings, bounded cross-page match observations,
+live abbreviation discovery, GraphQL partial-error rejection and localized
+set-code projection. U09 still needs the updated U08 parent incorporated before
+continuing U10. No review thread was manually marked resolved.
+
+U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.

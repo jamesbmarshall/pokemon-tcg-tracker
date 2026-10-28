@@ -32,6 +32,8 @@ U08 review follow-up addresses all eight recommendations: proxy upstream redirec
 
 U08 review validation: all 215 shared tests, 293 server tests and 823 web tests passed. Typecheck, lint and production build passed. The U09 branch must incorporate this updated U08 parent before further work.
 
+U08 second review adds paired cache observations, pre-publication validation, complete display listings, five-minute shared search observations, exact hydrated-ID checks, GraphQL partial-error rejection, strict name/number matching and live/localized set-code handling. Legacy scan/deck candidate listings retain partial-read compatibility.
+
 ## Merge and release rules
 
 Every PR leaves both Pokémon and Magic usable. New abstractions initially coexist with compatibility adapters; callers move only after their prerequisites pass. Preserve one authoritative write path throughout. A read/UI rollout switch must not select a second independent writer. Legacy URLs and exported formats remain supported.
@@ -299,3 +301,5 @@ U24 does not depend on the optional M track. Retained legacy repository adapters
 6. **Optional persistence project:** M01–M05, with separate release and destructive-cleanup gates.
 
 If a PR grows beyond one reviewable responsibility, split it into additive adapter introduction followed by caller migration, keeping tests/docs with each. Do not split validation or security enforcement into a later follow-up. Physical locations, deck checkout and image-embedding scanning remain separate feature projects after unification.
+
+U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.
