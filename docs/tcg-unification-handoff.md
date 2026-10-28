@@ -38,7 +38,8 @@ The stack has not been merged during this session; verify current remote state o
 | U04 | `codex/tcg-completion-measures` | `61406e3` | [#68](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/68) |
 | U05 | `codex/tcg-module-validation` | `ad05187` | [#69](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/69) |
 | U06 | `codex/pokemon-rule-adapters` | `90e3a77` | [#70](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/70) |
-| U07 | `codex/tcg-provider-registry` | `613e5ba` | [#71](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/71) |
+| U07 | `codex/tcg-provider-registry` | `02da50f` | [#71](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/71) |
+| U08 | `codex/pokemon-catalogue-adapter` | `64cbb9a` | [#81](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/81) |
 
 U07 originally branched from U06's `c221c02`; merge `1dcce32` now incorporates all U06 review fixes and this handoff. Its initial
 push failed authentication; a later retry was interrupted. Publication subsequently
@@ -126,7 +127,7 @@ review/CI and verify the latest remote commit on resume.
    the later UI/import/sharing/jobs phases follow the incremental plan. Optional
    storage consolidation is not a prerequisite for a successful unification.
 
-U08 is implemented internally on `codex/pokemon-catalogue-adapter`; publication and validation status should be checked below before continuing. Relevant source files are
+U08 is implemented and published as PR #81, targeting `codex/tcg-provider-registry`. Review its feedback before U09. No merge was performed in this session. Relevant source files are
 `apps/server/src/providers/tcgdex.ts`, `apps/server/src/cards.ts`,
 `packages/shared/src/catalog.ts`, `packages/shared/src/languages.ts`,
 `packages/shared/src/tcg/types.ts` and `tcg/variants.ts`. The existing shared
