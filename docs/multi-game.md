@@ -144,16 +144,25 @@ inside this provider-specific adapter, not inferred in shared domain code. Playa
 identity remains the printing ID until rules establish equivalence; names do not
 invent cross-language identity. Full set metadata, rule details, source price
 blocks, variant aliases, raw evidence and policy metadata survive projection.
-Normalized quotes retain native USD/EUR, source URL and source update time. Zero
+Normalized quotes retain native USD/EUR and per-variant source URL/update time.
+New `PriceSource.provenance` maps survive catalogue-cache serialization. Older
+flattened caches lack reliable per-printing attribution: their amounts remain,
+but normalized quotes use an empty `at` and omit `url` until refreshed. Original
+source-level metadata remains in details; it is never reassigned to a printing. Zero
 is a price; missing quotes remain absent. No quote is copied to another variant.
 
 Sets, card details and set browsing reuse authoritative catalogue/display caches
 and their existing background refresh/import behavior. Search adds a versioned,
-query-hashed entry to the same display cache. Validation rejects malformed search
-pages before caching. Summary search/set responses are enriched from complete
+query-hashed entry to the same display cache. Revalidation explicitly reloads the
+set index and matching IDs, including previously empty matches. Successful set
+observations replace that language index, removing obsolete sets. Validation
+rejects malformed, duplicate or incomplete pages before caching; exact expected
+page length is checked against the declared total and offset. Summary search/set responses are enriched from complete
 catalogues or detailed card caches without replacing those records. `fetchedAt`
 is the existing cache observation timestamp; `stale` indicates evidence older than
-six hours. Source quote dates remain separate. Outages retain stale search data and
+six hours. Source quote dates remain separate. Enrichment uses the timestamp of the actual
+record source, not an unrelated complete catalogue. Collector-number searches
+retain set freshness even when their result (or the cached set) is empty. Outages retain stale search data and
 do not advance its timestamp; cold failures propagate.
 
 Search supports existing Pokémon name/type/supertype/rarity/artist/sort filters and
@@ -162,9 +171,12 @@ optional language/page, so it cannot silently ignore other filters. Stored set I
 must agree with requested language. Deck resolution returns all matching printings
 rather than selecting the first one, with bounds of 20 matching sets or 14 name
 search pages. Numeric collector numbers match despite zero padding; alphanumeric
-numbers compare case-insensitively. Responses preserve original number strings.
+numbers compare case-insensitively. Printed set codes resolve against both live
+abbreviations and the static index keyed by raw set ID, including non-English
+catalogues. Responses preserve original number strings.
 
-The shared TCGdex transport now rejects redirects, retains its existing timeout,
+Both the shared TCGdex client and the server REST/GraphQL proxy upstream requests
+reject redirects. The shared transport retains its existing timeout,
 retry and configured-host behavior, and limits decompressed JSON to 16 MiB even
 when Content-Length is absent or false. This applies to both existing callers and
 the new adapter. No additional upstream host or credential configuration is added.

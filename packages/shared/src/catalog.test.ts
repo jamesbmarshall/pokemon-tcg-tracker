@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cardVariants, getSet, getSetCards, getSets } from './catalog';
+import { cardVariants, configureCatalog, getCardDetails, getSet, getSetCards, getSets, searchCards, type RawCard } from './catalog';
+import { fromPokemon } from './tcg/pokemon';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -57,4 +58,50 @@ describe('API-listed printings', () => {
     expect(cardVariants({ id: `${setId}-TG23`, variants: ['holofoil', 'reverseHolofoil'] })).toEqual(['holofoil', 'reverseHolofoil']);
     expect(cardVariants({ id: `${setId}-TG23`, variants: [] })).toEqual([]);
   });
+});
+
+it('refreshes both cached empty matches and the set index before renewing search', async () => {
+  let stage = 0;
+  const set = { id: 'new-search-set', name: 'New', cardCount: { official: 1, total: 1 } };
+  const raw = { id: 'new-search-set-001', localId: '001', name: 'Fresh', category: 'Pokemon', set: { id: set.id, name: 'New' } };
+  const upstream = vi.fn(async (url: string | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const { query } = JSON.parse(String(init.body));
+      if (query.includes('sets {')) return Response.json({ data: { sets: stage === 1 ? [set] : [] } });
+      return Response.json({ data: { c0: raw } });
+    }
+    if (String(url).includes('/cards')) return Response.json(stage === 0 ? [] : [raw]);
+    throw new Error('Unexpected request');
+  });
+  vi.stubGlobal('fetch', upstream);
+  const filter = { name: 'fresh-search-regression' };
+  expect((await searchCards(filter, 1, undefined, { refresh: true })).totalCount).toBe(0);
+  stage = 1;
+  // Ordinary paging reuses one matching observation; revalidation must bypass it.
+  expect((await searchCards(filter, 1)).totalCount).toBe(0);
+  const refreshed = await searchCards(filter, 1, undefined, { refresh: true });
+  expect(refreshed).toMatchObject({ totalCount: 1, data: [{ id: raw.id }] });
+  stage = 2;
+  expect((await searchCards(filter, 1, undefined, { refresh: true })).totalCount).toBe(0);
+  expect(upstream.mock.calls.filter(([, init]) => init?.body?.toString().includes('sets {'))).toHaveLength(3);
+});
+
+it('preserves separate detailed-printing price dates and product links through cache serialization', async () => {
+  configureCatalog({ storage: null });
+  const raw: RawCard = { id: 'price-source-001', localId: '001', name: 'Provenance', category: 'Pokemon', set: { id: 'price-source', name: 'Source' },
+    variants_detailed: [
+      { type: 'normal', pricing: { tcgplayer: { updated: '2026-01-01', normal: { marketPrice: 3, productId: 11 } }, cardmarket: { updated: '2026-01-02', trend: 2 } } },
+      { type: 'holo', pricing: { tcgplayer: { updated: '2026-02-01', holofoil: { marketPrice: 7, productId: 22 } }, cardmarket: { updated: '2026-02-02', trend: 6 } } },
+    ] };
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(raw)));
+  const source = await getCardDetails(raw.id);
+  const card = fromPokemon(JSON.parse(JSON.stringify(source)), '2026-03-01');
+  expect(card.prices.normal).toEqual([
+    { amount: 3, currency: 'USD', source: 'tcgplayer', at: '2026-01-01', url: 'https://www.tcgplayer.com/product/11' },
+    { amount: 2, currency: 'EUR', source: 'cardmarket', at: '2026-01-02', url: expect.any(String) },
+  ]);
+  expect(card.prices.holofoil).toEqual([
+    { amount: 7, currency: 'USD', source: 'tcgplayer', at: '2026-02-01', url: 'https://www.tcgplayer.com/product/22' },
+    { amount: 6, currency: 'EUR', source: 'cardmarket', at: '2026-02-02', url: expect.any(String) },
+  ]);
 });

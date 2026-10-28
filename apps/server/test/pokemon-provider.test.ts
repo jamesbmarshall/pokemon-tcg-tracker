@@ -23,7 +23,7 @@ beforeEach(async () => {
   card = { id: 'u08-001', name: 'Example', supertype: 'Pokémon', subtypes: ['Basic'], number: '001', detailed: true,
     images: { small: 'small', large: 'large' }, variants: ['normal'], printingCoverage: 'complete',
     set: { id: 'u08', name: 'Example set', series: 'Series', total: 1, printedTotal: 1, releaseDate: '2026-01-01', updatedAt: '', ptcgoCode: 'EXM', images: { logo: '', symbol: '' } },
-    tcgplayer: { url: 'url', updatedAt: '2026-01-01', prices: { normal: { market: 5 } } } };
+    tcgplayer: { url: 'url', updatedAt: '2026-01-01', provenance: { normal: { url: 'url', updatedAt: '2026-01-01' } }, prices: { normal: { market: 5 } } } };
 });
 afterEach(async () => { await server.close(); catalog.configureCatalog({ storage: null }); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -62,10 +62,10 @@ describe('internal Pokémon catalogue provider', () => {
     if (source === 'catalogue') complete(card);
     else cache(`${prefix}:card:${card.id}`, card);
     const brief = { ...card, detailed: false, tcgplayer: undefined, printingCoverage: 'partial' as const };
-    const search = vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [brief], page: 2, pageSize: 36, totalCount: 90 });
+    const search = vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [brief], page: 2, pageSize: 36, totalCount: 37 });
     const provider = providerFor(server.ctx, 'pokemon');
     const result = await provider.search({ q: 'Example', page: 2 });
-    expect(result).toMatchObject({ total: 90, hasMore: true, cards: [{ details: { detailed: true }, prices: { normal: [{ amount: 5 }] } }] });
+    expect(result).toMatchObject({ total: 37, hasMore: false, cards: [{ details: { detailed: true }, prices: { normal: [{ amount: 5 }] } }] });
     expect(await provider.search({ q: 'Example', page: 2 })).toEqual(result);
     expect(search).toHaveBeenCalledTimes(1);
     expect(fetch).not.toHaveBeenCalled();
@@ -126,5 +126,64 @@ describe('internal Pokémon catalogue provider', () => {
     const user = await setupOwner(server.app);
     expect((await user.get('/api/games/pokemon/sets')).statusCode).toBe(404);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('preserves stale negative collector-number results (empty set: %s)', async (empty) => {
+    complete(card, Date.now() - 7 * 3600_000);
+    if (empty) server.ctx.db.run("UPDATE printing_catalogues SET data = '[]'");
+    expect(await providerFor(server.ctx, 'pokemon').search({ set: card.set.id, number: '999' }))
+      .toEqual({ cards: [], total: 0, hasMore: false, stale: true });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('attributes cached detail freshness to its own row (stale detail: %s)', async (staleDetail) => {
+    const old = Date.now() - 7 * 3600_000, recent = Date.now();
+    complete({ ...card, id: 'u08-002', number: '002' }, staleDetail ? recent : old);
+    const detailAt = staleDetail ? old : recent;
+    cache(`${prefix}:card:${card.id}`, card, detailAt);
+    vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [{ ...card, detailed: false }], page: 1, pageSize: 36, totalCount: 1 });
+    const result = await providerFor(server.ctx, 'pokemon').search({ q: 'newly-listed' });
+    expect(result.cards[0]).toMatchObject({ fetchedAt: new Date(detailAt).toISOString(), stale: staleDetail });
+  });
+
+  it('rejects short search pages and retains a previous successful observation', async () => {
+    const search = vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [card], page: 1, pageSize: 36, totalCount: 1 });
+    const provider = providerFor(server.ctx, 'pokemon');
+    await provider.search({ q: 'short-page' });
+    expect(search).toHaveBeenLastCalledWith(expect.any(Object), 1, undefined, { refresh: true });
+    const at = Date.now() - 7 * 3600_000;
+    server.ctx.db.run('UPDATE http_cache SET fetched_at = ?', at);
+    const before = server.ctx.db.get('SELECT body,fetched_at FROM http_cache');
+    const warn = vi.spyOn(server.ctx.log, 'warn').mockImplementation(() => {});
+    search.mockResolvedValue({ data: [], page: 1, pageSize: 36, totalCount: 1 });
+    expect(await provider.search({ q: 'short-page' })).toMatchObject({ stale: true, total: 1 });
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(server.ctx.db.get('SELECT body,fetched_at FROM http_cache')).toEqual(before);
+    await expect(provider.search({ q: 'cold-short-page' })).rejects.toThrow('Invalid');
+  });
+
+  it('resolves printed codes in French catalogues lacking live abbreviations', async () => {
+    card.id = 'fr:sv01-001'; card.set.id = 'fr:sv01'; delete card.set.ptcgoCode;
+    complete(card);
+    server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'fr', JSON.stringify([card.set]), Date.now());
+    expect(await providerFor(server.ctx, 'pokemon', 'fr').resolve!({ name: card.name, set: 'SVI', number: '1', quantity: 1, zone: 'main', line: 1 }))
+      .toMatchObject([{ id: card.id, language: 'fr' }]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['rarity', 'artist', 'series', 'ptcgoCode'])('rejects malformed %s before caching normalized search', async (field) => {
+    const invalid = field === 'rarity' || field === 'artist' ? { ...card, [field]: {} } : { ...card, set: { ...card.set, [field]: {} } };
+    vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [invalid as unknown as PokemonCard], page: 1, pageSize: 36, totalCount: 1 });
+    await expect(providerFor(server.ctx, 'pokemon').search({ q: 'bad-field' })).rejects.toThrow('Invalid Pokémon');
+    expect(server.ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM http_cache')!.n).toBe(0);
+  });
+
+  it.each(['REST', 'GraphQL'])('disables redirects on the %s proxy upstream request', async (kind) => {
+    const upstream = vi.fn(async () => Response.json({ data: [] }));
+    vi.stubGlobal('fetch', upstream);
+    const user = await setupOwner(server.app);
+    const response = kind === 'REST' ? await user.get('/api/tcgdex/v2/en/cards') : await user.post('/api/tcgdex/v2/graphql', { query: '{ sets { id } }' });
+    expect(response.statusCode).toBe(200);
+    expect(upstream).toHaveBeenCalledWith(expect.stringContaining('http://tcgdex.test/v2'), expect.objectContaining({ redirect: 'error' }));
   });
 });

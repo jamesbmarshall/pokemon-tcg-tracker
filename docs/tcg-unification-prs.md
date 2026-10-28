@@ -28,6 +28,10 @@ U08 adds lossless Pokémon card/set projections, TCGdex registration, existing-c
 
 U08 validation: 211 shared tests, 280 tests in the full server run and 823 web tests passed. The final provider suite has 13 tests, including set-list outage provenance; final focused tests, typecheck, lint and build passed.
 
+U08 review follow-up addresses all eight recommendations: proxy upstream redirect rejection; stale empty collector-number results; fresh underlying match/set observations on search revalidation; exact page completeness; source-specific cache timestamps; multilingual printed-code fallback; per-variant quote provenance with explicit unknown metadata for old flattened caches; and normalized field validation before cache publication.
+
+U08 review validation: all 215 shared tests, 293 server tests and 823 web tests passed. Typecheck, lint and production build passed. The U09 branch must incorporate this updated U08 parent before further work.
+
 ## Merge and release rules
 
 Every PR leaves both Pokémon and Magic usable. New abstractions initially coexist with compatibility adapters; callers move only after their prerequisites pass. Preserve one authoritative write path throughout. A read/UI rollout switch must not select a second independent writer. Legacy URLs and exported formats remain supported.

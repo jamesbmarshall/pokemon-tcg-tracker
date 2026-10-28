@@ -60,6 +60,8 @@ export interface PriceSource {
   url: string;
   updatedAt: string;
   prices: Record<string, PriceBlock>;
+  /** Exact metadata for each price key. Older merged caches may lack this evidence. */
+  provenance?: Record<string, { url: string; updatedAt: string }>;
 }
 
 export interface Ability {

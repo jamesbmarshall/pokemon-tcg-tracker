@@ -244,6 +244,8 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
           .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
           .map((s) => toSet(s, lang))
           .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
+        // A successful observation replaces this language index, including removed sets.
+        for (const id of setIndex.keys()) if (splitId(id).lang === lang) setIndex.delete(id);
         for (const s of list) setIndex.set(s.id, s);
         loadedLangs.add(lang);
         return list;
@@ -307,19 +309,23 @@ const num = (v: unknown) => (typeof v === 'number' && v > 0 ? v : undefined);
 
 function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSource | undefined {
   if (!raw) return undefined;
-  const prices: Record<string, PriceBlock> = {};
+  const prices: Record<string, PriceBlock> = Object.create(null);
+  const provenance: NonNullable<PriceSource['provenance']> = Object.create(null);
   let productId: unknown;
   for (const [k, v] of Object.entries(raw)) {
     if (!v || typeof v !== 'object') continue;
     const p = v as Record<string, unknown>;
-    const key = PRICE_KEY_ALIASES[camel(k)] ?? camel(k);
+    const key = Object.hasOwn(PRICE_KEY_ALIASES, camel(k)) ? PRICE_KEY_ALIASES[camel(k)] : camel(k);
     const block = { low: num(p.lowPrice), mid: num(p.midPrice), high: num(p.highPrice), market: num(p.marketPrice), directLow: num(p.directLowPrice) };
-    if (Object.values(block).some((x) => x !== undefined)) prices[key] = block;
-    // Every variant block points at the same product page, so the first id found is enough.
+    if (Object.values(block).some((x) => x !== undefined)) {
+      prices[key] = block;
+      provenance[key] = { url: p.productId ? `https://www.tcgplayer.com/product/${p.productId}` : '', updatedAt: raw.updated ?? '' };
+    }
+    // Retain the historical source-level link for old callers; quotes use per-key evidence.
     productId ??= p.productId;
   }
   if (!Object.keys(prices).length) return undefined;
-  return { url: productId ? `https://www.tcgplayer.com/product/${productId}` : '', updatedAt: raw.updated ?? '', prices };
+  return { url: productId ? `https://www.tcgplayer.com/product/${productId}` : '', updatedAt: raw.updated ?? '', prices, provenance };
 }
 
 /**
@@ -344,6 +350,9 @@ function toCardmarket(raw: NonNullable<RawCard['pricing']>['cardmarket'], varian
     url: `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(name)}`,
     updatedAt: raw.updated ?? '',
     prices,
+    provenance: Object.fromEntries(Object.keys(prices).map((key) => [key, {
+      url: `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(name)}`, updatedAt: raw.updated ?? '',
+    }])),
   };
 }
 
@@ -448,11 +457,15 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
       if (tcg?.prices[baseKey]) {
         card.tcgplayer ??= { ...tcg, prices: {} };
         card.tcgplayer.prices[match.id] = tcg.prices[baseKey];
+        card.tcgplayer.provenance ??= {};
+        card.tcgplayer.provenance[match.id] = tcg.provenance![baseKey];
       }
       const cm = toCardmarket(source.pricing.cardmarket, [baseKey], raw.name);
       if (cm?.prices[baseKey]) {
         card.cardmarket ??= { ...cm, prices: {} };
         card.cardmarket.prices[match.id] = cm.prices[baseKey];
+        card.cardmarket.provenance ??= {};
+        card.cardmarket.provenance[match.id] = cm.provenance![baseKey];
       }
     }
   }
@@ -633,12 +646,16 @@ async function matchesInLang(f: SearchFilters, lang: Lang, signal?: AbortSignal)
 }
 
 /** All matching card ids, physical sets only, sorted. Cached per query so paging is instant. */
-function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]> {
+function matchingCards(f: SearchFilters, signal?: AbortSignal, refresh = false): Promise<Brief[]> {
   const langs: Lang[] = f.langs?.length ? f.langs : ['en'];
   const key = JSON.stringify([f.name, f.types, f.supertype, f.rarity, f.artist, f.setId, f.sort, langs]);
-  let hit = matchCache.get(key);
+  let hit = refresh ? undefined : matchCache.get(key);
   if (!hit) {
     hit = (async () => {
+      if (refresh) {
+        await Promise.all(langs.map((lang) => getSets(lang)));
+        dexCache.clear();
+      }
       const [, ...lists] = await Promise.all([Promise.all(langs.map((l) => ensureSets(l))), ...langs.map((l) => matchesInLang(f, l, signal))]);
       const seen = new Set<string>();
       const out = lists.flat().filter((c) => {
@@ -653,7 +670,8 @@ function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]>
       } else out.sort(byRelease(setIndex, f.sort === 'oldest' ? 1 : -1));
       return out;
     })();
-    hit.catch(() => matchCache.delete(key));
+    const current = hit;
+    hit.catch(() => { if (matchCache.get(key) === current) matchCache.delete(key); });
     matchCache.set(key, hit);
     // Keep the cache bounded: evict the oldest query (Map preserves insertion order).
     if (matchCache.size > 30) matchCache.delete(matchCache.keys().next().value!);
@@ -662,8 +680,9 @@ function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]>
 }
 
 /** One page of search results. Matching runs once per query; each page then fetches just its cards. */
-export async function searchCards(f: SearchFilters, page: number, signal?: AbortSignal): Promise<ApiResponse<PokemonCard[]>> {
-  const all = await matchingCards(f, signal);
+/** refresh reobserves sets and matching IDs before renewing a persistent display cache. */
+export async function searchCards(f: SearchFilters, page: number, signal?: AbortSignal, options: { refresh?: boolean } = {}): Promise<ApiResponse<PokemonCard[]>> {
+  const all = await matchingCards(f, signal, options.refresh);
   const slice = all.slice((page - 1) * SEARCH_PAGE, page * SEARCH_PAGE);
   const cards = await getCardsBrief(slice.map((c) => c.id), signal);
   return { data: cards, page, pageSize: SEARCH_PAGE, totalCount: all.length };

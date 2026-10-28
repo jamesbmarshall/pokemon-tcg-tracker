@@ -259,7 +259,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
     const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
     const path = rest + qs;
     upstream.check(req.user?.id ?? req.ip, reply);
-    const r = await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, {}, ttlFor(path));
+    const r = await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, { redirect: 'error' }, ttlFor(path));
     reply.header('cache-control', 'private, max-age=300').header('x-cache', r.fresh ? 'fresh' : 'stale');
     return reply.status(r.status).type(r.type).send(r.body);
   });
@@ -271,7 +271,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
     // Cache key is a hash of the exact payload, so different variables never share an entry.
     const payload = JSON.stringify({ query: b.query, variables: b.variables ?? {} });
     upstream.check(req.user?.id ?? req.ip, reply);
-    const r = await cachedUpstream(ctx, 'tcgdex', `GQL ${sha256(payload)}`, `${base}/graphql`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }, 3600_000);
+    const r = await cachedUpstream(ctx, 'tcgdex', `GQL ${sha256(payload)}`, `${base}/graphql`, { redirect: 'error', method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }, 3600_000);
     reply.header('cache-control', 'private, max-age=300');
     return reply.status(r.status).type(r.type).send(r.body);
   });
