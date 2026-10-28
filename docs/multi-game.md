@@ -175,6 +175,14 @@ completion policy and authoritative storage remain on their compatibility paths.
 There is no migration or accessibility interaction change in U08. Existing manual
 and WebKit accessibility gates still apply before affected caller cutovers.
 
+### Collection repositories (U09)
+
+The internal [collection repository boundary](collection-repositories.md) reads
+existing Pokémon and generic storage through one contract, retaining native state
+inside a common collection/revision/valuation envelope. The member-read service
+checks authorization and pins state/photos to one SQLite snapshot. No routes or
+writes switch to it in U09; public shares retain their existing redaction path.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.

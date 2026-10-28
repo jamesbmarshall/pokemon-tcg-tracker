@@ -26,7 +26,7 @@ has been performed in this work.
 ## Branch and PR stack
 
 Repository: `jamesbmarshall/pokemon-tcg-tracker`, workspace
-`/workspace/pokemon-tcg-tracker`. Current branch: `codex/pokemon-catalogue-adapter`.
+`/workspace/pokemon-tcg-tracker`. Current branch: `codex/tcg-collection-repositories`.
 Initial base: `8da7d5b` (PR #64 merge). Each PR targets the preceding stack branch.
 The stack has not been merged during this session; verify current remote state on resume.
 
@@ -123,7 +123,7 @@ review/CI and verify the latest remote commit on resume.
    `tcg/pokemon.ts`, `tcg/pokemonProvider.ts` and bounded catalogue JSON transport,
    with preservation, language, outage, paging and malformed-response tests. Check
    its PR/review status before beginning U09. PR #71 had no review threads on 28 October.
-5. U09 repositories/common reads, U10 authorized commands, U11 shared API and then
+5. U09 repositories/common reads are implemented on `codex/tcg-collection-repositories`; check publication/review before continuing. U10 authorized commands, U11 shared API and then
    the later UI/import/sharing/jobs phases follow the incremental plan. Optional
    storage consolidation is not a prerequisite for a successful unification.
 
@@ -152,3 +152,18 @@ interrupted tool call is not proof of completion: inspect processes, sessions,
 logs and remote state before claiming success or launching duplicate work.
 Chromium is installed under `/workspace/.playwright-browsers`; set
 `PLAYWRIGHT_BROWSERS_PATH` accordingly if browser checks are needed.
+
+## U09 continuation detail
+
+U09 adds `apps/server/src/tcg/repositories/collection.ts` and the common SQLite
+contract suite `apps/server/test/collection-repositories.test.ts`. See
+[repository documentation](collection-repositories.md). Native states remain intact
+inside a common envelope; no DTO conversion, route cutover or writer is introduced.
+The new member-read service verifies access and reads a coherent SQLite snapshot.
+Photo seams expose scoped metadata only. Next implementation milestone is U10.
+
+U09 validation: all 294 server tests, including 13 repository contract tests,
+passed. Typecheck, lint and production build passed. Both stores met the 80-query
+budget and three-second test guard for 20,000 cached cards/holdings. Existing
+WebKit/manual accessibility gates remain open; U09 changes no UI flows. PR #81
+had no review threads at the final pre-publication check on 28 October.
