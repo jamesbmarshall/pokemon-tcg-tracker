@@ -4,6 +4,7 @@ import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { POLICY_VERSION } from '@poketracker/shared/printingRules';
 import type { PokemonCard } from '@poketracker/shared/types';
 import { providerFor, providerForCard, providerForSet } from '../src/tcg/provider.ts';
+import { discoverSets, persistCatalogue } from '../src/printingCatalog.ts';
 import { startServer, type TestServer, setupOwner } from './helpers.ts';
 
 let server: TestServer;
@@ -82,7 +83,7 @@ describe('internal Pokémon catalogue provider', () => {
   it('enriches a brief set listing from the existing detailed card cache', async () => {
     complete(card);
     server.ctx.db.run('DELETE FROM printing_catalogues');
-    cache(`${prefix}:set:${card.set.id}`, [{ ...card, detailed: false, tcgplayer: undefined }]);
+    cache(`${prefix}:set-complete-v2:${card.set.id}`, [{ ...card, detailed: false, tcgplayer: undefined }]);
     cache(`${prefix}:card:${card.id}`, card);
     const result = await providerFor(server.ctx, 'pokemon').setCards(card.set.id, 'en');
     expect(result).toMatchObject([{ details: { detailed: true }, prices: { normal: [{ amount: 5 }] } }]);
@@ -214,7 +215,7 @@ it('consults and caches live abbreviations for newly released sets', async () =>
 it.each(['card', 'set'])('rejects malformed %s refreshes before cache publication', async (kind) => {
   complete(card);
   server.ctx.db.run('DELETE FROM printing_catalogues');
-  const key = `${prefix}:${kind}:${kind === 'card' ? card.id : card.set.id}`;
+  const key = `${prefix}:${kind === 'card' ? 'card' : 'set-complete-v2'}:${kind === 'card' ? card.id : card.set.id}`;
   const at = Date.now() - 7 * 3600_000;
   cache(key, kind === 'card' ? card : [card], at);
   const before = server.ctx.db.get('SELECT body,fetched_at FROM http_cache WHERE key = ?', key);
@@ -245,6 +246,54 @@ it.each(['card', 'set'])('keeps %s display observation provenance during a concu
   complete({ ...card, name: 'Different catalogue observation' }, Date.now() - 7 * 3600_000);
   release();
   const result = await pending;
-  const at = server.ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM http_cache WHERE key = ?', `${prefix}:${kind}:${kind === 'card' ? card.id : card.set.id}`)!.fetched_at;
+  const at = server.ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM http_cache WHERE key = ?', `${prefix}:${kind === 'card' ? 'card' : 'set-complete-v2'}:${kind === 'card' ? card.id : card.set.id}`)!.fetched_at;
   expect(result[0]).toMatchObject({ name: 'Example', stale: false, fetchedAt: new Date(at).toISOString() });
+});
+
+
+it('retains published catalogue and list observations when scheduled data is invalid', async () => {
+  complete(card);
+  const before = server.ctx.db.get('SELECT * FROM printing_catalogues WHERE set_id = ?', card.set.id);
+  expect(() => persistCatalogue(server.ctx, card.set.id, [{ ...card, artist: {} } as unknown as PokemonCard])).toThrow('Invalid Pokémon card');
+  expect(server.ctx.db.get('SELECT * FROM printing_catalogues WHERE set_id = ?', card.set.id)).toEqual(before);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([card.set]), 123);
+  vi.spyOn(catalog, 'getSets').mockResolvedValue([{ ...card.set, total: 1.5 }]);
+  await expect(discoverSets(server.ctx, 'en')).rejects.toThrow('Invalid Pokémon set');
+  expect(server.ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM catalogue_set_lists')!.fetched_at).toBe(123);
+});
+
+it('resolves an explicit set without unrelated metadata and applies cached live codes to projections', async () => {
+  const noCode = { ...card, set: { ...card.set, ptcgoCode: undefined } };
+  complete(noCode);
+  const other = { ...noCode.set, id: 'unknown-new' };
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([noCode.set, other]), Date.now());
+  const metadata = vi.spyOn(catalog, 'getSet').mockImplementation(async (id) => {
+    if (id === other.id) throw new Error('Unrelated outage');
+    return { ...noCode.set, ptcgoCode: 'NEW' };
+  });
+  const provider = providerFor(server.ctx, 'pokemon');
+  const row = { name: card.name, set: noCode.set.id, number: '1', quantity: 1, zone: 'main' as const, line: 1 };
+  expect(await provider.resolve!(row)).toHaveLength(1);
+  expect(metadata).not.toHaveBeenCalled();
+  await expect(provider.resolve!({ ...row, set: 'NEW' })).rejects.toThrow('Unrelated outage');
+  cache(`${prefix}:metadata:${noCode.set.id}`, { ...noCode.set, ptcgoCode: 'NEW' });
+  const projected = await provider.card(card.id);
+  expect(projected.setCode).toBe('NEW');
+  expect(projected.details.set).not.toHaveProperty('ptcgoCode');
+  expect((await provider.sets()).find((set) => set.id === noCode.set.id)).toMatchObject({ code: 'NEW' });
+});
+
+it('maps printed promo prefixes to the matching set code', async () => {
+  const promo = { ...card, id: 'svp-064', number: '064', set: { ...card.set, id: 'svp', ptcgoCode: 'PR-SV' } };
+  complete(promo);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([promo.set]), Date.now());
+  expect(await providerFor(server.ctx, 'pokemon').resolve!({ name: promo.name, set: 'SVP', number: '064', quantity: 1, zone: 'main', line: 1 })).toMatchObject([{ id: promo.id }]);
+});
+
+it('does not use legacy partial set listings as completeness evidence', async () => {
+  complete(card);
+  server.ctx.db.run('DELETE FROM printing_catalogues');
+  cache(`${prefix}:set:${card.set.id}`, []);
+  vi.spyOn(catalog, 'getSetCardsBrief').mockRejectedValue(new Error('Incomplete set listing'));
+  await expect(providerFor(server.ctx, 'pokemon').search({ set: card.set.id, number: '1' })).rejects.toThrow('Incomplete set listing');
 });

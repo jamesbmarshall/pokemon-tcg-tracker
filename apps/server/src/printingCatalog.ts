@@ -5,7 +5,8 @@
  */
 import { getCardDetails, getSet, getSetCards, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
 import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type PrintingProfile } from '@poketracker/shared/printingRules';
-import { fromPokemon } from '@poketracker/shared/tcg/pokemon';
+import { fromPokemon, pokemonSet } from '@poketracker/shared/tcg/pokemon';
+import { splitId } from '@poketracker/shared/languages';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
 import type { CardSet, PokemonCard } from '@poketracker/shared/types';
@@ -39,6 +40,7 @@ export function persistCatalogue(ctx: Ctx, setId: string, cards: PokemonCard[]) 
   if (!cards.length || cards.some((c) => c.set.id !== setId || c.printingCoverage !== 'complete')) throw new Error('Refusing an incomplete catalogue');
   const profile = buildPrintingProfile(setId, cards, true);
   const classified = cards.map((c) => applyPrintingProfile(c, profile));
+  for (const card of classified) fromPokemon(card, new Date().toISOString());
   const progress = setProgress(classified, new Map());
   const syncedAt = new Date().toISOString();
   ctx.db.tx(() => {
@@ -119,7 +121,7 @@ function storedCatalogue(ctx: Ctx, setId: string): CatalogueObservation<PokemonC
 export async function catalogSetObservation(ctx: Ctx, setId: string): Promise<CatalogueObservation<PokemonCard[]>> {
   const previous = storedCatalogue(ctx, setId);
   if (previous) { refreshCatalogueInBackground(ctx, setId, true); return previous; }
-  const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set:${setId}`, async () => {
+  const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set-complete-v2:${setId}`, async () => {
     const cards = await getSetCardsBrief(setId, true);
     for (const card of cards) {
       if (card.set.id !== setId) throw new Error('Mismatched set listing');
@@ -143,7 +145,7 @@ export async function catalogCardObservation(ctx: Ctx, cardId: string): Promise<
     return { data: card, at: previous.at };
   }
   const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:card:${cardId}`, async () => {
-    const [card, set] = await Promise.all([getCardDetails(cardId), getSet(setId)]);
+    const [card, set] = await Promise.all([getCardDetails(cardId, undefined, { fresh: true }), getSet(setId)]);
     const data = { ...card, set };
     if (data.id !== cardId || set.id !== setId) throw new Error('Mismatched card details');
     fromPokemon(data, new Date().toISOString());
@@ -157,16 +159,28 @@ export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonC
 }
 export async function discoverSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
   const sets = await getSets(lang);
+  for (const set of sets) {
+    pokemonSet(set);
+    if (splitId(set.id).lang !== lang) throw new Error('Mismatched set language');
+  }
   ctx.db.tx(() => {
     ctx.db.run('INSERT OR REPLACE INTO catalogue_set_lists (language, data, fetched_at) VALUES (?, ?, ?)', lang, JSON.stringify(sets), Date.now());
     for (const set of sets) ctx.db.run('INSERT INTO printing_sync_queue (set_id, release_date, next_at) VALUES (?, ?, 0) ON CONFLICT(set_id) DO UPDATE SET release_date = excluded.release_date', set.id, set.releaseDate);
   });
   return sets;
 }
-export async function catalogSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
+export async function catalogSetsObservation(ctx: Ctx, lang: Lang): Promise<CatalogueObservation<CardSet[]>> {
   const row = ctx.db.get<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM catalogue_set_lists WHERE language = ?', lang);
-  if (row && Date.now() - row.fetched_at < 6 * HOUR) return json(row.data, []);
-  try { return await discoverSets(ctx, lang); } catch (err) { if (row) return json(row.data, []); throw err; }
+  if (row && Date.now() - row.fetched_at < 6 * HOUR) return { data: json(row.data, []), at: row.fetched_at };
+  try {
+    const data = await discoverSets(ctx, lang);
+    const published = ctx.db.get<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM catalogue_set_lists WHERE language = ?', lang)!;
+    // Return the published row as a single observation even if another discovery won the race.
+    return { data: json(published.data, data), at: published.fetched_at };
+  } catch (err) { if (row) return { data: json(row.data, []), at: row.fetched_at }; throw err; }
+}
+export async function catalogSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
+  return (await catalogSetsObservation(ctx, lang)).data;
 }
 /**
  * Processes due or version-invalidated sets from the durable queue, sequentially in this job.

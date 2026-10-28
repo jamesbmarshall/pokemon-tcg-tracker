@@ -366,3 +366,5 @@ incidental whitespace. Newly released sets absent from the static code index use
 cached REST metadata lookups (four concurrent, at most 1,000 sets). Static raw-ID
 code fallbacks also populate normalized cards/sets, enabling localized deck export
 without altering original source metadata.
+
+U08 review follow-up: scheduled catalogue and set-list publication validates normalized data before replacing stored observations. Strict set displays use a versioned key and require matching metadata with an advertised total; legacy partial-candidate lookups keep their existing behavior. Card display refreshes fetch directly so their timestamps reflect the upstream observation and rejected responses do not poison the resumable raw-card cache. Set lists return data and time together. Explicit set IDs resolve directly; printed-code lookup uses a bounded, cached index and reports incomplete evidence. Verified live codes are retained across index refreshes and used in card and set projections, while source details remain intact.

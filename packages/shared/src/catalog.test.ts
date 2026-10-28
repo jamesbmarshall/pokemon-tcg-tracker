@@ -141,3 +141,30 @@ it('rejects set listings missing advertised cards', async () => {
     : Response.json({ id: 'incomplete-proof', name: 'Incomplete', cardCount: { official: 1, total: 1 } })));
   await expect(getSetCardsBrief('incomplete-proof', true)).rejects.toThrow('Incomplete set listing');
 });
+
+
+it.each([
+  { id: 'wrong-set', name: 'Wrong', cardCount: { total: 0 } },
+  { id: 'metadata-proof', name: 'Missing count' },
+])('rejects invalid completeness metadata', async (metadata) => {
+  vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => init?.body
+    ? Response.json({ data: { cards: [] } }) : Response.json(metadata)));
+  await expect(getSetCardsBrief('metadata-proof', true)).rejects.toThrow('Invalid set completeness metadata');
+});
+
+it('fresh detail reads bypass old raw cards without publishing an unchecked response', async () => {
+  const saveRawCard = vi.fn();
+  const raw = { id: 'fresh-proof-1', localId: '1', name: 'Fresh', category: 'Pokemon', set: { id: 'fresh-proof', name: 'Fresh' } };
+  configureCatalog({ storage: { profile: () => undefined, rawCard: () => ({ ...raw, name: 'Old' }), saveRawCard } });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(raw)));
+  expect((await getCardDetails(raw.id, undefined, { fresh: true })).name).toBe('Fresh');
+  expect(saveRawCard).not.toHaveBeenCalled();
+});
+
+it('retains a live set abbreviation when the GraphQL index is refreshed', async () => {
+  const set = { id: 'live-code-proof', name: 'Live code', cardCount: { official: 1, total: 1 } };
+  vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => init?.body
+    ? Response.json({ data: { sets: [set] } }) : Response.json({ ...set, abbreviation: { official: 'LIVE' } })));
+  await getSet(set.id);
+  expect(await getSets()).toMatchObject([{ id: set.id, ptcgoCode: 'LIVE' }]);
+});

@@ -181,3 +181,5 @@ set-code projection. U09 still needs the updated U08 parent incorporated before
 continuing U10. No review thread was manually marked resolved.
 
 U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.
+
+U08 further review: subsequent changes validate scheduled catalogue and set-list publication, version complete-list display keys, fetch fresh card observations without storing unchecked raw responses, pair set-list data and timestamps, and preserve live abbreviations. Explicit set IDs avoid unrelated metadata scans; printed-code lookups use a bounded cached index, report incomplete evidence and support promo prefixes. U09 still needs to incorporate the updated U08 branch before continuing.

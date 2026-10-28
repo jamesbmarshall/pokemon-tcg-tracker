@@ -9,6 +9,7 @@ import { applyPrintingProfile, buildPrintingProfile, type PrintingProfile } from
 import { PRINTING_VERSION, resolvePrintings, type RawPrinting } from './printings';
 export { standardVariants, printingLabel } from './printings';
 import { LEGACY_SET_MAP, SET_CODES } from './legacySets';
+import { pokemonSet } from './tcg/pokemon';
 import { fromEnglishCategory, fromEnglishType, splitId, toEnglishCategory, toEnglishType, withLang, type Lang } from './languages';
 
 export type { Lang } from './languages';
@@ -242,8 +243,12 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
         const list = sets
           // Drop digital-only and empty (announced but not yet catalogued) sets.
           .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
-          .map((s) => toSet(s, lang))
+          .map((s) => {
+            const next = toSet(s, lang);
+            return { ...next, ptcgoCode: setIndex.get(next.id)?.ptcgoCode ?? next.ptcgoCode };
+          })
           .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
+        for (const set of list) pokemonSet(set);
         // A successful observation replaces this language index, including removed sets.
         for (const id of setIndex.keys()) if (splitId(id).lang === lang) setIndex.delete(id);
         for (const s of list) setIndex.set(s.id, s);
@@ -483,9 +488,14 @@ export async function getCard(cardId: string, signal?: AbortSignal): Promise<Pok
 }
 
 /** Fetch only this card. Page requests already have set metadata and must not load every set. */
-export async function getCardDetails(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
+export async function getCardDetails(cardId: string, signal?: AbortSignal, options?: { fresh?: boolean }): Promise<PokemonCard> {
   const { lang, raw } = splitId(cardId);
-  return toCard(await getRawCard(raw, lang, signal), true, lang);
+  // Display observations must reflect a current fetch and must not publish unvalidated raw data.
+  const source = options?.fresh
+    ? await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, signal, lang)
+    : await getRawCard(raw, lang, signal);
+  if (source.id !== raw || !source.localId || !source.name) throw new Error('Incomplete card response');
+  return toCard(source, true, lang);
 }
 
 /** Lightweight cards (no text/prices) for many ids in one round trip. Unknown ids are skipped. */
@@ -531,7 +541,15 @@ async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal): Prom
 export async function getSetCardsBrief(setId: string, requireComplete = false): Promise<PokemonCard[]> {
   const { lang, raw: rawSetId } = splitId(setId);
   // A targeted metadata request avoids loading the entire language's set index on first open.
-  const metadata = getSet(setId);
+  const metadata = requireComplete
+    ? rest<RawSet>(`/sets/${encodeURIComponent(rawSetId)}`, undefined, undefined, lang).then((raw) => {
+      if (raw.id !== rawSetId || !Number.isSafeInteger(raw.cardCount?.total) || raw.cardCount!.total! < 0)
+        throw new Error('Invalid set completeness metadata');
+      const set = toSet(raw, lang);
+      setIndex.set(set.id, { ...setIndex.get(set.id), ...set });
+      return set;
+    })
+    : getSet(setId);
   const found = new Map<string, PokemonCard>();
   for (let page = 1; page < 20; page++) {
     const [{ cards }, set] = await Promise.all([gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`), metadata]);

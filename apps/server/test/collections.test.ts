@@ -249,7 +249,7 @@ describe('custom lists', () => {
 
 describe('set totals', () => {
   it('are counted on the server and ignore whatever the client claims', async () => {
-    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}`, variants_detailed: [{ type: 'normal' }] }));
+    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}`, category: 'Pokemon', variants_detailed: [{ type: 'normal' }] }));
     const fetchMock = vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(async (url) =>
       String(url).includes('graphql')
         ? Response.json({ data: { cards } })
