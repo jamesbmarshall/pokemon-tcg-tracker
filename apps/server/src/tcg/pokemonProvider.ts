@@ -167,7 +167,7 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
         const index = await catalogSets(ctx, lang);
         const direct = index.find((set) => set.id === row.set);
         if (direct) return (await setCards(direct.id, lang)).filter((card) => nameMatches(card.name, row.name) && (!row.number || numberMatches(row.number, card.number)));
-        const unknown = index.filter((set) => !set.ptcgoCode && !cachedSetCode(ctx, set.id) && !SET_CODES[splitId(set.id).raw]);
+        const unknown = index.filter((set) => (!set.ptcgoCode || cachedSetCode(ctx, set.id)) && !SET_CODES[splitId(set.id).raw]);
         if (unknown.length > 1000) throw bad('Set code lookup exceeded catalogue limit');
         // Reuse one bounded index observation across deck rows; an incomplete refresh fails explicitly.
         const codes = await displayCached(ctx, `${prefix}:code-index:${lang}:${sha256(JSON.stringify(unknown.map((set) => set.id).sort()))}`, async () => {
@@ -181,12 +181,12 @@ export function pokemonProvider(ctx: Ctx, selectedLanguage = 'en'): TcgProvider 
                 pokemonSet(value);
                 if (value.id !== set.id) throw bad('Mismatched live set metadata');
                 return value;
-              });
+              }, true);
               if (live.ptcgoCode) returnCode[set.id] = live.ptcgoCode;
             }
           }));
           return returnCode;
-        });
+        }, true);
         const requested = row.set.toUpperCase();
         const promoTarget = PROMO_PREFIXES[requested]?.toUpperCase();
         const codesToMatch = new Set([requested, ...(promoTarget ? [promoTarget] : [])]);

@@ -9,7 +9,7 @@ import type { PokemonTcgCard, Quote, TcgSet } from './types';
 export function pokemonReference(id: string, kind: 'card' | 'set'): boolean {
   if (typeof id !== 'string' || id.length > 180) return false;
   const colon = id.indexOf(':');
-  if (colon >= 0 && !isLang(id.slice(0, colon))) return false;
+  if (colon >= 0 && (id.slice(0, colon) === 'en' || !isLang(id.slice(0, colon)))) return false;
   const { raw } = splitId(id);
   if (raw.includes('..')) return false;
   return kind === 'card' ? /^[A-Za-z0-9][A-Za-z0-9.-]*-[A-Za-z0-9]+$/.test(raw)

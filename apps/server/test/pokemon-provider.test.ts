@@ -363,3 +363,18 @@ it('does not use legacy partial set listings as completeness evidence', async ()
   vi.spyOn(catalog, 'getSetCardsBrief').mockRejectedValue(new Error('Incomplete set listing'));
   await expect(providerFor(server.ctx, 'pokemon').search({ set: card.set.id, number: '1' })).rejects.toThrow('Incomplete set listing');
 });
+
+it('revalidates expired live codes and propagates refresh failures', async () => {
+  card.set.ptcgoCode = undefined;
+  complete(card);
+  server.ctx.db.run('INSERT INTO catalogue_set_lists (language,data,fetched_at) VALUES (?,?,?)', 'en', JSON.stringify([card.set]), Date.now());
+  const getSet = vi.spyOn(catalog, 'getSet').mockResolvedValue({ ...card.set, ptcgoCode: 'OLD' });
+  const provider = providerFor(server.ctx, 'pokemon');
+  const row = { name: card.name, set: 'OLD', number: '1', quantity: 1, zone: 'main' as const, line: 1 };
+  expect(await provider.resolve!(row)).toHaveLength(1);
+  server.ctx.db.run('UPDATE http_cache SET fetched_at = 0');
+  getSet.mockRejectedValue(new Error('Metadata unavailable'));
+  await expect(provider.resolve!({ ...row, set: 'NEW' })).rejects.toThrow('Metadata unavailable');
+  getSet.mockResolvedValue({ ...card.set, ptcgoCode: 'NEW' });
+  expect(await provider.resolve!({ ...row, set: 'NEW' })).toHaveLength(1);
+});

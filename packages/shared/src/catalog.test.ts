@@ -247,3 +247,14 @@ it('retains a live set abbreviation when the GraphQL index is refreshed', async 
   await getSet(set.id);
   expect(await getSets()).toMatchObject([{ id: set.id, ptcgoCode: 'LIVE' }]);
 });
+
+it.each([-1, 'bad', undefined])('rejects invalid advertised totals before filtering: %s', async (total) => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ data: { sets: [{ id: 'invalid-total', name: 'Invalid', cardCount: { total } }] } })));
+  await expect(getSets()).rejects.toThrow('Invalid advertised set total');
+});
+
+it.each([-1, 'bad'])('rejects malformed raw market prices: %s', async (marketPrice) => {
+  configureCatalog({ storage: null });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'price-check-1', localId: '1', name: 'Price', category: 'Pokemon', pricing: { tcgplayer: { normal: { marketPrice } } } })));
+  await expect(getCardDetails('price-check-1')).rejects.toThrow('Invalid raw card price');
+});

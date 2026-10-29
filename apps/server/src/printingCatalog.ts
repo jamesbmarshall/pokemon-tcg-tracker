@@ -96,7 +96,7 @@ function refreshCatalogueInBackground(ctx: Ctx, setId: string, hasCatalogue = fa
 }
 /** Shared stale-while-revalidate cache for internal catalogue projections. */
 export interface CatalogueObservation<T> { data: T; at: number }
-export function displayObservation<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<CatalogueObservation<T>> {
+export function displayObservation<T>(ctx: Ctx, key: string, load: () => Promise<T>, requireFresh = false): Promise<CatalogueObservation<T>> {
   const row = ctx.db.get<{ body: Uint8Array; fetched_at: number }>('SELECT body, fetched_at FROM http_cache WHERE key = ?', key);
   const previous = row ? json<T | undefined>(Buffer.from(row.body).toString(), undefined) : undefined;
   if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve({ data: previous, at: row!.fetched_at });
@@ -111,14 +111,14 @@ export function displayObservation<T>(ctx: Ctx, key: string, load: () => Promise
     }).finally(() => requests!.delete(key));
     requests.set(key, request);
   }
-  if (previous !== undefined) {
+  if (previous !== undefined && !requireFresh) {
     void request.catch((err) => ctx.log.warn({ err }, 'Background catalogue display refresh failed'));
     return Promise.resolve({ data: previous, at: row!.fetched_at });
   }
   return request;
 }
-export async function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
-  return (await displayObservation(ctx, key, load)).data;
+export async function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>, requireFresh = false): Promise<T> {
+  return (await displayObservation(ctx, key, load, requireFresh)).data;
 }
 function storedCatalogue(ctx: Ctx, setId: string): CatalogueObservation<PokemonCard[]> | undefined {
   const row = ctx.db.get<{ data: string; synced_at: number }>('SELECT data,synced_at FROM printing_catalogues WHERE set_id = ? AND printing_version = ? AND policy_version = ?', setId, PRINTING_VERSION, POLICY_VERSION);

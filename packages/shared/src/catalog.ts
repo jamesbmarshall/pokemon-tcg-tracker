@@ -254,7 +254,12 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
       if (new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('Duplicate set in catalogue response');
       const list = sets
         // Drop digital-only and empty (announced but not yet catalogued) sets.
-        .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
+        .filter((s) => {
+          if (DIGITAL_SERIES.has(s.serie?.id ?? '')) return false;
+          const total = s.cardCount?.total;
+          if (!Number.isSafeInteger(total) || total! < 0) throw new Error('Invalid advertised set total');
+          return total! > 0;
+        })
         .map((s) => projectSet(s, lang))
         .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
       // A successful observation replaces this language index, including removed sets.
@@ -318,7 +323,11 @@ const PRICE_KEY_ALIASES: Record<string, string> = {
 };
 const camel = (k: string) => k.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 // Zero or missing means "no data" in TCGdex pricing, never a real price of zero.
-const num = (v: unknown) => (typeof v === 'number' && v > 0 ? v : undefined);
+const num = (v: unknown) => {
+  if (v == null) return undefined;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error('Invalid raw card price');
+  return v > 0 ? v : undefined;
+};
 
 function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSource | undefined {
   if (!raw) return undefined;
