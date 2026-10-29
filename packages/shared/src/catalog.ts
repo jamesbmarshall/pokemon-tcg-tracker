@@ -330,12 +330,14 @@ const num = (v: unknown) => {
 };
 
 function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSource | undefined {
-  if (!raw) return undefined;
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid raw price source');
   const prices: Record<string, PriceBlock> = Object.create(null);
   const provenance: NonNullable<PriceSource['provenance']> = Object.create(null);
   let productId: unknown;
   for (const [k, v] of Object.entries(raw)) {
-    if (!v || typeof v !== 'object') continue;
+    if (k === 'updated') continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid raw price block');
     const p = v as Record<string, unknown>;
     const key = Object.hasOwn(PRICE_KEY_ALIASES, camel(k)) ? PRICE_KEY_ALIASES[camel(k)] : camel(k);
     const block = { low: num(p.lowPrice), mid: num(p.midPrice), high: num(p.highPrice), market: num(p.marketPrice), directLow: num(p.directLowPrice) };
@@ -356,7 +358,8 @@ function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSo
  * otherwise the card itself is the foil and only the reverse takes the holo price.
  */
 function toCardmarket(raw: NonNullable<RawCard['pricing']>['cardmarket'], variants: string[], name: string): PriceSource | undefined {
-  if (!raw) return undefined;
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid raw price source');
   const base: PriceBlock = { low: num(raw.low), mid: num(raw.avg), market: num(raw.trend) ?? num(raw.avg) };
   const holo: PriceBlock = { low: num(raw['low-holo']), mid: num(raw['avg-holo']), market: num(raw['trend-holo']) ?? num(raw['avg-holo']) };
   const has = (b: PriceBlock) => b.market !== undefined || b.low !== undefined;

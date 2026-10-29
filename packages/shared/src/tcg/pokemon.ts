@@ -60,6 +60,15 @@ export function fromPokemon(card: PokemonCard, fetchedAt: string): PokemonTcgCar
     !Array.isArray(card.variants) || card.variants.some((v) => typeof v !== 'string') ||
     !['Pokémon', 'Trainer', 'Energy'].includes(card.supertype) || !Number.isFinite(Date.parse(fetchedAt)))
     throw new Error('Invalid Pokémon card data');
+  const strings = (value: unknown) => Array.isArray(value) && value.every((item) => typeof item === 'string');
+  const records = (value: unknown, fields: string[]) => Array.isArray(value) && value.every((item) => item && typeof item === 'object' && fields.every((field) => typeof item[field] === 'string'));
+  if ([card.hp, card.evolvesFrom, card.flavorText, card.regulationMark].some((value) => value !== undefined && typeof value !== 'string') ||
+    [card.subtypes, card.types, card.evolvesTo, card.rules, card.retreatCost].some((value) => value !== undefined && !strings(value)) ||
+    (card.abilities !== undefined && !records(card.abilities, ['name', 'text', 'type'])) ||
+    (card.attacks !== undefined && (!records(card.attacks, ['name', 'text', 'damage']) || card.attacks.some((attack) => !strings(attack.cost) || !Number.isSafeInteger(attack.convertedEnergyCost) || attack.convertedEnergyCost < 0))) ||
+    [card.weaknesses, card.resistances].some((value) => value !== undefined && !records(value, ['type', 'value'])) ||
+    (card.nationalPokedexNumbers !== undefined && (!Array.isArray(card.nationalPokedexNumbers) || card.nationalPokedexNumbers.some((value) => !Number.isSafeInteger(value) || value < 0))))
+    throw new Error('Invalid Pokémon display data');
   pokemonSet(card.set);
   const { lang, raw } = splitId(card.id);
   if (splitId(card.set.id).lang !== lang || raw.slice(0, raw.lastIndexOf('-')) !== splitId(card.set.id).raw)

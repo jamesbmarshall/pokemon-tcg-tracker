@@ -258,3 +258,9 @@ it.each([-1, 'bad'])('rejects malformed raw market prices: %s', async (marketPri
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'price-check-1', localId: '1', name: 'Price', category: 'Pokemon', pricing: { tcgplayer: { normal: { marketPrice } } } })));
   await expect(getCardDetails('price-check-1')).rejects.toThrow('Invalid raw card price');
 });
+
+it.each(['bad', [], 4])('rejects malformed variant price blocks: %s', async (block) => {
+  configureCatalog({ storage: null });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'price-block-1', localId: '1', name: 'Price', category: 'Pokemon', pricing: { tcgplayer: { normal: block } } })));
+  await expect(getCardDetails('price-block-1')).rejects.toThrow('Invalid raw price block');
+});

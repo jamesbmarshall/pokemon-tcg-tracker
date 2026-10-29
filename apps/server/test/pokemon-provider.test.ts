@@ -378,3 +378,9 @@ it('revalidates expired live codes and propagates refresh failures', async () =>
   getSet.mockResolvedValue({ ...card.set, ptcgoCode: 'NEW' });
   expect(await provider.resolve!({ ...row, set: 'NEW' })).toHaveLength(1);
 });
+
+it.each([{ rules: [{}] }, { subtypes: [{}] }, { abilities: [{ name: {}, text: '', type: 'Ability' }] }])('rejects malformed display fields before publishing search results', async (fields) => {
+  vi.spyOn(catalog, 'searchCards').mockResolvedValue({ data: [{ ...card, ...fields } as unknown as PokemonCard], page: 1, pageSize: 36, totalCount: 1 });
+  await expect(providerFor(server.ctx, 'pokemon').search({ q: 'invalid-display' })).rejects.toThrow('Invalid Pokémon display data');
+  expect(server.ctx.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM http_cache')!.n).toBe(0);
+});
