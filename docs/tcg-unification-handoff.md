@@ -154,6 +154,37 @@ logs and remote state before claiming success or launching duplicate work.
 Chromium is installed under `/workspace/.playwright-browsers`; set
 `PLAYWRIGHT_BROWSERS_PATH` accordingly if browser checks are needed.
 
+## U08 review follow-up (28 October)
+
+Eight PR #81 recommendations were accepted and implemented on its own branch.
+They cover redirects in both proxy upstream paths, stale negative results, search
+match/set refreshes, complete pages, correct cache timestamps, multilingual set
+codes, per-variant price provenance and normalized field validation. Regression
+tests cover each. Older flattened price caches retain amounts/source blocks but
+produce unknown normalized quote dates/URLs until fresh per-key evidence exists.
+No migration or data rewrite is required.
+
+U09 remains published separately as PR #82 on `codex/tcg-collection-repositories`.
+Before continuing U10, incorporate the updated U08 parent into U09 and revalidate
+the affected suites; do not lose its repository implementation or handoff notes.
+
+U08 review validation: all 215 shared, 293 server and 823 web tests passed, plus
+typecheck, lint and production build. Fixes are on `codex/pokemon-catalogue-adapter`;
+review threads are left for the reviewer to reassess after the update.
+
+## U08 second review follow-up
+
+Nine additional PR #81 findings are implemented: strict name/number resolution,
+hydrated ID verification, paired record/timestamp observations, validation before
+cache publication, complete set listings, bounded cross-page match observations,
+live abbreviation discovery, GraphQL partial-error rejection and localized
+set-code projection. U09 still needs the updated U08 parent incorporated before
+continuing U10. No review thread was manually marked resolved.
+
+U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.
+
+U08 further review: subsequent changes validate scheduled catalogue and set-list publication, version complete-list display keys, fetch fresh card observations without storing unchecked raw responses, pair set-list data and timestamps, and preserve live abbreviations. Explicit set IDs avoid unrelated metadata scans; printed-code lookups use a bounded cached index, report incomplete evidence and support promo prefixes. U09 still needs to incorporate the updated U08 branch before continuing.
+
 ## U09 continuation detail
 
 U09 adds `apps/server/src/tcg/repositories/collection.ts` and the common SQLite
@@ -170,4 +201,12 @@ WebKit/manual accessibility gates remain open; U09 changes no UI flows. PR #81
 had no review threads at the final pre-publication check on 28 October.
 
 U09 is published as PR #82, targeting the U08 branch. Check its review and CI
-before beginning U10. No PR was merged during this continuation.
+before beginning U10.
+
+## U08 merge (30 October)
+
+The final PR #81 review fixes validate classified set imports before installing
+the in-memory printing profile and accept TCGdex's TCGplayer `unit` metadata in
+raw price validation. All review threads were resolved and CI passed; PR #81 was
+merged into `codex/tcg-provider-registry`. That branch is merged into U09, so the
+"U09 still needs the updated U08 parent" notes above are satisfied.

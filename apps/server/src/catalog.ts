@@ -55,8 +55,9 @@ const inflight = new Map<string, Promise<Cached>>();
  * every other call for that upstream: once it is open, or once retries are exhausted, a stale
  * cached copy is served instead of erroring, when one exists.
  */
-export async function cachedUpstream(ctx: Ctx, provider: string, key: string, url: string, init: RequestInit, ttl: number, force = false): Promise<Cached> {
-  const row = ctx.db.get<{ status: number; content_type: string; body: Uint8Array; fetched_at: number }>('SELECT * FROM http_cache WHERE key = ?', key);
+export async function cachedUpstream(ctx: Ctx, provider: string, key: string, url: string, init: RequestInit, ttl: number, force = false, validate?: (body: Buffer) => void): Promise<Cached> {
+  let row = ctx.db.get<{ status: number; content_type: string; body: Uint8Array; fetched_at: number }>('SELECT * FROM http_cache WHERE key = ?', key);
+  if (row && validate) { try { validate(Buffer.from(row.body)); } catch { row = undefined; } }
   if (row && !force && Date.now() - row.fetched_at < ttl) return { status: row.status, type: row.content_type, body: Buffer.from(row.body), fresh: true };
   const stale = () => {
     recordStaleServe(provider);
@@ -78,6 +79,7 @@ export async function cachedUpstream(ctx: Ctx, provider: string, key: string, ur
         });
         const body = await boundedBody(res, MAX_BODY);
         if (body.length > MAX_BODY) throw new Error('Upstream response too large');
+        if (res.ok) validate?.(body);
         const type = res.headers.get('content-type') ?? 'application/json';
         // Cache successes and definitive 404s; retry everything else next time.
         if (res.ok || res.status === 404) {
@@ -259,7 +261,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
     const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
     const path = rest + qs;
     upstream.check(req.user?.id ?? req.ip, reply);
-    const r = await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, {}, ttlFor(path));
+    const r = await cachedUpstream(ctx, 'tcgdex', `GET ${path}`, `${base}${path}`, { redirect: 'error' }, ttlFor(path));
     reply.header('cache-control', 'private, max-age=300').header('x-cache', r.fresh ? 'fresh' : 'stale');
     return reply.status(r.status).type(r.type).send(r.body);
   });
@@ -271,7 +273,10 @@ export function catalogRoutes(app: FastifyInstance, ctx: Ctx) {
     // Cache key is a hash of the exact payload, so different variables never share an entry.
     const payload = JSON.stringify({ query: b.query, variables: b.variables ?? {} });
     upstream.check(req.user?.id ?? req.ip, reply);
-    const r = await cachedUpstream(ctx, 'tcgdex', `GQL ${sha256(payload)}`, `${base}/graphql`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }, 3600_000);
+    const r = await cachedUpstream(ctx, 'tcgdex', `GQL ${sha256(payload)}`, `${base}/graphql`, { redirect: 'error', method: 'POST', headers: { 'content-type': 'application/json' }, body: payload }, 3600_000, false, (body) => {
+      const result = JSON.parse(body.toString());
+      if (!result?.data || result.errors?.length) throw new Error('Invalid GraphQL observation');
+    });
     reply.header('cache-control', 'private, max-age=300');
     return reply.status(r.status).type(r.type).send(r.body);
   });

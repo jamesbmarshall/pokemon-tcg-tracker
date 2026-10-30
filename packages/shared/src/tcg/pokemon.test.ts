@@ -9,8 +9,8 @@ function fixture(id = 'sv01-001'): PokemonCard {
     images: { small: 'small', large: 'large' }, variants: ['normal'],
     rules: ['Rule'], attacks: [{ name: 'Attack', cost: ['Fire'], convertedEnergyCost: 1, damage: '20', text: 'Text' }],
     legal: { standard: false }, regulationMark: 'G', printingCoverage: 'partial',
-    tcgplayer: { url: 'https://example.com/us', updatedAt: '2026-02-01', prices: { normal: { market: 0, mid: 2, low: 1, high: 4, directLow: 1 } } },
-    cardmarket: { url: 'https://example.com/eu', updatedAt: '2026-02-02', prices: { normal: { market: 3 } } } };
+    tcgplayer: { url: 'https://example.com/us', updatedAt: '2026-02-01', provenance: { normal: { url: 'https://example.com/us', updatedAt: '2026-02-01' } }, prices: { normal: { market: 0, mid: 2, low: 1, high: 4, directLow: 1 } } },
+    cardmarket: { url: 'https://example.com/eu', updatedAt: '2026-02-02', provenance: { normal: { url: 'https://example.com/eu', updatedAt: '2026-02-02' } }, prices: { normal: { market: 3 } } } };
 }
 
 describe('Pokémon catalogue projections', () => {
@@ -48,10 +48,36 @@ describe('Pokémon catalogue projections', () => {
     source.tcgplayer!.prices.normal.market = NaN;
     expect(() => fromPokemon(source, '2026-03-01')).toThrow('quote');
   });
+  it.each([
+    ['name', ''],
+    ['name', '   '],
+    ['number', ''],
+    ['number', ' \t '],
+  ])('rejects an empty or whitespace-only %s', (field, value) => {
+    const source = fixture();
+    expect(() => fromPokemon({ ...source, [field]: value } as PokemonCard, '2026-03-01')).toThrow('Invalid Pokémon card');
+  });
   it('does not treat prototype-shaped variant names as object properties', () => {
     const source = fixture();
     source.tcgplayer!.prices = JSON.parse('{"__proto__":{"market":2}}');
     expect(fromPokemon(source, '2026-03-01').prices['__proto__'][0].amount).toBe(2);
     expect(Object.hasOwn({}, 'amount')).toBe(false);
+  });
+  it('keeps prices but does not invent per-printing provenance for old flattened caches', () => {
+    const source = fixture();
+    delete source.tcgplayer!.provenance;
+    delete source.cardmarket!.provenance;
+    const result = fromPokemon(source, '2026-03-01');
+    expect(result.prices.normal).toEqual([
+      { amount: 0, currency: 'USD', source: 'tcgplayer', at: '' },
+      { amount: 3, currency: 'EUR', source: 'cardmarket', at: '' },
+    ]);
+    expect(result.details.tcgplayer).toEqual(source.tcgplayer);
+  });
+  it('rejects malformed physical-variant display fields', () => {
+    const source = fixture();
+    const valid = fromPokemon(source, '2026-03-01').variants[0];
+    source.printings = [{ ...valid, label: {} } as unknown as typeof valid];
+    expect(() => fromPokemon(source, '2026-03-01')).toThrow('Invalid Pokémon variant');
   });
 });

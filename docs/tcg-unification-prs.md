@@ -28,6 +28,14 @@ U08 adds lossless Pokémon card/set projections, TCGdex registration, existing-c
 
 U08 validation: 211 shared tests, 280 tests in the full server run and 823 web tests passed. The final provider suite has 13 tests, including set-list outage provenance; final focused tests, typecheck, lint and build passed.
 
+U08 review follow-up addresses all eight recommendations: proxy upstream redirect rejection; stale empty collector-number results; fresh underlying match/set observations on search revalidation; exact page completeness; source-specific cache timestamps; multilingual printed-code fallback; per-variant quote provenance with explicit unknown metadata for old flattened caches; and normalized field validation before cache publication.
+
+U08 review validation: all 215 shared tests, 293 server tests and 823 web tests passed. Typecheck, lint and production build passed. The U09 branch must incorporate this updated U08 parent before further work.
+
+U08 second review adds paired cache observations, pre-publication validation, complete display listings, five-minute shared search observations, exact hydrated-ID checks, GraphQL partial-error rejection, strict name/number matching and live/localized set-code handling. Legacy scan/deck candidate listings retain partial-read compatibility.
+
+U08 final review fixes validate classified set imports before installing printing profiles and accept TCGplayer `unit` metadata. PR #81 merged into `codex/tcg-provider-registry` on 30 October; U09 has incorporated it by merge.
+
 U09 (stacked PR #82) implements internal read repositories over existing tables, with native-state preservation inside a common metadata/valuation envelope, member authorization and snapshot-consistent photo reads. Routes and writes remain on their current paths. See the [repository contract](collection-repositories.md) for the explicit DTO-parity boundary and query budgets.
 
 U09 validation: all 294 server tests passed, including 13 repository tests with 20,000-card query budgets and concurrent-write snapshot isolation. Typecheck, lint and production build passed. No new UI/browser or manual accessibility result is claimed.
@@ -299,3 +307,5 @@ U24 does not depend on the optional M track. Retained legacy repository adapters
 6. **Optional persistence project:** M01–M05, with separate release and destructive-cleanup gates.
 
 If a PR grows beyond one reviewable responsibility, split it into additive adapter introduction followed by caller migration, keeping tests/docs with each. Do not split validation or security enforcement into a later follow-up. Physical locations, deck checkout and image-embedding scanning remain separate feature projects after unification.
+
+U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.
