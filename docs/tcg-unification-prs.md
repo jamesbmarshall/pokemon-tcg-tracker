@@ -1,5 +1,20 @@
 # Incremental TCG unification PR plan
 
+## Current checkpoint — 30 October 2026
+
+This checkpoint supersedes historical status and resume instructions below.
+U01–U06 PRs are merged into their stack bases. U08 (#81) and U09 (#82) are merged
+into `codex/tcg-provider-registry` at `3231109`; the U08-to-U09 integration is complete.
+U07 (#71) remains open. Main is `4e617dc` and contains U01; later work remains stacked.
+
+U10 begins with a small U10a change extracting the existing authorized transaction
+executor from its Fastify adapter. All current endpoints retain their request shapes,
+CSRF hooks, digest identities and native writers. Operation-specific command services
+and validation consolidation remain U10b work; U10 is not complete. U11 and later
+caller cutovers remain pending. WebKit/manual screen-reader and extended job/locking
+performance gates remain open. No storage migration is introduced.
+
+
 Status: proposed, 25 October 2026. These identifiers are planning IDs, not GitHub PR numbers. Parent: [TCG unification plan](tcg-unification-plan.md).
 
 Implementation status (28 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is published as stacked PR #71. U08 implements the internal Pokémon catalogue adapter in stacked PR #81 on `codex/pokemon-catalogue-adapter`. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.

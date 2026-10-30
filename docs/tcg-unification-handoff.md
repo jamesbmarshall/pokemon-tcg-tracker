@@ -1,5 +1,20 @@
 # TCG unification continuation handoff
 
+## Current checkpoint — 30 October 2026
+
+This checkpoint supersedes historical status and resume instructions below.
+U01–U06 PRs are merged into their stack bases. U08 (#81) and U09 (#82) are merged
+into `codex/tcg-provider-registry` at `3231109`; the U08-to-U09 integration is complete.
+U07 (#71) remains open. Main is `4e617dc` and contains U01; later work remains stacked.
+
+U10 begins with a small U10a change extracting the existing authorized transaction
+executor from its Fastify adapter. All current endpoints retain their request shapes,
+CSRF hooks, digest identities and native writers. Operation-specific command services
+and validation consolidation remain U10b work; U10 is not complete. U11 and later
+caller cutovers remain pending. WebKit/manual screen-reader and extended job/locking
+performance gates remain open. No storage migration is introduced.
+
+
 Updated 28 October 2026. Read this before continuing in a fresh context.
 
 ## Goal and controlling documents
