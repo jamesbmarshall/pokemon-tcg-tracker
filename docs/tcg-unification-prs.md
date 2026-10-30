@@ -34,6 +34,12 @@ U08 review validation: all 215 shared tests, 293 server tests and 823 web tests 
 
 U08 second review adds paired cache observations, pre-publication validation, complete display listings, five-minute shared search observations, exact hydrated-ID checks, GraphQL partial-error rejection, strict name/number matching and live/localized set-code handling. Legacy scan/deck candidate listings retain partial-read compatibility.
 
+U08 final review fixes validate classified set imports before installing printing profiles and accept TCGplayer `unit` metadata. PR #81 merged into `codex/tcg-provider-registry` on 30 October; U09 has incorporated it by merge.
+
+U09 (stacked PR #82) implements internal read repositories over existing tables, with native-state preservation inside a common metadata/valuation envelope, member authorization and snapshot-consistent photo reads. Routes and writes remain on their current paths. See the [repository contract](collection-repositories.md) for the explicit DTO-parity boundary and query budgets.
+
+U09 validation: all 294 server tests passed, including 13 repository tests with 20,000-card query budgets and concurrent-write snapshot isolation. Typecheck, lint and production build passed. No new UI/browser or manual accessibility result is claimed.
+
 ## Merge and release rules
 
 Every PR leaves both Pokémon and Magic usable. New abstractions initially coexist with compatibility adapters; callers move only after their prerequisites pass. Preserve one authoritative write path throughout. A read/UI rollout switch must not select a second independent writer. Legacy URLs and exported formats remain supported.
