@@ -264,3 +264,9 @@ it.each(['bad', [], 4])('rejects malformed variant price blocks: %s', async (blo
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'price-block-1', localId: '1', name: 'Price', category: 'Pokemon', pricing: { tcgplayer: { normal: block } } })));
   await expect(getCardDetails('price-block-1')).rejects.toThrow('Invalid raw price block');
 });
+
+it('accepts TCGplayer source metadata alongside price blocks', async () => {
+  configureCatalog({ storage: null });
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'price-meta-1', localId: '1', name: 'Price', category: 'Pokemon', variants: { normal: true }, pricing: { tcgplayer: { updated: '2026-10-01T00:00:00Z', unit: 'USD', normal: { marketPrice: 2 } } } })));
+  expect((await getCardDetails('price-meta-1')).tcgplayer?.prices.normal?.market).toBe(2);
+});

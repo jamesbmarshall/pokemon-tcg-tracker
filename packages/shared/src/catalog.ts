@@ -336,7 +336,8 @@ function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSo
   const provenance: NonNullable<PriceSource['provenance']> = Object.create(null);
   let productId: unknown;
   for (const [k, v] of Object.entries(raw)) {
-    if (k === 'updated') continue;
+    // Source-level metadata scalars; every other key must be a price block.
+    if (k === 'updated' || k === 'unit') continue;
     if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid raw price block');
     const p = v as Record<string, unknown>;
     const key = Object.hasOwn(PRICE_KEY_ALIASES, camel(k)) ? PRICE_KEY_ALIASES[camel(k)] : camel(k);
