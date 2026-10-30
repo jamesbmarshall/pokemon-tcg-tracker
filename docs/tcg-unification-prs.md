@@ -2,7 +2,7 @@
 
 Status: proposed, 25 October 2026. These identifiers are planning IDs, not GitHub PR numbers. Parent: [TCG unification plan](tcg-unification-plan.md).
 
-Implementation status (25 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is published as stacked PR #71. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
+Implementation status (28 October 2026): U01 remains open for the [outstanding baseline gates](tcg-unification-baseline.md). U02–U06 are implemented in stacked PRs #66–#70. All four U06 review fixes were pushed through `1632aac` and resolved by the reviewer. U07 on `codex/tcg-provider-registry` now includes those fixes via merge `1dcce32` and is published as stacked PR #71. U08 implements the internal Pokémon catalogue adapter in stacked PR #81 on `codex/pokemon-catalogue-adapter`. See the [continuation handoff](tcg-unification-handoff.md) for exact branches, validation and next steps. These changes await review/merge.
 
 U02 now has [architecture decisions](tcg-unification-decisions.md) and a [lossless field mapping](tcg-field-mapping.md) for additive implementation. Remaining U01 WebKit/manual checks gate affected caller cutovers and release, while additive types can proceed against the established preservation fixtures. This sequencing clarification does not waive those checks or authorize data deletion.
 
@@ -23,6 +23,16 @@ U06 review follow-up: explicit Expanded bans now apply even without complete cat
 U06 second review follow-up: ownership projects only requested main-deck names, retains matching reprints and avoids catalogue iteration for empty main decks. All 193 shared tests (30 adapter cases), typecheck, lint and production build passed.
 
 Validation through U05: 163 shared tests, 258 server tests, 8 launcher tests and 823 web tests passed in the full root test run with local network permissions enabled. Typecheck, lint, production build and all 16 Chromium acceptance journeys passed. WebKit/mobile are blocked by missing host libraries; manual screen-reader review, extended job/lock performance measurements and final review remain open. New validation branches added after that run are checked again in the focused registry suite.
+
+U08 adds lossless Pokémon card/set projections, TCGdex registration, existing-cache reads, bounded search and ambiguity-preserving deck resolution. Source quote provenance and stale observation times remain explicit. Generic Pokémon routes stay closed until U11; there is no storage migration. The shared catalogue transport rejects redirects and bounds streamed JSON.
+
+U08 validation: 211 shared tests, 280 tests in the full server run and 823 web tests passed. The final provider suite has 13 tests, including set-list outage provenance; final focused tests, typecheck, lint and build passed.
+
+U08 review follow-up addresses all eight recommendations: proxy upstream redirect rejection; stale empty collector-number results; fresh underlying match/set observations on search revalidation; exact page completeness; source-specific cache timestamps; multilingual printed-code fallback; per-variant quote provenance with explicit unknown metadata for old flattened caches; and normalized field validation before cache publication.
+
+U08 review validation: all 215 shared tests, 293 server tests and 823 web tests passed. Typecheck, lint and production build passed. The U09 branch must incorporate this updated U08 parent before further work.
+
+U08 second review adds paired cache observations, pre-publication validation, complete display listings, five-minute shared search observations, exact hydrated-ID checks, GraphQL partial-error rejection, strict name/number matching and live/localized set-code handling. Legacy scan/deck candidate listings retain partial-read compatibility.
 
 ## Merge and release rules
 
@@ -291,3 +301,5 @@ U24 does not depend on the optional M track. Retained legacy repository adapters
 6. **Optional persistence project:** M01–M05, with separate release and destructive-cleanup gates.
 
 If a PR grows beyond one reviewable responsibility, split it into additive adapter introduction followed by caller migration, keeping tests/docs with each. Do not split validation or security enforcement into a later follow-up. Physical locations, deck checkout and image-embedding scanning remain separate feature projects after unification.
+
+U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.

@@ -249,7 +249,7 @@ describe('custom lists', () => {
 
 describe('set totals', () => {
   it('are counted on the server and ignore whatever the client claims', async () => {
-    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}`, variants_detailed: [{ type: 'normal' }] }));
+    const cards = [1, 2, 3].map((n) => ({ id: `tt9-00${n}`, localId: String(n), name: `Card ${n}`, category: 'Pokemon', variants_detailed: [{ type: 'normal' }] }));
     const fetchMock = vi.fn<(url: string | URL, init?: RequestInit) => Promise<Response>>(async (url) =>
       String(url).includes('graphql')
         ? Response.json({ data: { cards } })
@@ -295,7 +295,8 @@ describe('pricing a newly added card', () => {
           id: 'sv2-077',
           localId: '77',
           name: 'Sprigatito',
-          set: { id: 'sv02', name: 'Paldea Evolved' },
+          category: 'Pokemon',
+          set: { id: 'sv2', name: 'Paldea Evolved' },
           variants: { normal: true },
           pricing: { tcgplayer: { updated: '2026-10-01', normal: { marketPrice: 4.5 } } },
         });

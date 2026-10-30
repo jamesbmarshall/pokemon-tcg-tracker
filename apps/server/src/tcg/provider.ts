@@ -15,6 +15,8 @@ import {
 import { cachedUpstream } from '../catalog.ts';
 import { HttpError, bad, type Ctx } from '../context.ts';
 import { createProviderRegistry } from './providerRegistry.ts';
+import { pokemonProvider } from './pokemonProvider.ts';
+import { pokemonReference } from '@poketracker/shared/tcg/pokemon';
 const BASE = 'https://api.scryfall.com';
 interface Page {
   data: ScryfallCard[];
@@ -339,10 +341,12 @@ export function magicProvider(ctx: Ctx): TcgProvider {
 }
 /** Selection applies only to new catalogue requests. Stored IDs dispatch by ownership. */
 export const providers = createProviderRegistry([
+  { id: 'tcgdex', game: 'pokemon', create: pokemonProvider,
+    ownsCardId: (id) => pokemonReference(id, 'card'), ownsSetId: (id) => pokemonReference(id, 'set') },
   { id: 'scryfall', game: 'mtg', create: magicProvider,
     ownsCardId: (id) => /^mtg:[a-f0-9-]{36}$/.test(id),
     ownsSetId: (id) => /^mtg:[a-z0-9]{2,12}$/.test(id) },
-], (_ctx, game) => game === 'mtg' ? 'scryfall' : undefined);
+], (_ctx, game) => game === 'mtg' ? 'scryfall' : game === 'pokemon' ? 'tcgdex' : undefined);
 
 export function providerFor(ctx: Ctx, game: string, language?: string): TcgProvider {
   return providers.catalogue(ctx, game, language);

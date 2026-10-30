@@ -3,11 +3,13 @@
  * Everything that talks to the card data provider lives here, so the rest of the app only
  * ever sees PokemonCard / CardSet / CardSnapshot.
  */
+import { catalogueJson } from './catalogTransport';
 import type { ApiResponse, CardSet, CardSnapshot, PokemonCard, PriceBlock, PriceSource } from './types';
 import { applyPrintingProfile, buildPrintingProfile, type PrintingProfile } from './printingRules';
 import { PRINTING_VERSION, resolvePrintings, type RawPrinting } from './printings';
 export { standardVariants, printingLabel } from './printings';
 import { LEGACY_SET_MAP, SET_CODES } from './legacySets';
+import { fromPokemon, pokemonSet } from './tcg/pokemon';
 import { fromEnglishCategory, fromEnglishType, splitId, toEnglishCategory, toEnglishType, withLang, type Lang } from './languages';
 
 export type { Lang } from './languages';
@@ -19,8 +21,9 @@ let GRAPHQL = `${TCGDEX_API}/graphql`;
 const profiles = new Map<string, PrintingProfile>();
 interface CatalogueStorage {
   profile: (setId: string) => PrintingProfile | undefined;
-  rawCard: (cardId: string) => RawCard | undefined;
-  saveRawCard: (cardId: string, raw: RawCard) => void;
+  rawCard: (cardId: string) => { data: RawCard; at: number } | undefined;
+  saveRawCard: (cardId: string, raw: RawCard, at: number) => void;
+  invalidateRawCard?: (cardId: string) => void;
 }
 let storage: CatalogueStorage | undefined;
 let extraHeaders: () => Record<string, string> = () => ({});
@@ -58,13 +61,14 @@ async function request<T>(url: string, init: RequestInit = {}, signal?: AbortSig
     let res: Response;
     try {
       const headers = { ...extraHeaders(), ...(init.headers as Record<string, string> | undefined) };
-      res = await fetch(url, { ...init, headers, signal: signal ?? AbortSignal.timeout(30_000) });
+      res = await fetch(url, { ...init, redirect: 'error', headers, signal: signal ?? AbortSignal.timeout(30_000) });
     } catch (err) {
       if (signal?.aborted || attempt >= 3) throw err;
       await backoff(attempt);
       continue;
     }
-    if (res.ok) return res.json();
+    if (res.ok) return catalogueJson<T>(res);
+    await res.body?.cancel();
     if ((res.status === 429 || res.status >= 500) && attempt < 3) {
       await backoff(attempt);
       continue;
@@ -86,7 +90,7 @@ async function gql<T>(query: string, signal?: AbortSignal): Promise<T> {
     { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) },
     signal,
   );
-  if (!res.data) throw new Error(res.errors?.[0]?.message ?? 'Card API error');
+  if (res.errors?.length || !res.data) throw new Error(res.errors?.[0]?.message ?? 'Card API error');
   return res.data;
 }
 
@@ -218,6 +222,16 @@ function toSet(raw: RawSet, lang: Lang = 'en'): CardSet {
   };
 }
 
+function projectSet(raw: RawSet, lang: Lang): CardSet {
+  const set = toSet(raw, lang);
+  const projected = {
+    ...set,
+    ptcgoCode: raw.abbreviation?.official ?? setIndex.get(set.id)?.ptcgoCode ?? SET_CODES[raw.id],
+  };
+  pokemonSet(projected);
+  return projected;
+}
+
 /** Seeds the set index from a cached list so cards can be dated without a request. */
 export function primeSets(sets: CardSet[] | undefined, lang: Lang = 'en') {
   if (!sets?.length || loadedLangs.has(lang)) return;
@@ -236,12 +250,20 @@ export function getSets(lang: Lang = 'en'): Promise<CardSet[]> {
       // List results use the static English set-code fallback in toSet().
       `{ sets${loc(lang)} { id name releaseDate logo symbol serie { id name } cardCount { official total } } }`,
     )
-      .then(({ sets }) => {
-        const list = sets
-          // Drop digital-only and empty (announced but not yet catalogued) sets.
-          .filter((s) => !DIGITAL_SERIES.has(s.serie?.id ?? '') && (s.cardCount?.total ?? 0) > 0)
-          .map((s) => toSet(s, lang))
-          .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
+    .then(({ sets }) => {
+      if (new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('Duplicate set in catalogue response');
+      const list = sets
+        // Drop digital-only and empty (announced but not yet catalogued) sets.
+        .filter((s) => {
+          if (DIGITAL_SERIES.has(s.serie?.id ?? '')) return false;
+          const total = s.cardCount?.total;
+          if (!Number.isSafeInteger(total) || total! < 0) throw new Error('Invalid advertised set total');
+          return total! > 0;
+        })
+        .map((s) => projectSet(s, lang))
+        .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || a.name.localeCompare(b.name));
+      // A successful observation replaces this language index, including removed sets.
+      for (const id of setIndex.keys()) if (splitId(id).lang === lang) setIndex.delete(id);
         for (const s of list) setIndex.set(s.id, s);
         loadedLangs.add(lang);
         return list;
@@ -259,8 +281,8 @@ async function ensureSets(lang: Lang = 'en') {
 
 export async function getSet(setId: string): Promise<CardSet> {
   const { lang, raw } = splitId(setId);
-  const set = toSet(await rest<RawSet>(`/sets/${encodeURIComponent(raw)}`, undefined, undefined, lang), lang);
-  setIndex.set(set.id, { ...setIndex.get(set.id), ...set });
+  const set = projectSet(await rest<RawSet>(`/sets/${encodeURIComponent(raw)}`, undefined, undefined, lang), lang);
+  setIndex.set(set.id, set);
   return set;
 }
 
@@ -301,23 +323,34 @@ const PRICE_KEY_ALIASES: Record<string, string> = {
 };
 const camel = (k: string) => k.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 // Zero or missing means "no data" in TCGdex pricing, never a real price of zero.
-const num = (v: unknown) => (typeof v === 'number' && v > 0 ? v : undefined);
+const num = (v: unknown) => {
+  if (v == null) return undefined;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error('Invalid raw card price');
+  return v > 0 ? v : undefined;
+};
 
 function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSource | undefined {
-  if (!raw) return undefined;
-  const prices: Record<string, PriceBlock> = {};
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid raw price source');
+  const prices: Record<string, PriceBlock> = Object.create(null);
+  const provenance: NonNullable<PriceSource['provenance']> = Object.create(null);
   let productId: unknown;
   for (const [k, v] of Object.entries(raw)) {
-    if (!v || typeof v !== 'object') continue;
+    // Source-level metadata scalars; every other key must be a price block.
+    if (k === 'updated' || k === 'unit') continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid raw price block');
     const p = v as Record<string, unknown>;
-    const key = PRICE_KEY_ALIASES[camel(k)] ?? camel(k);
+    const key = Object.hasOwn(PRICE_KEY_ALIASES, camel(k)) ? PRICE_KEY_ALIASES[camel(k)] : camel(k);
     const block = { low: num(p.lowPrice), mid: num(p.midPrice), high: num(p.highPrice), market: num(p.marketPrice), directLow: num(p.directLowPrice) };
-    if (Object.values(block).some((x) => x !== undefined)) prices[key] = block;
-    // Every variant block points at the same product page, so the first id found is enough.
+    if (Object.values(block).some((x) => x !== undefined)) {
+      prices[key] = block;
+      provenance[key] = { url: p.productId ? `https://www.tcgplayer.com/product/${p.productId}` : '', updatedAt: raw.updated ?? '' };
+    }
+    // Retain the historical source-level link for old callers; quotes use per-key evidence.
     productId ??= p.productId;
   }
   if (!Object.keys(prices).length) return undefined;
-  return { url: productId ? `https://www.tcgplayer.com/product/${productId}` : '', updatedAt: raw.updated ?? '', prices };
+  return { url: productId ? `https://www.tcgplayer.com/product/${productId}` : '', updatedAt: raw.updated ?? '', prices, provenance };
 }
 
 /**
@@ -326,7 +359,8 @@ function toTcgplayer(raw: NonNullable<RawCard['pricing']>['tcgplayer']): PriceSo
  * otherwise the card itself is the foil and only the reverse takes the holo price.
  */
 function toCardmarket(raw: NonNullable<RawCard['pricing']>['cardmarket'], variants: string[], name: string): PriceSource | undefined {
-  if (!raw) return undefined;
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid raw price source');
   const base: PriceBlock = { low: num(raw.low), mid: num(raw.avg), market: num(raw.trend) ?? num(raw.avg) };
   const holo: PriceBlock = { low: num(raw['low-holo']), mid: num(raw['avg-holo']), market: num(raw['trend-holo']) ?? num(raw['avg-holo']) };
   const has = (b: PriceBlock) => b.market !== undefined || b.low !== undefined;
@@ -342,6 +376,9 @@ function toCardmarket(raw: NonNullable<RawCard['pricing']>['cardmarket'], varian
     url: `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(name)}`,
     updatedAt: raw.updated ?? '',
     prices,
+    provenance: Object.fromEntries(Object.keys(prices).map((key) => [key, {
+      url: `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(name)}`, updatedAt: raw.updated ?? '',
+    }])),
   };
 }
 
@@ -446,11 +483,15 @@ function toCard(raw: RawCard, detailed: boolean, lang: Lang = 'en'): PokemonCard
       if (tcg?.prices[baseKey]) {
         card.tcgplayer ??= { ...tcg, prices: {} };
         card.tcgplayer.prices[match.id] = tcg.prices[baseKey];
+        card.tcgplayer.provenance ??= {};
+        card.tcgplayer.provenance[match.id] = tcg.provenance![baseKey];
       }
       const cm = toCardmarket(source.pricing.cardmarket, [baseKey], raw.name);
       if (cm?.prices[baseKey]) {
         card.cardmarket ??= { ...cm, prices: {} };
         card.cardmarket.prices[match.id] = cm.prices[baseKey];
+        card.cardmarket.provenance ??= {};
+        card.cardmarket.provenance[match.id] = cm.provenance![baseKey];
       }
     }
   }
@@ -468,9 +509,12 @@ export async function getCard(cardId: string, signal?: AbortSignal): Promise<Pok
 }
 
 /** Fetch only this card. Page requests already have set metadata and must not load every set. */
-export async function getCardDetails(cardId: string, signal?: AbortSignal): Promise<PokemonCard> {
+export async function getCardDetails(cardId: string, signal?: AbortSignal, options?: { fresh?: boolean }): Promise<PokemonCard> {
   const { lang, raw } = splitId(cardId);
-  return toCard(await getRawCard(raw, lang, signal), true, lang);
+  // Display observations must reflect a current fetch and must not publish unvalidated raw data.
+  if (!options?.fresh) return (await getRawCard(raw, lang, signal)).card;
+  const source = await rest<RawCard>(`/cards/${encodeURIComponent(raw)}`, undefined, signal, lang);
+  return validateRawCard(source, raw, lang);
 }
 
 /** Lightweight cards (no text/prices) for many ids in one round trip. Unknown ids are skipped. */
@@ -502,34 +546,65 @@ export async function getCardsByIds(ids: string[]): Promise<PokemonCard[]> {
 }
 
 /** Full records are cached per card so an interrupted set import can resume. */
-async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal): Promise<RawCard> {
+interface RawCardObservation { data: RawCard; at: number; card: PokemonCard }
+
+function validateRawCard(raw: RawCard, rawId: string, lang: Lang): PokemonCard {
+  if (!raw || raw.id !== rawId || typeof raw.localId !== 'string' || !raw.localId.trim() ||
+    typeof raw.name !== 'string' || !raw.name.trim()) throw new Error('Incomplete card response');
+  const card = toCard(raw, true, lang);
+  fromPokemon(card, new Date().toISOString());
+  return card;
+}
+
+async function getRawCard(rawId: string, lang: Lang, signal?: AbortSignal, options?: { fresh?: boolean }): Promise<RawCardObservation> {
   const id = withLang(lang, rawId);
-  const cached = storage?.rawCard(id);
-  if (cached) return cached;
+  const cached = options?.fresh ? undefined : storage?.rawCard(id);
+  if (cached) {
+    try {
+      return { ...cached, card: validateRawCard(cached.data, rawId, lang) };
+    } catch {
+      storage?.invalidateRawCard?.(id);
+    }
+  }
   const raw = await rest<RawCard>(`/cards/${encodeURIComponent(rawId)}`, undefined, signal, lang);
-  if (raw.id !== rawId || !raw.localId || !raw.name) throw new Error('Incomplete card response');
-  storage?.saveRawCard(id, raw);
-  return raw;
+  const card = validateRawCard(raw, rawId, lang);
+  const at = Date.now();
+  storage?.saveRawCard(id, raw, at);
+  return { data: raw, at, card };
 }
 
 /** Lightweight lookup candidates; not a complete printing catalogue. */
-export async function getSetCardsBrief(setId: string): Promise<PokemonCard[]> {
+export async function getSetCardsBrief(setId: string, requireComplete = false): Promise<PokemonCard[]> {
   const { lang, raw: rawSetId } = splitId(setId);
   // A targeted metadata request avoids loading the entire language's set index on first open.
-  const metadata = getSet(setId);
+  const metadata = requireComplete
+    ? rest<RawSet>(`/sets/${encodeURIComponent(rawSetId)}`, undefined, undefined, lang).then((raw) => {
+      if (raw.id !== rawSetId || !Number.isSafeInteger(raw.cardCount?.total) || raw.cardCount!.total! < 0)
+        throw new Error('Invalid set completeness metadata');
+      const set = projectSet(raw, lang);
+      setIndex.set(set.id, set);
+      return set;
+    })
+    : getSet(setId);
   const found = new Map<string, PokemonCard>();
   for (let page = 1; page < 20; page++) {
-    const [{ cards }] = await Promise.all([gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`), metadata]);
+    const [{ cards }, set] = await Promise.all([gql<{ cards: (RawCard | null)[] }>(`{ cards(filters: { id: ${str(`${rawSetId}-`)} }, pagination: { page: ${page}, itemsPerPage: 250 })${loc(lang)} { ${LIST_FIELDS} set { id name } } }`), metadata]);
     for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) found.set(c.id, toCard(c, false, lang));
-    if (cards.length < 250) return [...found.values()].sort(compareCardNumber);
+    if (cards.length < 250) {
+      if (requireComplete && found.size !== set.total) throw new Error('Incomplete set listing');
+      return [...found.values()].sort(compareCardNumber);
+    }
   }
   throw new Error('Set lookup exceeded the page limit');
 }
 
 /** Every card in a set, with one profile built from a complete import. */
-export async function getSetCards(setId: string): Promise<PokemonCard[]> {
+export async function getSetCardsObservation(setId: string): Promise<{ cards: PokemonCard[]; at: number }> {
   const { lang, raw: rawSetId } = splitId(setId);
-  const set = await getSet(setId);
+  const rawSet = await rest<RawSet>(`/sets/${encodeURIComponent(rawSetId)}`, undefined, undefined, lang);
+  if (rawSet.id !== rawSetId || !Number.isSafeInteger(rawSet.cardCount?.total) || rawSet.cardCount!.total! < 0)
+    throw new Error('Invalid set completeness metadata');
+  const set = projectSet(rawSet, lang);
   const ids = new Set<string>();
   let exhausted = false;
   for (let page = 1; page < 20; page++) {
@@ -539,14 +614,30 @@ export async function getSetCards(setId: string): Promise<PokemonCard[]> {
     for (const c of cards) if (c && setIdFromCardId(c.id) === rawSetId) ids.add(c.id);
     if (cards.length < 250) { exhausted = true; break; }
   }
-  if (!exhausted || !ids.size || (set.total > 0 && ids.size !== set.total)) throw new Error('Set import is incomplete; retaining the previous catalogue');
-  const results = await pool([...ids], 12, async (id) => toCard(await getRawCard(id, lang), true, lang));
+  if (!exhausted || !ids.size || ids.size !== set.total) throw new Error('Set import is incomplete; retaining the previous catalogue');
+  setIndex.set(set.id, set);
+  const results = await pool([...ids], 12, (id) => getRawCard(id, lang));
   const failed = results.find((r) => r.status === 'rejected');
   if (failed?.status === 'rejected') throw failed.reason;
-  const cards = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
+  const observations = results.flatMap((r) => r.status === 'fulfilled' ? [r.value] : []);
+  const cards = observations.map(({ card }) => card);
+  if (cards.length !== set.total || new Set(cards.map((card) => card.id)).size !== cards.length)
+    throw new Error('Set import is incomplete; retaining the previous catalogue');
   const profile = buildPrintingProfile(setId, cards, true);
+  const classified = cards.map((card) => applyPrintingProfile(card, profile));
+  // Install the profile only once every classified card would be accepted for publication, so
+  // a rejected import cannot change how display reads classify printings.
+  for (const card of classified) {
+    if (card.set.id !== setId || card.set.total !== set.total || card.printingCoverage !== 'complete')
+      throw new Error('Set import is incomplete; retaining the previous catalogue');
+    fromPokemon(card, new Date().toISOString());
+  }
   profiles.set(setId, profile);
-  return cards.map((card) => applyPrintingProfile(card, profile)).sort(compareCardNumber);
+  return { cards: classified.sort(compareCardNumber), at: Math.min(...observations.map(({ at }) => at)) };
+}
+
+export async function getSetCards(setId: string): Promise<PokemonCard[]> {
+  return (await getSetCardsObservation(setId)).cards;
 }
 
 // ---------------------------------------------------------------- search
@@ -572,6 +663,8 @@ interface Brief {
 
 const SEARCH_PAGE = 36;
 const matchCache = new Map<string, Promise<Brief[]>>();
+const matchObserved = new Map<string, number>();
+export const SEARCH_OBSERVATION_TTL = 5 * 60_000;
 
 function byRelease(sets: Map<string, CardSet>, dir: 1 | -1) {
   return (a: Brief, b: Brief) => {
@@ -631,12 +724,17 @@ async function matchesInLang(f: SearchFilters, lang: Lang, signal?: AbortSignal)
 }
 
 /** All matching card ids, physical sets only, sorted. Cached per query so paging is instant. */
-function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]> {
+function matchingCards(f: SearchFilters, signal?: AbortSignal, refresh = false): Promise<Brief[]> {
   const langs: Lang[] = f.langs?.length ? f.langs : ['en'];
   const key = JSON.stringify([f.name, f.types, f.supertype, f.rarity, f.artist, f.setId, f.sort, langs]);
-  let hit = matchCache.get(key);
+  const expired = Date.now() - (matchObserved.get(key) ?? 0) >= SEARCH_OBSERVATION_TTL;
+  let hit = refresh && expired ? undefined : matchCache.get(key);
   if (!hit) {
     hit = (async () => {
+      if (refresh) {
+        await Promise.all(langs.map((lang) => getSets(lang)));
+        dexCache.clear();
+      }
       const [, ...lists] = await Promise.all([Promise.all(langs.map((l) => ensureSets(l))), ...langs.map((l) => matchesInLang(f, l, signal))]);
       const seen = new Set<string>();
       const out = lists.flat().filter((c) => {
@@ -651,19 +749,25 @@ function matchingCards(f: SearchFilters, signal?: AbortSignal): Promise<Brief[]>
       } else out.sort(byRelease(setIndex, f.sort === 'oldest' ? 1 : -1));
       return out;
     })();
-    hit.catch(() => matchCache.delete(key));
+    if (refresh) matchObserved.set(key, Date.now());
+    else matchObserved.delete(key);
+    const current = hit;
+    hit.catch(() => { if (matchCache.get(key) === current) { matchCache.delete(key); matchObserved.delete(key); } });
     matchCache.set(key, hit);
     // Keep the cache bounded: evict the oldest query (Map preserves insertion order).
-    if (matchCache.size > 30) matchCache.delete(matchCache.keys().next().value!);
+    if (matchCache.size > 30) { const oldest = matchCache.keys().next().value!; matchCache.delete(oldest); matchObserved.delete(oldest); }
   }
   return hit;
 }
 
 /** One page of search results. Matching runs once per query; each page then fetches just its cards. */
-export async function searchCards(f: SearchFilters, page: number, signal?: AbortSignal): Promise<ApiResponse<PokemonCard[]>> {
-  const all = await matchingCards(f, signal);
+/** refresh reobserves sets and matching IDs before renewing a persistent display cache. */
+export async function searchCards(f: SearchFilters, page: number, signal?: AbortSignal, options: { refresh?: boolean } = {}): Promise<ApiResponse<PokemonCard[]>> {
+  const all = await matchingCards(f, signal, options.refresh);
   const slice = all.slice((page - 1) * SEARCH_PAGE, page * SEARCH_PAGE);
   const cards = await getCardsBrief(slice.map((c) => c.id), signal);
+  if (options.refresh && (cards.length !== slice.length || cards.some((card, i) => card.id !== slice[i].id)))
+    throw new Error('Search hydration did not match requested card IDs');
   return { data: cards, page, pageSize: SEARCH_PAGE, totalCount: all.length };
 }
 
