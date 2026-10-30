@@ -155,3 +155,19 @@ describe('catalogue resilience (HTTP-level)', () => {
     expect(JSON.stringify(body)).not.toContain(key);
   });
 });
+
+it('retains a good GraphQL observation after partial errors and retries recovery', async () => {
+  const good = { data: { sets: [] } };
+  const upstream = vi.fn(async () => json(good));
+  vi.stubGlobal('fetch', upstream);
+  const owner = await setupOwner(s.app);
+  const query = { query: '{ sets { id } }' };
+  expect((await owner.post('/api/tcgdex/v2/graphql', query)).json()).toEqual(good);
+  s.ctx.db.run('UPDATE http_cache SET fetched_at = 0');
+  upstream.mockImplementation(async () => json({ data: { sets: null }, errors: [{ message: 'Temporary' }] }));
+  expect((await owner.post('/api/tcgdex/v2/graphql', query)).json()).toEqual(good);
+  expect(s.ctx.db.get<{ fetched_at: number }>('SELECT fetched_at FROM http_cache')!.fetched_at).toBe(0);
+  upstream.mockImplementation(async () => json(good));
+  expect((await owner.post('/api/tcgdex/v2/graphql', query)).json()).toEqual(good);
+  expect(upstream).toHaveBeenCalledTimes(3);
+});

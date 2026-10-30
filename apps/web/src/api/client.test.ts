@@ -212,11 +212,13 @@ describe('getCard', () => {
     expect(card.tcgplayer).toEqual({
       url: 'https://www.tcgplayer.com/product/42',
       updatedAt: '2025-01-01',
+      provenance: { holofoil: { updatedAt: '2025-01-01', url: 'https://www.tcgplayer.com/product/42' } },
       prices: { holofoil: { low: 20, mid: 25, high: 50, market: 30, directLow: undefined } },
     });
     // Holo-only card: the base Cardmarket price applies to the holo itself.
     expect(card.cardmarket?.prices).toEqual({ holofoil: { low: 15, mid: 20, market: 22 } });
     expect(card.cardmarket?.url).toContain('searchString=Charizard%20ex');
+    expect(card.cardmarket?.provenance?.holofoil).toEqual({ url: card.cardmarket?.url, updatedAt: card.cardmarket?.updatedAt });
   });
 
   it('maps trainers, rules and rarity "None"', async () => {

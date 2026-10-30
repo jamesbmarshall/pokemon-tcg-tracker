@@ -145,11 +145,11 @@ describe('catalogue imports', () => {
     expect(toSnapshot(detail).printingProfile).toBe(cards[0].printingProfile);
   });
   it('refuses a partial set instead of publishing a smaller denominator', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (_url, init?: RequestInit) => Response.json(init?.method === 'POST' ? { data: { cards: [{ id: 'partial-1' }] } } : { id: 'partial', cardCount: { total: 2 } })));
+    vi.stubGlobal('fetch', vi.fn(async (_url, init?: RequestInit) => Response.json(init?.method === 'POST' ? { data: { cards: [{ id: 'partial-1' }] } } : { id: 'partial', name: 'Partial', cardCount: { total: 2 } })));
     await expect(getSetCards('partial')).rejects.toThrow('incomplete');
   });
   it('does not invent a rarity-based finish or trust conflicting flags', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url, init?: RequestInit) => Response.json(init?.method === 'POST' ? { data: { sets: [] } } : { id: String(url).split('/').at(-1), localId: '1', name: 'X', rarity: 'Rare Holo', ...(String(url).endsWith('conflict-1') ? { variants: { normal: false }, variants_detailed: [{ type: 'normal' }] } : {}) })));
+    vi.stubGlobal('fetch', vi.fn(async (url, init?: RequestInit) => Response.json(init?.method === 'POST' ? { data: { sets: [] } } : { id: String(url).split('/').at(-1), localId: '1', name: 'X', category: 'Pokemon', rarity: 'Rare Holo', ...(String(url).endsWith('conflict-1') ? { variants: { normal: false }, variants_detailed: [{ type: 'normal' }] } : {}) })));
     expect((await getCard('empty-1')).variants).toEqual([]);
     expect((await getCard('conflict-1')).printings![0]).toMatchObject({ dataQuality: 'conflict', role: 'unresolved' });
   });

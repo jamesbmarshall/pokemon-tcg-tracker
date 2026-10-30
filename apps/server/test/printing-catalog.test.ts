@@ -158,6 +158,16 @@ describe('automatic catalogue lifecycle', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('preserves the oldest cached-card observation time on a complete import', async () => {
+    const oldest = Date.now() - 3 * 3600_000;
+    for (const [i, card] of cards.entries()) {
+      server.ctx.db.run('INSERT INTO printing_raw_cards (card_id,data,fetched_at) VALUES (?,?,?)', card.id, JSON.stringify(card), oldest + i);
+    }
+
+    await getCatalogSet(server.ctx, setId, true);
+    expect(server.ctx.db.get<{ synced_at: number }>('SELECT synced_at FROM printing_catalogues WHERE set_id = ?', setId)?.synced_at).toBe(oldest);
+  });
+
   it('automatically invalidates a previous policy even when its refresh is not due', async () => {
     await getCatalogSet(server.ctx, setId);
     server.ctx.db.run('UPDATE printing_catalogues SET policy_version = 0');

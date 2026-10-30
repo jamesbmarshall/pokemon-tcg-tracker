@@ -70,7 +70,8 @@ function normalizeSection(raw: string): DeckSection {
   return 'Unknown';
 }
 
-function normalizeName(name: string): string {
+/** Shared name normalization for parsing and catalogue candidate matching. */
+export function normalizeDeckCardName(name: string): string {
   const m = BASIC_ENERGY_RE.exec(name.trim());
   if (m) {
     const type = ENERGY_SYMBOLS[m[1].toUpperCase()];
@@ -102,12 +103,12 @@ export function parseDeckText(text: string): ParsedDeckText {
 
     const withCode = LINE_WITH_CODE_RE.exec(line);
     if (withCode) {
-      lines.push({ raw: line, qty: Number(withCode[1]), name: normalizeName(withCode[2]), setCode: withCode[3].toUpperCase(), number: withCode[4], section });
+      lines.push({ raw: line, qty: Number(withCode[1]), name: normalizeDeckCardName(withCode[2]), setCode: withCode[3].toUpperCase(), number: withCode[4], section });
       continue;
     }
     const plain = LINE_PLAIN_RE.exec(line);
     if (plain) {
-      lines.push({ raw: line, qty: Number(plain[1]), name: normalizeName(plain[2]), section });
+      lines.push({ raw: line, qty: Number(plain[1]), name: normalizeDeckCardName(plain[2]), section });
     }
   }
 

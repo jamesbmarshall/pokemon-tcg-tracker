@@ -4,6 +4,8 @@ import type { CollectibleVariant } from './printing';
 export type { CollectibleVariant } from './printing';
 export type GameId = string;
 export interface TcgSet {
+  fetchedAt?: string;
+  stale?: boolean;
   game: GameId;
   id: string;
   providerId: string;
@@ -13,6 +15,8 @@ export interface TcgSet {
   total: number;
   type: string;
   parentId?: string;
+  /** Provider-specific set metadata retained by lossless catalogue adapters. */
+  details?: { kind: string; [key: string]: unknown };
 }
 export interface CardFace {
   name: string;
@@ -33,6 +37,8 @@ export interface Quote {
   url?: string;
 }
 export interface TcgCard {
+  /** Cached catalogue evidence is beyond its freshness window; timestamps remain unchanged. */
+  stale?: boolean;
   game: GameId;
   id: string;
   providerId: string;

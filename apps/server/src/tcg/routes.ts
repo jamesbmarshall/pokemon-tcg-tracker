@@ -15,7 +15,7 @@ import { publishPhoto } from '../photoStorage.ts';
 import { sha256 } from '../security.ts';
 import { pcProduct, pcGradedPrice } from '../providers/pricecharting.ts';
 import { preconsFor } from './precons.ts';
-import { providerFor, readGameCards } from './provider.ts';
+import { providerFor, providerForCard, providerForSet, readGameCards } from './provider.ts';
 import { cardValue, quoteUsd } from '@poketracker/shared/tcg/collection';
 import { currentRates } from '../cards.ts';
 import {
@@ -120,7 +120,7 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
       Object.values(query).some((v) => typeof v !== 'string' || v.length > 500)
     )
       throw bad('Invalid search query');
-    return providerFor(ctx, g).search(query);
+    return providerFor(ctx, g, query.language).search(query);
   });
   app.get('/api/games/:game/sets/:setId', async (req, reply) => {
     reader(req);
@@ -132,7 +132,7 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
     );
     if (!games.require(g).languages.some((l) => l.code === language))
       throw bad('Unsupported language');
-    const cards = await providerFor(ctx, g).setCards(id, language);
+    const cards = await providerForSet(ctx, g, id).setCards(id, language);
     const row = ctx.db.get<{ synced_at: number }>(
       'SELECT synced_at FROM tcg_catalogues WHERE game = ? AND set_id = ? AND language = ?',
       g,
@@ -158,7 +158,7 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
     )
       return cached;
     try {
-      return await providerFor(ctx, g).card(id);
+      return await providerForCard(ctx, g, id).card(id);
     } catch (e) {
       if (cached) {
         reply.header('x-catalog-stale', '1');
@@ -363,7 +363,7 @@ export function tcgRoutes(app: FastifyInstance, ctx: Ctx) {
       );
     // Provider hydration keeps imported catalog payloads from poisoning the shared catalogue.
     for (const cardId of ids)
-      if (!known.has(cardId)) await providerFor(ctx, g).card(cardId);
+      if (!known.has(cardId)) await providerForCard(ctx, g, cardId).card(cardId);
     const catalogue = new Map(readGameCards(ctx, g, ids).map((c) => [c.id, c]));
     const clean = records.map((r) => cleanGameRecord(ctx, g, r, catalogue));
     return mutate(ctx, req, reply, () => {

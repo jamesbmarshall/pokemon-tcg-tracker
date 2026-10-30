@@ -3,8 +3,10 @@
  * profile and completion totals together; an incomplete refresh must not replace a catalogue.
  * See docs/printings.md for refresh schedules and the identity-preserving migration policy.
  */
-import { getCardDetails, getSet, getSetCards, getSetCardsBrief, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
+import { getCardDetails, getSet, getSetCardsBrief, getSetCardsObservation, getSets, setIdFromCardId, toSnapshot, type Lang } from '@poketracker/shared/catalog';
 import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type PrintingProfile } from '@poketracker/shared/printingRules';
+import { fromPokemon, pokemonSet } from '@poketracker/shared/tcg/pokemon';
+import { splitId } from '@poketracker/shared/languages';
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
 import type { CardSet, PokemonCard } from '@poketracker/shared/types';
@@ -22,7 +24,10 @@ async function importWithSlot(ctx: Ctx, setId: string) {
   if (!pool) { pool = { active: 0, waiting: [] }; slots.set(ctx.db, pool); }
   if (pool.active >= 2) await new Promise<void>((resolve) => pool!.waiting.push(resolve));
   else pool.active++;
-  try { return persistCatalogue(ctx, setId, await getSetCards(setId)); }
+  try {
+    const observation = await getSetCardsObservation(setId);
+    return persistCatalogue(ctx, setId, observation.cards, observation.at);
+  }
   finally { const next = pool.waiting.shift(); if (next) next(); else pool.active--; }
 }
 export function readPrintingProfile(db: Db, setId: string): PrintingProfile | undefined {
@@ -34,14 +39,19 @@ export function readCatalogCards(db: Db, setId: string): PokemonCard[] | undefin
   const row = db.get<{ data: string }>('SELECT data FROM printing_catalogues WHERE set_id = ? AND printing_version = ? AND policy_version = ?', setId, PRINTING_VERSION, POLICY_VERSION);
   return json<PokemonCard[] | undefined>(row?.data, undefined);
 }
-export function persistCatalogue(ctx: Ctx, setId: string, cards: PokemonCard[]) {
-  if (!cards.length || cards.some((c) => c.set.id !== setId || c.printingCoverage !== 'complete')) throw new Error('Refusing an incomplete catalogue');
+export function persistCatalogue(ctx: Ctx, setId: string, cards: PokemonCard[], observedAt = Date.now()) {
+  const total = cards[0]?.set.total;
+  if (!cards.length || !Number.isSafeInteger(total) || total !== cards.length ||
+    new Set(cards.map((card) => card.id)).size !== cards.length ||
+    cards.some((c) => c.set.id !== setId || c.set.total !== total || c.printingCoverage !== 'complete') ||
+    !Number.isFinite(observedAt)) throw new Error('Refusing an incomplete catalogue');
   const profile = buildPrintingProfile(setId, cards, true);
   const classified = cards.map((c) => applyPrintingProfile(c, profile));
+  for (const card of classified) fromPokemon(card, new Date().toISOString());
   const progress = setProgress(classified, new Map());
-  const syncedAt = new Date().toISOString();
+  const syncedAt = new Date(observedAt).toISOString();
   ctx.db.tx(() => {
-    ctx.db.run('INSERT OR REPLACE INTO printing_catalogues (set_id, data, profile, printing_version, policy_version, synced_at) VALUES (?, ?, ?, ?, ?, ?)', setId, JSON.stringify(classified), JSON.stringify(profile), PRINTING_VERSION, POLICY_VERSION, Date.now());
+    ctx.db.run('INSERT OR REPLACE INTO printing_catalogues (set_id, data, profile, printing_version, policy_version, synced_at) VALUES (?, ?, ?, ?, ?, ?)', setId, JSON.stringify(classified), JSON.stringify(profile), PRINTING_VERSION, POLICY_VERSION, observedAt);
     ctx.db.run('INSERT OR REPLACE INTO set_stats (set_id, master_total, all_total, provisional, unresolved_total, additional_total, profile, printing_version, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', setId, progress.master.total, progress.all.total, progress.provisional ? 1 : 0, progress.unresolved, progress.additional, profile.fingerprint, PRINTING_VERSION, syncedAt);
     saveSnapshots(ctx.db, classified.map((c) => toSnapshot(c)));
     const recent = Date.parse(cards[0].set.releaseDate) > Date.now() - 90 * 24 * HOUR;
@@ -84,61 +94,101 @@ function refreshCatalogueInBackground(ctx: Ctx, setId: string, hasCatalogue = fa
   if (retry?.last_error && retry.next_at > Date.now()) return;
   void getCatalogSet(ctx, setId).catch((err) => ctx.log.warn({ err, setId }, 'Background catalogue import will retry'));
 }
-function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>): Promise<T> {
+/** Shared stale-while-revalidate cache for internal catalogue projections. */
+export interface CatalogueObservation<T> { data: T; at: number }
+export function displayObservation<T>(ctx: Ctx, key: string, load: () => Promise<T>, requireFresh = false): Promise<CatalogueObservation<T>> {
   const row = ctx.db.get<{ body: Uint8Array; fetched_at: number }>('SELECT body, fetched_at FROM http_cache WHERE key = ?', key);
   const previous = row ? json<T | undefined>(Buffer.from(row.body).toString(), undefined) : undefined;
-  if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve(previous);
+  if (previous !== undefined && row && Date.now() - row.fetched_at < 6 * HOUR) return Promise.resolve({ data: previous, at: row!.fetched_at });
   let requests = displayRequests.get(ctx.db);
   if (!requests) { requests = new Map(); displayRequests.set(ctx.db, requests); }
-  let request = requests.get(key) as Promise<T> | undefined;
+  let request = requests.get(key) as Promise<CatalogueObservation<T>> | undefined;
   if (!request) {
     request = load().then((data) => {
-      ctx.db.run('INSERT OR REPLACE INTO http_cache (key, status, content_type, body, fetched_at) VALUES (?, 200, ?, ?, ?)', key, 'application/json', Buffer.from(JSON.stringify(data)), Date.now());
-      return data;
+      const at = Date.now();
+      ctx.db.run('INSERT OR REPLACE INTO http_cache (key, status, content_type, body, fetched_at) VALUES (?, 200, ?, ?, ?)', key, 'application/json', Buffer.from(JSON.stringify(data)), at);
+      return { data, at };
     }).finally(() => requests!.delete(key));
     requests.set(key, request);
   }
-  if (previous !== undefined) {
+  if (previous !== undefined && !requireFresh) {
     void request.catch((err) => ctx.log.warn({ err }, 'Background catalogue display refresh failed'));
-    return Promise.resolve(previous);
+    return Promise.resolve({ data: previous, at: row!.fetched_at });
   }
   return request;
 }
-export async function getCatalogSetForDisplay(ctx: Ctx, setId: string): Promise<PokemonCard[]> {
-  const previous = readCatalogCards(ctx.db, setId);
-  if (previous) { refreshCatalogueInBackground(ctx, setId, true); return previous; }
-  const cards = await displayCached(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set:${setId}`, () => getSetCardsBrief(setId));
-  refreshCatalogueInBackground(ctx, setId);
-  return cards;
+export async function displayCached<T>(ctx: Ctx, key: string, load: () => Promise<T>, requireFresh = false): Promise<T> {
+  return (await displayObservation(ctx, key, load, requireFresh)).data;
 }
-export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonCard> {
-  const setId = setIdFromCardId(cardId);
-  const previous = readCatalogCards(ctx.db, setId);
-  if (previous) {
-    refreshCatalogueInBackground(ctx, setId, true);
-    const card = previous.find((c) => c.id === cardId);
-    if (!card) throw notFound('Card not found in this set');
-    return card;
-  }
-  const card = await displayCached(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:card:${cardId}`, async () => {
-    const [card, set] = await Promise.all([getCardDetails(cardId), getSet(setId)]);
-    return { ...card, set };
+function storedCatalogue(ctx: Ctx, setId: string): CatalogueObservation<PokemonCard[]> | undefined {
+  const row = ctx.db.get<{ data: string; synced_at: number }>('SELECT data,synced_at FROM printing_catalogues WHERE set_id = ? AND printing_version = ? AND policy_version = ?', setId, PRINTING_VERSION, POLICY_VERSION);
+  const data = json<PokemonCard[] | undefined>(row?.data, undefined);
+  return data && row ? { data, at: row.synced_at } : undefined;
+}
+export async function catalogSetObservation(ctx: Ctx, setId: string): Promise<CatalogueObservation<PokemonCard[]>> {
+  const previous = storedCatalogue(ctx, setId);
+  if (previous) { refreshCatalogueInBackground(ctx, setId, true); return previous; }
+  const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:set-complete-v2:${setId}`, async () => {
+    const cards = await getSetCardsBrief(setId, true);
+    for (const card of cards) {
+      if (card.set.id !== setId) throw new Error('Mismatched set listing');
+      fromPokemon(card, new Date().toISOString());
+    }
+    return cards;
   });
   refreshCatalogueInBackground(ctx, setId);
-  return card;
+  return result;
+}
+export async function getCatalogSetForDisplay(ctx: Ctx, setId: string): Promise<PokemonCard[]> {
+  return (await catalogSetObservation(ctx, setId)).data;
+}
+export async function catalogCardObservation(ctx: Ctx, cardId: string): Promise<CatalogueObservation<PokemonCard>> {
+  const setId = setIdFromCardId(cardId);
+  const previous = storedCatalogue(ctx, setId);
+  if (previous) {
+    refreshCatalogueInBackground(ctx, setId, true);
+    const card = previous.data.find((c) => c.id === cardId);
+    if (!card) throw notFound('Card not found in this set');
+    return { data: card, at: previous.at };
+  }
+  const result = await displayObservation(ctx, `catalogue-display:${PRINTING_VERSION}:${POLICY_VERSION}:card:${cardId}`, async () => {
+    const [card, set] = await Promise.all([getCardDetails(cardId, undefined, { fresh: true }), getSet(setId)]);
+    const data = { ...card, set };
+    if (data.id !== cardId || set.id !== setId) throw new Error('Mismatched card details');
+    fromPokemon(data, new Date().toISOString());
+    return data;
+  });
+  refreshCatalogueInBackground(ctx, setId);
+  return result;
+}
+export async function getCatalogCard(ctx: Ctx, cardId: string): Promise<PokemonCard> {
+  return (await catalogCardObservation(ctx, cardId)).data;
 }
 export async function discoverSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
   const sets = await getSets(lang);
+  if (new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('Duplicate set in catalogue response');
+  for (const set of sets) {
+    pokemonSet(set);
+    if (splitId(set.id).lang !== lang) throw new Error('Mismatched set language');
+  }
   ctx.db.tx(() => {
     ctx.db.run('INSERT OR REPLACE INTO catalogue_set_lists (language, data, fetched_at) VALUES (?, ?, ?)', lang, JSON.stringify(sets), Date.now());
     for (const set of sets) ctx.db.run('INSERT INTO printing_sync_queue (set_id, release_date, next_at) VALUES (?, ?, 0) ON CONFLICT(set_id) DO UPDATE SET release_date = excluded.release_date', set.id, set.releaseDate);
   });
   return sets;
 }
-export async function catalogSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
+export async function catalogSetsObservation(ctx: Ctx, lang: Lang): Promise<CatalogueObservation<CardSet[]>> {
   const row = ctx.db.get<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM catalogue_set_lists WHERE language = ?', lang);
-  if (row && Date.now() - row.fetched_at < 6 * HOUR) return json(row.data, []);
-  try { return await discoverSets(ctx, lang); } catch (err) { if (row) return json(row.data, []); throw err; }
+  if (row && Date.now() - row.fetched_at < 6 * HOUR) return { data: json(row.data, []), at: row.fetched_at };
+  try {
+    const data = await discoverSets(ctx, lang);
+    const published = ctx.db.get<{ data: string; fetched_at: number }>('SELECT data, fetched_at FROM catalogue_set_lists WHERE language = ?', lang)!;
+    // Return the published row as a single observation even if another discovery won the race.
+    return { data: json(published.data, data), at: published.fetched_at };
+  } catch (err) { if (row) return { data: json(row.data, []), at: row.fetched_at }; throw err; }
+}
+export async function catalogSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
+  return (await catalogSetsObservation(ctx, lang)).data;
 }
 /**
  * Processes due or version-invalidated sets from the durable queue, sequentially in this job.

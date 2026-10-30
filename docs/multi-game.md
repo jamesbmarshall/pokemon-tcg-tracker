@@ -110,6 +110,91 @@ its display defaults must not replace the source metadata documented in the fiel
 mapping. Existing Pokémon UI, routes and data formats remain in service until their
 planned cutover.
 
+### Server provider registry (U07)
+
+`apps/server/src/tcg/providerRegistry.ts` provides an injectable source-owned
+registry. Catalogue selection receives instance context, game and optional
+language. Factory construction receives that language for providers whose set
+catalogue is language-specific. Stored card/set references resolve through declared
+ownership independently of today's selection. Unknown or ambiguous ownership fails
+before construction or HTTP; an explicit provider attribution can resolve a genuine
+namespace overlap, but cannot claim an unrelated ID.
+
+The default registrations are Scryfall for Magic and TCGdex for Pokémon (U08). Card detail hydration, uncached imports and tracked-price refreshes
+now use stored-card dispatch; set detail uses stored-set dispatch. Provider URL
+construction, runtime JSON validation, cache policy, pagination limits, resilience
+and image allowlists stay inside existing adapters/helpers. Registrations are
+copied and validated, and invalid game/factory combinations fail closed. No
+runtime plugin loader, provider switch, ID conversion or new external host is
+introduced.
+
+### Pokémon catalogue adapter (U08)
+
+`apps/server/src/tcg/pokemonProvider.ts` adapts the existing `printingCatalog.ts`
+services into the shared provider contract. It does not configure a second client,
+write normalized Pokémon rows into `tcg_cards`, or introduce a new holdings writer.
+The existing server initializes the process-level catalogue client once; provider
+factories receive context for the existing database/cache services. Multiple
+independently configured catalogue clients in one process are not supported by
+this legacy client and must not be simulated by reconfiguring it per request.
+
+`tcg/pokemon.ts` projects the source records without rekeying IDs. English IDs stay
+bare and other languages keep their existing prefixes. Set membership is checked
+inside this provider-specific adapter, not inferred in shared domain code. Playable
+identity remains the printing ID until rules establish equivalence; names do not
+invent cross-language identity. Full set metadata, rule details, source price
+blocks, variant aliases, raw evidence and policy metadata survive projection.
+Normalized quotes retain native USD/EUR and per-variant source URL/update time.
+New `PriceSource.provenance` maps survive catalogue-cache serialization. Older
+flattened caches lack reliable per-printing attribution: their amounts remain,
+but normalized quotes use an empty `at` and omit `url` until refreshed. Original
+source-level metadata remains in details; it is never reassigned to a printing. Zero
+is a price; missing quotes remain absent. No quote is copied to another variant.
+
+Sets, card details and set browsing reuse authoritative catalogue/display caches
+and their existing background refresh/import behavior. Search adds a versioned,
+query-hashed entry to the same display cache. Revalidation explicitly reloads the
+set index and matching IDs, including previously empty matches. Successful set
+observations replace that language index, removing obsolete sets. Validation
+rejects malformed, duplicate or incomplete pages before caching; exact expected
+page length is checked against the declared total and offset. Summary search/set responses are enriched from complete
+catalogues or detailed card caches without replacing those records. `fetchedAt`
+is the existing cache observation timestamp; `stale` indicates evidence older than
+six hours. Source quote dates remain separate. Enrichment uses the timestamp of the actual
+record source, not an unrelated complete catalogue. Collector-number searches
+retain set freshness even when their result (or the cached set) is empty. Outages retain stale search data and
+do not advance its timestamp; cold failures propagate.
+
+Search supports existing Pokémon name/type/supertype/rarity/artist/sort filters and
+36-card pages, with a 1–1000 page bound. Collector-number search requires a set and
+optional language/page, so it cannot silently ignore other filters. Stored set IDs
+must agree with requested language. Deck resolution returns all matching printings
+rather than selecting the first one, with bounds of 20 matching sets or 14 name
+search pages. Numeric collector numbers match despite zero padding; alphanumeric
+numbers compare case-insensitively. Printed set codes resolve against both live
+abbreviations and the static index keyed by raw set ID, including non-English
+catalogues. Responses preserve original number strings.
+
+Both the shared TCGdex client and the server REST/GraphQL proxy upstream requests
+reject redirects. The shared transport retains its existing timeout,
+retry and configured-host behavior, and limits decompressed JSON to 16 MiB even
+when Content-Length is absent or false. This applies to both existing callers and
+the new adapter. No additional upstream host or credential configuration is added.
+
+The adapter remains internal: `/api/games/pokemon/*` continues to reject requests
+until U11 installs authorized shared services. Existing UI, URLs, exports,
+completion policy and authoritative storage remain on their compatibility paths.
+There is no migration or accessibility interaction change in U08. Existing manual
+and WebKit accessibility gates still apply before affected caller cutovers.
+
+### Collection repositories (U09)
+
+The internal [collection repository boundary](collection-repositories.md) reads
+existing Pokémon and generic storage through one contract, retaining native state
+inside a common collection/revision/valuation envelope. The member-read service
+checks authorization and pins state/photos to one SQLite snapshot. No routes or
+writes switch to it in U09; public shares retain their existing redaction path.
+
 ## Adding another game
 
 1. Define its normalized game-specific details alongside the shared contracts.
@@ -265,3 +350,29 @@ seeded database and closes it on teardown. This prevents shared collection edits
 revision state and login rate limits from leaking between tests or browser
 projects; production authentication limits remain enabled. Card-layout checks
 also add an owned copy before running axe so purchase/value controls are covered.
+
+### U08 second review: publication and observation guarantees
+
+Display cache helpers now return `{ data, at }` observations together. Set/card
+reads and search retain those timestamps even if a concurrent catalogue import or
+background refresh publishes newer data before the caller resumes. Validation of
+card and set projections runs inside cache loaders before publication; rejected
+refreshes retain the prior body and timestamp. Published display set listings must match
+the advertised set total; legacy scan/deck candidate reads keep their intentional
+partial-list behavior. Error-bearing GraphQL responses are rejected rather
+than interpreted as complete observations.
+
+Revalidating search pages share a bounded five-minute matching-ID observation,
+including its refreshed set index, across adjacent pages. The existing 30-query
+cache limit remains. Expired observations reload sets and matching IDs; hydration
+must return exactly the selected IDs in order. This avoids repeated full-index
+requests for each page without treating process-lifetime matches as current.
+
+Deck resolution compares both normalized names and supplied collector numbers.
+Name comparison reuses PTCGL energy-name normalization and ignores case and
+incidental whitespace. Newly released sets absent from the static code index use
+cached REST metadata lookups (four concurrent, at most 1,000 sets). Static raw-ID
+code fallbacks also populate normalized cards/sets, enabling localized deck export
+without altering original source metadata.
+
+U08 review follow-up: scheduled catalogue and set-list publication validates normalized data before replacing stored observations. Strict set displays use a versioned key and require matching metadata with an advertised total; legacy partial-candidate lookups keep their existing behavior. Card display refreshes fetch directly so their timestamps reflect the upstream observation and rejected responses do not poison the resumable raw-card cache. Set lists return data and time together. Explicit set IDs resolve directly; printed-code lookup uses a bounded, cached index and reports incomplete evidence. Verified live codes are retained across index refreshes and used in card and set projections, while source details remain intact.

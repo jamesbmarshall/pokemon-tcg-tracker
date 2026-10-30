@@ -1,6 +1,6 @@
 # TCG unification continuation handoff
 
-Updated 25 October 2026. Read this before continuing in a fresh context.
+Updated 28 October 2026. Read this before continuing in a fresh context.
 
 ## Goal and controlling documents
 
@@ -26,7 +26,7 @@ has been performed in this work.
 ## Branch and PR stack
 
 Repository: `jamesbmarshall/pokemon-tcg-tracker`, workspace
-`/workspace/pokemon-tcg-tracker`. Current branch: `codex/pokemon-rule-adapters`.
+`/workspace/pokemon-tcg-tracker`. Current branch: `codex/tcg-collection-repositories`.
 Initial base: `8da7d5b` (PR #64 merge). Each PR targets the preceding stack branch.
 The stack has not been merged during this session; verify current remote state on resume.
 
@@ -38,11 +38,13 @@ The stack has not been merged during this session; verify current remote state o
 | U04 | `codex/tcg-completion-measures` | `61406e3` | [#68](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/68) |
 | U05 | `codex/tcg-module-validation` | `ad05187` | [#69](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/69) |
 | U06 | `codex/pokemon-rule-adapters` | `90e3a77` | [#70](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/70) |
-| U07 | `codex/tcg-provider-registry` | `78e5f57` | No PR created in this session |
+| U07 | `codex/tcg-provider-registry` | `02da50f` | [#71](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/71) |
+| U08 | `codex/pokemon-catalogue-adapter` | `462b3ee` | [#81](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/81) |
+| U09 | `codex/tcg-collection-repositories` | `0f1f5e0` | [#82](https://github.com/jamesbmarshall/pokemon-tcg-tracker/pull/82) |
 
-U07 branched from U06's original `c221c02`, before the review fixes. Its initial
-push failed authentication; a later retry was interrupted. Do not assume it is
-published. The explicit U06 push succeeded: `c221c02..90e3a77` on the remote branch.
+U07 originally branched from U06's `c221c02`; merge `1dcce32` now incorporates all U06 review fixes and this handoff. Its initial
+push failed authentication; a later retry was interrupted. Publication subsequently
+succeeded on 26 October: PR #71 targets `codex/pokemon-rule-adapters`. The explicit U06 push succeeded: `c221c02..90e3a77` on the remote branch.
 
 ## Implemented work
 
@@ -58,7 +60,7 @@ published. The explicit U06 push succeeded: `c221c02..90e3a77` on the remote bra
   rule context. Pokémon controller compatibility remains intentional.
 - U06: Pokémon format validation, PTCGL parse/export, format-aware ownership,
   analysis and OCR adapters. Rule snapshots are not persistent-card converters.
-- U07 (local branch): provider registry separates configurable catalogue selection
+- U07 (published PR #71): provider registry separates configurable catalogue selection
   from stored card/set ID ownership. Rejects ambiguity, isolates games and passes
   language to factories. Magic routes/jobs use it; existing Scryfall transport,
   caching and safeguards remain. Pokémon registration is U08 work.
@@ -87,6 +89,11 @@ review/CI and verify the latest remote commit on resume.
 
 ## Validation evidence and limits
 
+- U08: all 211 shared tests, the full 280-test server suite and all 823 web tests
+  passed. A final set-list provenance case brings the focused Pokémon provider
+  suite to 13 tests; that suite, typecheck, lint and build passed for the final
+  implementation. No new browser/manual accessibility result is claimed.
+
 - U06 original implementation: 179 shared tests, 35 selected server tests,
   typecheck, lint and production build passed.
 - U06 review follow-up: 191 shared tests, including 28 Pokémon adapter cases,
@@ -106,22 +113,22 @@ review/CI and verify the latest remote commit on resume.
 
 ## Resume sequence
 
-1. Inspect worktree, remote PR #70 review/CI and branch publication state. Complete
+1. All four PR #70 review threads were resolved by the reviewer as of 26 October. Inspect worktree, current review/CI and branch publication state. Complete
    any new legitimate review fixes before advancing.
-2. Incorporate updated U06 into `codex/tcg-provider-registry` without losing the
-   U07 implementation or this handoff. Prefer merging the parent if the branch is
-   already published; avoid unnecessary history rewriting.
-3. Validate affected tests, typecheck/lint/build as appropriate. Push U07 and create
-   its stacked PR targeting `codex/pokemon-rule-adapters`, if no PR already exists.
-4. Begin U08 on a new branch from U07: normalized Pokémon catalogue adapter using
-   existing authoritative catalogue/cache/printing services. Preserve historical
-   IDs, multilingual behavior, detailed versus summary evidence, quote provenance,
-   stale fallback and cache quality. Add contract and hostile-response fixtures.
-5. U09 repositories/common reads, U10 authorized commands, U11 shared API and then
+2. U06 is already merged into U07 (`1dcce32`). Do not repeat that work. The merged
+   branch passed 57 selected server tests, 193 shared tests, typecheck, lint and
+   production build. Check publication state before creating a duplicate PR.
+3. U07 is published as PR #71 targeting `codex/pokemon-rule-adapters`. Inspect
+   review/CI and address legitimate findings before advancing; do not create a duplicate.
+4. U08 implementation is on `codex/pokemon-catalogue-adapter` from U07. It adds
+   `tcg/pokemon.ts`, `tcg/pokemonProvider.ts` and bounded catalogue JSON transport,
+   with preservation, language, outage, paging and malformed-response tests. Check
+   its PR/review status before beginning U09. PR #71 had no review threads on 28 October.
+5. U09 repositories/common reads are implemented on `codex/tcg-collection-repositories`; check publication/review before continuing. U10 authorized commands, U11 shared API and then
    the later UI/import/sharing/jobs phases follow the incremental plan. Optional
    storage consolidation is not a prerequisite for a successful unification.
 
-U08 has not been implemented. Relevant starting files are
+U08 is implemented and published as PR #81, targeting `codex/tcg-provider-registry`. Review its feedback before U09. No merge was performed in this session. Relevant source files are
 `apps/server/src/providers/tcgdex.ts`, `apps/server/src/cards.ts`,
 `packages/shared/src/catalog.ts`, `packages/shared/src/languages.ts`,
 `packages/shared/src/tcg/types.ts` and `tcg/variants.ts`. The existing shared
@@ -146,3 +153,60 @@ interrupted tool call is not proof of completion: inspect processes, sessions,
 logs and remote state before claiming success or launching duplicate work.
 Chromium is installed under `/workspace/.playwright-browsers`; set
 `PLAYWRIGHT_BROWSERS_PATH` accordingly if browser checks are needed.
+
+## U08 review follow-up (28 October)
+
+Eight PR #81 recommendations were accepted and implemented on its own branch.
+They cover redirects in both proxy upstream paths, stale negative results, search
+match/set refreshes, complete pages, correct cache timestamps, multilingual set
+codes, per-variant price provenance and normalized field validation. Regression
+tests cover each. Older flattened price caches retain amounts/source blocks but
+produce unknown normalized quote dates/URLs until fresh per-key evidence exists.
+No migration or data rewrite is required.
+
+U09 remains published separately as PR #82 on `codex/tcg-collection-repositories`.
+Before continuing U10, incorporate the updated U08 parent into U09 and revalidate
+the affected suites; do not lose its repository implementation or handoff notes.
+
+U08 review validation: all 215 shared, 293 server and 823 web tests passed, plus
+typecheck, lint and production build. Fixes are on `codex/pokemon-catalogue-adapter`;
+review threads are left for the reviewer to reassess after the update.
+
+## U08 second review follow-up
+
+Nine additional PR #81 findings are implemented: strict name/number resolution,
+hydrated ID verification, paired record/timestamp observations, validation before
+cache publication, complete set listings, bounded cross-page match observations,
+live abbreviation discovery, GraphQL partial-error rejection and localized
+set-code projection. U09 still needs the updated U08 parent incorporated before
+continuing U10. No review thread was manually marked resolved.
+
+U08 second-review validation: 217 shared tests, 299 server tests and 823 web tests passed; the final 47-test web-client suite also passed after preserving partial candidate reads. Typecheck, lint and production build passed.
+
+U08 further review: subsequent changes validate scheduled catalogue and set-list publication, version complete-list display keys, fetch fresh card observations without storing unchecked raw responses, pair set-list data and timestamps, and preserve live abbreviations. Explicit set IDs avoid unrelated metadata scans; printed-code lookups use a bounded cached index, report incomplete evidence and support promo prefixes. U09 still needs to incorporate the updated U08 branch before continuing.
+
+## U09 continuation detail
+
+U09 adds `apps/server/src/tcg/repositories/collection.ts` and the common SQLite
+contract suite `apps/server/test/collection-repositories.test.ts`. See
+[repository documentation](collection-repositories.md). Native states remain intact
+inside a common envelope; no DTO conversion, route cutover or writer is introduced.
+The new member-read service verifies access and reads a coherent SQLite snapshot.
+Photo seams expose scoped metadata only. Next implementation milestone is U10.
+
+U09 validation: all 294 server tests, including 13 repository contract tests,
+passed. Typecheck, lint and production build passed. Both stores met the 80-query
+budget and three-second test guard for 20,000 cached cards/holdings. Existing
+WebKit/manual accessibility gates remain open; U09 changes no UI flows. PR #81
+had no review threads at the final pre-publication check on 28 October.
+
+U09 is published as PR #82, targeting the U08 branch. Check its review and CI
+before beginning U10.
+
+## U08 merge (30 October)
+
+The final PR #81 review fixes validate classified set imports before installing
+the in-memory printing profile and accept TCGdex's TCGplayer `unit` metadata in
+raw price validation. All review threads were resolved and CI passed; PR #81 was
+merged into `codex/tcg-provider-registry`. That branch is merged into U09, so the
+"U09 still needs the updated U08 parent" notes above are satisfied.
