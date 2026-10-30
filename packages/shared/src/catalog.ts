@@ -623,8 +623,16 @@ export async function getSetCardsObservation(setId: string): Promise<{ cards: Po
   if (cards.length !== set.total || new Set(cards.map((card) => card.id)).size !== cards.length)
     throw new Error('Set import is incomplete; retaining the previous catalogue');
   const profile = buildPrintingProfile(setId, cards, true);
+  const classified = cards.map((card) => applyPrintingProfile(card, profile));
+  // Install the profile only once every classified card would be accepted for publication, so
+  // a rejected import cannot change how display reads classify printings.
+  for (const card of classified) {
+    if (card.set.id !== setId || card.set.total !== set.total || card.printingCoverage !== 'complete')
+      throw new Error('Set import is incomplete; retaining the previous catalogue');
+    fromPokemon(card, new Date().toISOString());
+  }
   profiles.set(setId, profile);
-  return { cards: cards.map((card) => applyPrintingProfile(card, profile)).sort(compareCardNumber), at: Math.min(...observations.map(({ at }) => at)) };
+  return { cards: classified.sort(compareCardNumber), at: Math.min(...observations.map(({ at }) => at)) };
 }
 
 export async function getSetCards(setId: string): Promise<PokemonCard[]> {
