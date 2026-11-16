@@ -28,7 +28,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      # Before the install: a lockfile tied to one registry is what makes installs fail elsewhere.
+      - run: node scripts/lockfile-registry.mjs
       - run: npm ci
+      # A lockfile written by a different npm major is rewritten on every install; catch it here.
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund && git diff --exit-code package-lock.json
       - run: npm run validate:deploy
       - run: npm run audit:dependencies
       - run: node --test scripts/backup-host.test.mjs
