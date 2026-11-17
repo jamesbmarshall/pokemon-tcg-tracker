@@ -161,7 +161,7 @@ Run coverage for the server, shared and web workspaces, then set thresholds two 
 
 ## Priority 3: design
 
-Do these only after priorities 1 and 2, and after decision 3.
+Do these only after priorities 1 and 2, and after decision 4.
 
 ### T19. Split `collections.ts` (Sonnet 5.5, reviewed by Opus 5.5)
 `apps/server/src/collections.ts` is 1,182 lines mixing validation, the read model, import, scan and deck resolution, set stats and routes. Split it along those lines with no behaviour change and no renamed exports. Done when the diff is moves only and every test passes untouched.
@@ -175,7 +175,7 @@ The in-flight maps in `cards.ts` and `catalog.ts`, the scan cache in `collection
 ### T22. Adopt a formatter (Haiku 5.5)
 Add Prettier with a config that matches the already-formatted `apps/server/src/tcg/` files, format the repository in one commit, and add a CI check. Schedule it when no other task branch is open, because it conflicts with everything.
 
-### T23. Review the unification plan against this one (Fable 5.2, after decision 3)
+### T23. Review the unification plan against this one (Fable 5.2, after decision 4)
 Read `docs/tcg-unification-plan.md` and `docs/tcg-unification-prs.md` and report which of its phases are still worth doing once T5, T8, T9, T14 and T19 have landed, which are now smaller, and which carry risk with no user-visible return. Output is a written recommendation, not code.
 
 ## Order and parallelism
