@@ -30,7 +30,8 @@ These block the tasks named, and no model should decide them.
 
 1. **Lockfile registry.** 328 lockfile entries resolve to `ms-feed-25.pkgs.visualstudio.com` (deliberate, commit `6f3313e`). Agents in an environment that cannot reach that host cannot run `npm ci`. Either allow the host in the agent environment or normalise the lockfile to `registry.npmjs.org`. Blocks everything, because no task can be verified without an install.
 2. **Backup passphrase.** Whether synced and downloaded backup packages may be encrypted with an owner-supplied passphrase, accepting that a lost passphrase makes the backup unrecoverable. Blocks T12.
-3. **Unification scope.** Whether `docs/tcg-unification-plan.md` goes all the way to the UI, or stops at the server repository boundary until a third game is planned. Blocks T19 onward being more than local tidying.
+3. **Branding.** Whether the product keeps the PokéTracker name now that it tracks Magic too. Blocks D7.
+4. **Unification scope.** Whether `docs/tcg-unification-plan.md` goes all the way to the UI, or stops at the server repository boundary until a third game is planned. Blocks T19 onward being more than local tidying.
 
 ## Priority 0: unblock and measure
 
@@ -60,6 +61,52 @@ Four independent one-line changes, one commit each:
 - `apps/server/src/app.ts:103`: evaluate `!SAFE.has(req.method)` before `existsSync(...)`, so reads do not touch the filesystem.
 - `apps/server/src/system.ts:78`: wrap the job error message in `redactSecrets(...)` before returning it.
 - `apps/server/src/tcg/routes.ts:508`: add `cache-control: private, max-age=31536000, immutable` to the Magic photo response, matching `collections.ts:777`.
+
+## Priority 1b: design fixes
+
+From running the built app in demo mode on 17 November 2026: every main page at 1440×900 and iPhone 13 size, light and dark, plus axe (WCAG 2 A/AA). No page scrolls sideways and axe found only near-threshold issues. These tasks cover what a person notices.
+
+### D1. Make card tile prices match what is owned (Opus 5.5)
+`apps/web/src/components/CardTile.tsx:52`: when the tile is not tied to one printing, it shows the highest price across all printings. On the Collection page that is usually the 1st Edition price, not the copy you own. In the demo, Base Set Mewtwo shows £618 (1st Edition Holo) while the owned copy is valued at £0, and a grid of hundreds-of-pounds tiles sits under a £57.57 total.
+
+Decide the rule per context and apply it everywhere `CardTile` is used:
+- **Holdings** (collection, binder, dashboard "Most valuable" and "Recently added"): the value of the owned copies, using the same function as the totals (`entryValue` in `packages/shared/src/value.ts`).
+- **Catalogue** (set pages, search, wishlist): a labelled range ("£27–£618") or the cheapest printing.
+
+Done when the tile values on the Collection page sum to the page total, and the catalogue label cannot be mistaken for the value of a copy.
+
+### D2. Fix the demo seed's printings (Sonnet 5.5)
+`apps/server/src/demo.ts:94` files every demo card as the `normal` printing, which predates the printing catalogue. On the public demo, the shop window for people deciding whether to self-host, this produces:
+- a dashboard that leads with "−£1,699.03 (96.7%)" and a chart that falls off a cliff on the last day;
+- Base Set and Sword & Shield at 0% complete although six in seven cards are owned;
+- "Identify this printing" prompts on most card pages.
+
+Seed each entry with a real printing id taken from the catalogue profile for that card (the first core printing), and generate the seeded value history from the same priced holdings, so it ends at today's total. Done when a fresh demo shows no legacy-printing prompts, plausible completion, and a continuous chart.
+
+### D3. Get cards above the fold on phones (Sonnet 5.5)
+At 390×664 (iPhone 13), the Collection page shows no cards on the first screen and the dashboard shows only half its chart. Above them sit the full-width game selector, the page header with three buttons, and the valuation footnotes:
+
+> 412 of 605 held copies priced · 193 unpriced · 2 estimates · 0 owner valuations · 0 quotes older than 48 hours · 0 without a verified source date · Unpriced items are excluded…
+
+- Collapse the footnotes into one line ("412 of 605 priced") with the detail behind a disclosure.
+- On phones, move the game selector into the top bar or the menu.
+
+The bottom bar also carries seven items, leaves out Lists, and duplicates Search (which is also in the top bar). Cut it to four or five and put the rest under "More". Done when the first phone screen of Collection shows at least one row of cards.
+
+### D4. Tell the two Share buttons apart (Haiku 5.5)
+`apps/web/src/pages/CollectionPage.tsx:101-102` renders two buttons both labelled "Share" with the same icon: one shares the collection, the other the graded cards. Label the second "Share slabs", or merge both into one Share menu.
+
+### D5. Rewrite printing-status jargon (Sonnet 5.5)
+Every printing row of a well-known card can read "Not counted towards Master · needs checking", and a new set shows "Master 0% · 0/0". Both describe internal catalogue state. Write user-facing wording: say what is uncertain and what the user can do, or show nothing when they cannot act. Show "—" instead of "0/0". On a set with no cards yet, the empty state should say the set has not been catalogued yet, not "No cards match these filters" (`apps/web/src/pages/SetPage.tsx`).
+
+### D6. Accessibility clean-up (Haiku 5.5)
+- Add an `h1` to the dashboard and Sealed pages; both currently have none.
+- Label the narrow input in Settings (axe flags `.!w-40`).
+- `text-faint` at 10–11px measures 4.3:1 on tinted backgrounds, just under the 4.5:1 minimum. Darken the token slightly, or stop using it below 12px.
+- `main#main-content` gets a visible focus ring around the whole page on a fresh load (`Layout.tsx:178` focuses it). Suppress the outline on `main` only; it is a programmatic focus target, not a control.
+
+### D7. Brand for more than one game (maintainer decision first)
+The app is called PokéTracker, with a Pokémon-styled wordmark, yet it now tracks Magic, and the Magic dashboard sits under that name. The pastel "Tracker" half of the wordmark is also hard to read on the light theme. Whether to rename is a product decision; the wordmark contrast can be fixed regardless.
 
 ## Priority 2: larger fixes with clear payoff
 
@@ -133,8 +180,8 @@ Read `docs/tcg-unification-plan.md` and `docs/tcg-unification-prs.md` and report
 
 ## Order and parallelism
 
-1. Decisions 1 to 3, then T0 and T1.
-2. T2 to T6 in parallel; they touch different lines.
+1. Decisions 1 to 4, then T0 and T1.
+2. T2 to T6 in parallel; they touch different lines. D1, D2, D4 and D6 alongside them; D1 first if only one, because wrong prices undermine trust in everything else. D3 and D5 next.
 3. T7, T8, T10 and T11 in parallel. T9 alone, since it touches the write protocol.
 4. T12 to T18 as capacity allows. T13 and T14 should not overlap with T9.
-5. T19 before T20 and T21. T22 last. T23 whenever decision 3 is made.
+5. T19 before T20 and T21. T22 last. T23 whenever decision 4 is made.
