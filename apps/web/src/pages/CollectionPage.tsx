@@ -267,7 +267,7 @@ export default function CollectionPage() {
           </table>
         </div>
       ) : (
-        <CardGrid cards={items.map((o) => o.card)} showSet />
+        <CardGrid tiles={items.map((o) => ({ card: o.card, holding: { valueUsd: o.valueUsd, copies: o.quantity, unpricedCopies: o.unpricedCopies } }))} showSet />
       )}
     </div>
   );
