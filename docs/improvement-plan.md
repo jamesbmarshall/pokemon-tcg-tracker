@@ -71,7 +71,8 @@ From running the built app in demo mode on 17 November 2026: every main page at 
 
 Decide the rule per context and apply it everywhere `CardTile` is used:
 - **Holdings** (collection, binder, dashboard "Most valuable" and "Recently added"): the value of the owned copies, using the same function as the totals (`entryValue` in `packages/shared/src/value.ts`).
-- **Catalogue** (set pages, search, wishlist): a labelled range ("£27–£618") or the cheapest printing.
+- **Holdings with no price:** say "No price" rather than leaving the slot empty, so a gap in the total is visible.
+- **Catalogue** (set pages, search, wishlist) when the tile stands for several printings: the cheapest core printing, plus a small "+3 printings" count. Do not use "from £x": the card page already uses "from" to mean the cheapest marketplace listing. Do not use a range either: it doubles the width of a label that already truncates. In the Master view each tile is a single printing, so its own price is already right.
 
 Done when the tile values on the Collection page sum to the page total, and the catalogue label cannot be mistaken for the value of a copy.
 
@@ -81,7 +82,7 @@ Done when the tile values on the Collection page sum to the page total, and the 
 - Base Set and Sword & Shield at 0% complete although six in seven cards are owned;
 - "Identify this printing" prompts on most card pages.
 
-Seed each entry with a real printing id taken from the catalogue profile for that card (the first core printing), and generate the seeded value history from the same priced holdings, so it ends at today's total. Done when a fresh demo shows no legacy-printing prompts, plausible completion, and a continuous chart.
+Seed each entry with a real printing id taken from the catalogue profile for that card (the first core printing), and generate the seeded value history from the same priced holdings, so it ends at today's total. The seed must first sync the printing catalogue for its four sets, because the background queue reaches them in no particular order (see D5). Done when a fresh demo shows no legacy-printing prompts, plausible completion, and a continuous chart. Re-checked after the price and printing jobs had run: the −96.7% and 0% figures persist, so this is not first-boot state.
 
 ### D3. Get cards above the fold on phones (Sonnet 5.5)
 At 390×664 (iPhone 13), the Collection page shows no cards on the first screen and the dashboard shows only half its chart. Above them sit the full-width game selector, the page header with three buttons, and the valuation footnotes:
@@ -96,17 +97,39 @@ The bottom bar also carries seven items, leaves out Lists, and duplicates Search
 ### D4. Tell the two Share buttons apart (Haiku 5.5)
 `apps/web/src/pages/CollectionPage.tsx:101-102` renders two buttons both labelled "Share" with the same icon: one shares the collection, the other the graded cards. Label the second "Share slabs", or merge both into one Share menu.
 
-### D5. Rewrite printing-status jargon (Sonnet 5.5)
-Every printing row of a well-known card can read "Not counted towards Master · needs checking", and a new set shows "Master 0% · 0/0". Both describe internal catalogue state. Write user-facing wording: say what is uncertain and what the user can do, or show nothing when they cannot act. Show "—" instead of "0/0". On a set with no cards yet, the empty state should say the set has not been catalogued yet, not "No cards match these filters" (`apps/web/src/pages/SetPage.tsx`).
+### D5. Make printing status readable, and visible less often (Opus 5.5)
+Re-checked on a catalogued set, so this is not first-boot state. Base Set is catalogued but provisional, with 176 of its 415 printings unresolved, and all four Mewtwo printings read "Not counted towards Master · needs checking". The string comes from `packages/shared/src/printings.ts:89`.
+
+Problems:
+- **The status describes the catalogue, not the user's cards.** The user can do nothing about "needs checking". Show nothing when the user cannot act. Where it changes the Master count, use plain wording such as "Not in Master count yet".
+- **The repeated label is noise.** In the Master view every tile repeats "Counts towards Master". Show only the exceptions.
+- **The distinguishing detail is truncated.** In the Master view, the only thing that tells four identical Arcanine images apart is the printing name, and it is cut to "Normal · unl…". Give it its own line, or put the stamp or edition on the art as a badge.
+- **Empty states mislead.** A new set shows "Master 0% · 0/0" and "No cards match these filters" with no filter applied. Show "—" for 0/0, and say the set has not been catalogued yet (`apps/web/src/pages/SetPage.tsx`).
+- **A fresh install stays in this state for about two days.** The printing job imports about 8 sets every 15 minutes and had about 1,580 queued, roughly 50 hours. Prioritise sets the instance's collections actually hold, and say on the set page that cataloguing is in progress.
+
+Moved up from Sonnet 5.5: the last point touches the sync scheduler in `apps/server/src/printingCatalog.ts`.
 
 ### D6. Accessibility clean-up (Haiku 5.5)
 - Add an `h1` to the dashboard and Sealed pages; both currently have none.
 - Label the narrow input in Settings (axe flags `.!w-40`).
 - `text-faint` at 10–11px measures 4.3:1 on tinted backgrounds, just under the 4.5:1 minimum. Darken the token slightly, or stop using it below 12px.
 - `main#main-content` gets a visible focus ring around the whole page on a fresh load (`Layout.tsx:178` focuses it). Suppress the outline on `main` only; it is a programmatic focus target, not a control.
+- The "Tracker" half of the wordmark is the `.holo-text` gradient (`index.css:169`). Its stops measure 1.05:1 to 1.88:1 against the light canvas, below even the 3:1 minimum for large text. Keep the foil, but give the letters a solid ink and lay the foil over them on hover or as an edge, not as the letter colour. Reduced motion is already handled globally (`index.css:280`).
 
-### D7. Brand for more than one game (maintainer decision first)
-The app is called PokéTracker, with a Pokémon-styled wordmark, yet it now tracks Magic, and the Magic dashboard sits under that name. The pastel "Tracker" half of the wordmark is also hard to read on the light theme. Whether to rename is a product decision; the wordmark contrast can be fixed regardless.
+### D7. Visual identity and multi-game branding (maintainer decision first)
+Two separate questions.
+
+**The name.** The app is called PokéTracker, with a Pokémon-styled wordmark, yet it now tracks Magic, and the Magic dashboard sits under that name. Whether to rename is a product decision.
+
+**The look reads as a generic template.** The system is coherent and carefully built (tokens, both themes, motion respected), and the card art carries most of the personality. Around it, though, the chrome is the current default for generated interfaces rather than something specific to card collecting:
+- the light canvas is `#f4f1ea` (`index.css:13`), with a high-contrast serif display (Source Serif 4);
+- tracked, all-caps monospace labels (`.eyebrow`, `index.css:231`) above almost every figure and heading;
+- middle-dot meta strings throughout (184 in the web source) and "→" on links (62);
+- hairline-rule, broadsheet layout, with a big-number hero on the dashboard.
+
+None of these is a defect; together they make the product look like many others. The one asset unique to this subject, the holographic foil, is spent on the least legible element: the wordmark (see D6).
+
+Recommendation: do not restyle before D1 to D6 land, because those fix whether the numbers are trusted, which matters more. If the name changes, do the identity work at the same time. Spend the boldness in one place, the foil and card treatment. Replace the all-caps mono eyebrows with sentence-case labels where a label is needed, and remove them where the figure speaks for itself. Choose a canvas from the subject (binder pages, sleeves, slab labels) rather than the default cream. Suggested model: Fable 5.2 for the direction, with a person approving it, then Sonnet 5.5 to apply the token changes.
 
 ## Priority 2: larger fixes with clear payoff
 
@@ -181,7 +204,7 @@ Read `docs/tcg-unification-plan.md` and `docs/tcg-unification-prs.md` and report
 ## Order and parallelism
 
 1. Decisions 1 to 4, then T0 and T1.
-2. T2 to T6 in parallel; they touch different lines. D1, D2, D4 and D6 alongside them; D1 first if only one, because wrong prices undermine trust in everything else. D3 and D5 next.
+2. T2 to T6 in parallel; they touch different lines. D1, D2, D4 and D6 alongside them; D1 first if only one, because wrong prices undermine trust in everything else. D3 and D5 next. D7 only after D1 to D6, and together with decision 3.
 3. T7, T8, T10 and T11 in parallel. T9 alone, since it touches the write protocol.
 4. T12 to T18 as capacity allows. T13 and T14 should not overlap with T9.
 5. T19 before T20 and T21. T22 last. T23 whenever decision 4 is made.
