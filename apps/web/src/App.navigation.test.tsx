@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { resetStores, seedCollection } from './test/ui-helpers';
@@ -61,15 +61,19 @@ describe('universal navigation', () => {
     expectGame('mtg');
     expect(screen.getAllByRole('link', { name: 'Collection' })[0]).toHaveAttribute('href', '/mtg/collection');
 
-    // Exercise the mobile links as well as the desktop sidebar.
-    await userEvent.click(screen.getAllByRole('link', { name: 'Sharing' })[1]);
+    // Exercise the phone More sheet as well as the desktop sidebar.
+    const viaMore = async (name: string) => {
+      await userEvent.click(screen.getByRole('button', { name: 'More' }));
+      await userEvent.click(within(screen.getByRole('dialog', { name: 'More' })).getByRole('link', { name }));
+    };
+    await viaMore('Sharing');
     expect(window.location.pathname).toBe('/sharing');
     await screen.findByRole('heading', { name: 'Share Magic' });
     expectGame('mtg');
-    await userEvent.click(screen.getByRole('link', { name: 'Account' }));
+    await viaMore('Account');
     expect(window.location.pathname).toBe('/account');
     expectGame('mtg');
-    await userEvent.click(screen.getAllByRole('link', { name: 'Settings' })[1]);
+    await viaMore('Settings');
     expectGame('mtg');
 
     await userEvent.selectOptions(screen.getAllByRole('combobox', { name: 'Trading card game' })[0], 'pokemon');

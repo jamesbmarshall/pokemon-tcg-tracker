@@ -147,11 +147,18 @@ test('keeps Magic selected across universal settings, admin and sharing on a pho
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('link', { name: 'Lists & decks', exact: true }).click();
+  // On a phone these pages sit in the tab bar's More sheet.
+  const viaMore = async (name: string) => {
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'More' }).click();
+    await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name, exact: true }).click();
+    // Each page must fit the phone's width; overflow also moves taps off the fixed tab bar.
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  };
+  await viaMore('Lists');
   await expect(
     page.getByRole('heading', { name: 'Lists & decks', exact: true }),
   ).toBeVisible();
-  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await viaMore('Settings');
   await expect(page).toHaveURL(/\/settings$/);
   await expect(
     page.getByRole('heading', { name: 'Magic data', exact: true }),
@@ -165,7 +172,7 @@ test('keeps Magic selected across universal settings, admin and sharing on a pho
   await expect(game).toHaveValue('mtg');
   await page.reload();
   await expect(game).toHaveValue('mtg');
-  await page.getByRole('link', { name: 'Sharing', exact: true }).click();
+  await viaMore('Sharing');
   await expect(page).toHaveURL(/\/sharing$/);
   await expect(page.getByRole('heading', { name: 'Share Magic', exact: true })).toBeVisible();
   await expect(game).toHaveValue('mtg');

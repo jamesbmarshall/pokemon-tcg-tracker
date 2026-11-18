@@ -240,7 +240,8 @@ export function ShareButton({ scope, target, what, compact }: { scope: ShareScop
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={`btn btn-ghost ${compact ? '!h-9 !text-xs' : ''}`} aria-label={`Share ${what}`}>
-        <Share2 size={compact ? 14 : 16} /> Share
+        {/* Compact buttons show just the icon on phones; aria-label still names what is shared. */}
+        <Share2 size={compact ? 14 : 16} /> <span className={compact ? 'max-sm:sr-only' : ''}>Share</span>
       </button>
       {open && <ShareDialog scope={scope} target={target} what={what} onClose={() => setOpen(false)} />}
     </>

@@ -7,7 +7,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { games } from '@poketracker/shared/tcg/registry';
 import { GameValueBadge } from '../tcg/GamePage';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, BookOpen, Eye, Heart, Info, Layers, LayoutDashboard, ListChecks, Package, RefreshCw, ScanLine, Search, Settings, Share2, ShieldCheck, UserRound, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, Eye, Heart, Info, Layers, LayoutDashboard, ListChecks, MoreHorizontal, Package, RefreshCw, ScanLine, Search, Settings, Share2, ShieldCheck, UserRound, X, type LucideIcon } from 'lucide-react';
 import { computeValue, useCollectionStore } from '../store/collectionStore';
 import { useMoney } from '../hooks/useMoney';
 import { toast } from '../store/toastStore';
@@ -17,6 +17,7 @@ import { getBackend } from '../api/backend';
 import { Logo } from './ui';
 import CommandPalette from './CommandPalette';
 import ThemeToggle from './ThemeToggle';
+import NativeDialog from './NativeDialog';
 import Toaster from './Toaster';
 import { useActiveGame } from '../hooks/useActiveGame';
 
@@ -30,12 +31,53 @@ const NAV = [
   { to: '/scan', label: 'Scan', icon: ScanLine },
 ];
 
-function GameSwitcher({ game }: { game: string }) {
+/** The phone tab bar keeps the pages used every visit; everything else lives under More. */
+const PHONE_TABS = new Set(['/', '/sets', '/collection', '/wishlist']);
+
+function GameSwitcher({ game, compact = false }: { game: string; compact?: boolean }) {
   const navigate = useNavigate();
-  return <label className="block"><span className="sr-only">Trading card game</span><select className="input w-full !text-sm" value={game} onChange={e => {
+  // Compact: the phone top bar, where the short name keeps the bar to one row.
+  return <label className={compact ? 'block min-w-0' : 'block'}><span className="sr-only">Trading card game</span><select className={`input !text-sm ${compact ? '!h-9 !w-auto max-w-full font-medium' : 'w-full'}`} value={game} onChange={e => {
     localStorage.setItem('poketracker-game', e.target.value);
     navigate(e.target.value === 'pokemon' ? '/' : `/${e.target.value}`);
-  }}>{games.all().map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></label>;
+  }}>{games.all().map(g => <option key={g.id} value={g.id}>{compact ? g.shortName : g.name}</option>)}</select></label>;
+}
+
+/** Phone sheet for the pages that don't fit in the tab bar, plus account and theme. */
+function MoreSheet({ items, onClose }: { items: { to: string; label: string; icon: LucideIcon; end?: boolean }[]; onClose: () => void }) {
+  return (
+    <NativeDialog label="More" onClose={onClose} className="!items-end !p-0">
+      <div className="w-full rounded-t-2xl border-t border-line bg-canvas px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-card-lift">
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">More</h2>
+          <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <nav aria-label="More pages">
+          <ul className="grid grid-cols-3 gap-1">
+            {items.map(({ to, label, icon: Icon, end }) => (
+              <li key={to}>
+                <NavLink
+                  to={to}
+                  end={end}
+                  onClick={onClose}
+                  className={({ isActive }) => `flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-lg px-1 py-2 text-xs ${isActive ? 'bg-accent/10 font-semibold text-accent' : 'font-medium text-muted hover:bg-surface-2 hover:text-fg'}`}
+                >
+                  <Icon size={20} strokeWidth={1.9} />
+                  {label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm text-muted">
+          Theme
+          <ThemeToggle className="!h-10 !w-10" />
+        </div>
+      </div>
+    </NativeDialog>
+  );
 }
 
 /**
@@ -146,6 +188,7 @@ export default function Layout() {
   const prefix = game === 'pokemon' ? '' : `/${game}`;
   const path = (to: string) => prefix ? `${prefix}${to === '/' ? '' : to}` : to;
   const nav = NAV.filter(item => item.to !== '/scan' || games.require(game).capabilities.scanning).map(item => ({ ...item, to: path(item.to) }));
+  const [more, setMore] = useState(false);
   const pendingSaves = useCollectionStore((s) => s.pendingSaves);
   const saveError = useCollectionStore((s) => s.saveError);
   const lastSavedAt = useCollectionStore((s) => s.lastSavedAt);
@@ -153,6 +196,16 @@ export default function Layout() {
   // Only hides the link; the admin page and its endpoints check the role again.
   const admin = useAuth((s) => isAdmin(s.user));
   const { data: status } = useQuery({ queryKey: ['system', 'status'], queryFn: () => getBackend().status(), staleTime: 60_000 });
+  const phoneTabs = nav.filter((item) => PHONE_TABS.has(item.to.slice(prefix.length) || '/'));
+  const moreItems = [
+    ...nav.filter((item) => !phoneTabs.includes(item)),
+    { to: path('/lists'), label: 'Lists', icon: ListChecks },
+    { to: '/sharing', label: 'Sharing', icon: Share2 },
+    { to: '/settings', label: 'Settings', icon: Settings },
+    ...(admin ? [{ to: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
+    { to: '/account', label: 'Account', icon: UserRound },
+  ];
+  const moreActive = moreItems.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -259,36 +312,24 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Mobile top bar */}
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur-md lg:hidden">
-        <Link to="/" aria-label="PokéTracker home" className="flex min-w-0 items-center gap-2">
+      {/* Mobile top bar: brand, game and search only, so the page starts high on a phone. */}
+      <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur-md lg:hidden">
+        <Link to="/" aria-label="PokéTracker home" className="flex shrink-0 items-center gap-2">
           <Logo size={26} />
-          {/* Keep touch targets full size; additional games also have a lists shortcut. */}
-          <span className={`hidden truncate font-display text-lg font-medium tracking-tight ${game === 'pokemon' ? 'min-[400px]:inline' : 'min-[480px]:inline'}`}>
+          <span className="hidden font-display text-lg font-medium tracking-tight min-[480px]:inline">
             Poké<span className="holo-text">Tracker</span>
           </span>
         </Link>
-        <div className="flex items-center">
-          <ThemeToggle className="!h-10 !w-10" />
-          {game !== 'pokemon' && <Link to={path('/lists')} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Lists & decks"><ListChecks size={19}/></Link>}
-          <button onClick={() => game === 'pokemon' ? setPalette(true) : navigate(path('/search'))} className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          <GameSwitcher game={game} compact />
+          <button onClick={() => game === 'pokemon' ? setPalette(true) : navigate(path('/search'))} className="grid h-10 w-10 shrink-0 place-items-center rounded-md text-muted hover:text-fg" aria-label="Search">
             <Search size={19} />
           </button>
-          <Link to="/sharing" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Sharing">
-            <Share2 size={19} />
-          </Link>
-          <Link to="/settings" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Settings">
-            <Settings size={19} />
-          </Link>
-          <Link to="/account" className="grid h-10 w-10 place-items-center rounded-md text-muted hover:text-fg" aria-label="Account">
-            <UserRound size={19} />
-          </Link>
         </div>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-28 pt-4 sm:px-6 sm:pt-6 lg:px-10 lg:pb-16 lg:pt-10">
         <CollectionSwitcher className="mb-5 lg:hidden" />
-        <div className="mb-5 lg:hidden"><GameSwitcher game={game} /></div>
         {status?.priceSyncPartial && <p role="status" className="mb-3 text-sm text-loss">The last price refresh was incomplete. Some quotes retain their previous source date; review valuation coverage before relying on the total.</p>}
         {(game === 'pokemon' ? status?.catalogDegraded : status?.gameCatalogDegraded?.[game]) && (
           <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-loss/30 bg-loss/5 px-3 py-2 text-sm text-loss">
@@ -317,19 +358,30 @@ export default function Layout() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav data-mobile-nav className="fixed inset-x-0 bottom-0 z-40 grid auto-cols-fr grid-flow-col border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
-        {nav.map(({ to, label, icon: Icon, end }) => (
+      <nav data-mobile-nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 grid auto-cols-fr grid-flow-col border-t border-line bg-canvas/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] lg:hidden">
+        {phoneTabs.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
-            className={({ isActive }) => `flex h-16 min-w-0 flex-col items-center justify-center gap-1 whitespace-nowrap text-[9px] min-[400px]:text-[10.5px] ${isActive ? 'font-semibold text-accent' : 'font-medium text-muted'}`}
+            className={({ isActive }) => `flex h-16 min-w-0 flex-col items-center justify-center gap-1 whitespace-nowrap text-[11px] ${isActive ? 'font-semibold text-accent' : 'font-medium text-muted'}`}
           >
             <Icon size={20} />
             {label}
           </NavLink>
         ))}
+        <button
+          type="button"
+          onClick={() => setMore(true)}
+          aria-haspopup="dialog"
+          aria-expanded={more}
+          className={`flex h-16 min-w-0 flex-col items-center justify-center gap-1 whitespace-nowrap text-[11px] ${moreActive ? 'font-semibold text-accent' : 'font-medium text-muted'}`}
+        >
+          <MoreHorizontal size={20} />
+          More
+        </button>
       </nav>
+      {more && <MoreSheet items={moreItems} onClose={() => setMore(false)} />}
 
       {palette && game === 'pokemon' && <CommandPalette open onClose={() => setPalette(false)} />}
       <Toaster />
