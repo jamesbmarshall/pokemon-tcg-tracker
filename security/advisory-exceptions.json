@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "url": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+    "package": "picomatch",
+    "reason": "ReDoS in picomatch <=4.0.7, with no patched release on npm as of 2026-11-18. picomatch is a development-only dependency (Vite, Vitest, Rollup plugins, workbox-build, typescript-eslint); it is not in the production server bundle, so exposure is limited to build and test tooling run on trusted globs. Approved by the maintainer on 2026-11-18. Remove this entry and update the lockfile once a fixed release exists.",
+    "owner": "jamesbmarshall",
+    "expires": "2026-12-18"
+  }
+]
