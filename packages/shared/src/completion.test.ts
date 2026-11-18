@@ -30,7 +30,7 @@ describe('Pokémon completion preservation baseline', () => {
     expect(setProgress(cards, holdings)).toEqual({
       base: { owned: 0, total: 2 }, full: { owned: 1, total: 3 },
       master: { owned: 1, total: 3 }, all: { owned: 3, total: 5 },
-      provisional: true, unresolved: 1, additional: 1, coverageComplete: true,
+      provisional: true, unresolved: 1, additional: 1, uncounted: 1, coverageComplete: true,
     });
   });
 
@@ -47,7 +47,7 @@ describe('Pokémon completion preservation baseline', () => {
     expect(setProgress([], new Map())).toEqual({
       base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 },
       master: { owned: 0, total: 0 }, all: { owned: 0, total: 0 },
-      provisional: false, unresolved: 0, additional: 0, coverageComplete: true,
+      provisional: false, unresolved: 0, additional: 0, uncounted: 0, coverageComplete: true,
     });
   });
 });

@@ -1,4 +1,4 @@
-import { printingRoleLabel } from '@poketracker/shared/printings';
+import { printingNote } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -64,6 +64,7 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
   const { rates } = useFx();
   const n = owned?.[variant] ?? 0;
   const printing = card.printings?.find((p) => p.id === variant);
+  const note = printing ? printingNote(printing) : undefined;
   const market = usdPrices(card)[variant];
   const low = card.tcgplayer?.prices[variant]?.low;
   const paidEach = n ? paidUsd(entry?.paid, rates) : undefined;
@@ -97,9 +98,11 @@ function VariantRow({ card, variant }: { card: PokemonCard; variant: string }) {
           <p className="text-sm font-semibold">
             {printingLabel(card, variant) ?? variantLabel(variant)}
           </p>
-          <p className="text-xs text-muted" title={printing?.decision?.reason}>
-            {printing ? printingRoleLabel(printing) : ''}
-          </p>
+          {note && (
+            <p className="text-xs text-muted" title={note.detail}>
+              {note.note}
+            </p>
+          )}
           {printing?.productIds?.tcgplayer && (
             <a
               className="text-xs text-muted hover:text-accent"

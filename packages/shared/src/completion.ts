@@ -10,6 +10,8 @@ export interface SetProgress {
   provisional: boolean;
   unresolved: number;
   additional: number;
+  /** Cards with printings but none eligible yet: they stay in Base/Full totals but cannot be filled. */
+  uncounted: number;
   coverageComplete: boolean;
 }
 
@@ -24,12 +26,13 @@ export const isBaseCard = (c: Pick<PokemonCard, 'number' | 'set'>) => isWithinPr
 
 /** Base/Full count cards with a Core/Parallel copy; Master counts those printing slots; All counts every listed printing. */
 export function setProgress(cards: PokemonCard[], byCard: Map<string, Record<string, number>>): SetProgress {
-  const p: SetProgress = { base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 }, master: { owned: 0, total: 0 }, all: { owned: 0, total: 0 }, provisional: false, unresolved: 0, additional: 0, coverageComplete: true };
+  const p: SetProgress = { base: { owned: 0, total: 0 }, full: { owned: 0, total: 0 }, master: { owned: 0, total: 0 }, all: { owned: 0, total: 0 }, provisional: false, unresolved: 0, additional: 0, uncounted: 0, coverageComplete: true };
   for (const c of cards) {
     const owned = byCard.get(c.id);
     // Additional/unresolved copies remain collectible but do not fill Base or Full slots.
     const eligible = new Set(standardVariants(c));
     const has = !!owned && Object.keys(owned).some((v) => eligible.has(v) && owned[v] > 0);
+    if (!eligible.size && cardVariants(c).length) p.uncounted++;
     if (!c.printings?.length || c.printings.some((p) => p.status !== 'verified')) p.provisional = true;
     p.unresolved += c.printings?.filter((v) => !v.role || v.role === 'unresolved').length ?? 0;
     if (!c.variants.length) p.unresolved++;

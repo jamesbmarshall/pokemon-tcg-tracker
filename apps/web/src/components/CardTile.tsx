@@ -1,4 +1,4 @@
-import { printingRoleLabel } from '@poketracker/shared/printings';
+import { printingNote } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { memo, useMemo, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -77,6 +77,7 @@ function CardTile({ card, holding, dimMissing = false, showSet = false, quickAdd
       : undefined;
   const printing = card.printings?.find((p) => p.id === variant);
   const label = variant ? (printingLabel(card, variant) ?? variantLabel(variant)) : '';
+  const note = printing ? printingNote(printing) : undefined;
 
   const change = async (variant: string, delta: number) => {
     const before = owned?.[variant] ?? 0;
@@ -166,9 +167,10 @@ function CardTile({ card, holding, dimMissing = false, showSet = false, quickAdd
           )}
           <p className="mt-0.5 truncate font-mono text-[10.5px] text-faint">
             {showSet ? `${s.setName} · ` : ''}#{s.number}
-            {variant && <span className={isOwned ? 'text-muted' : ''}> · {label}</span>}
           </p>
-          {printing && <p className="text-[10px] text-muted" title={printing.decision?.reason}>{printingRoleLabel(printing)}</p>}
+          {/* In the Master view the printing name is all that tells identical artwork apart, so it gets its own line and is never cut off. */}
+          {variant && <p className={`mt-0.5 text-[11px] leading-snug ${isOwned ? 'text-fg' : 'text-muted'}`}>{label}</p>}
+          {note && <p className="mt-0.5 text-[10.5px] leading-snug text-muted" title={note.detail}>{note.note}</p>}
         </div>
         {(price !== undefined || allUnpriced) && (
           <div className="shrink-0 text-right" title={priceTitle}>

@@ -59,6 +59,18 @@ describe('CardTile', () => {
     expect(screen.getByText('£1.00').parentElement).toHaveAttribute('title', '2 of 3 copies priced');
   });
 
+  it('labels a printing only when it does not count towards Master', () => {
+    const printing = (id: string, role: 'core' | 'additional' | 'unresolved') => ({ id, label: `${id} label`, finish: 'normal', size: 'standard', distribution: 'unknown', status: 'inferred', role }) as const;
+    const card = makeSnapshot({ variants: ['a', 'b', 'c'], printings: [printing('a', 'core'), printing('b', 'additional'), printing('c', 'unresolved')] });
+    renderWithProviders(<><CardTile card={card} variant="a" /><CardTile card={card} variant="b" /><CardTile card={card} variant="c" /></>);
+    // Each printing name is on its own line, whole.
+    for (const id of ['a', 'b', 'c']) expect(screen.getByText(`${id} label`)).toBeInTheDocument();
+    expect(screen.queryByText(/Counts towards Master/)).not.toBeInTheDocument();
+    expect(screen.getByText('Extra · not needed for Master')).toBeInTheDocument();
+    expect(screen.getByText('Not in Master count yet')).toHaveAttribute('title', expect.stringContaining('does not yet confirm'));
+    expect(screen.queryByText(/needs checking/)).not.toBeInTheDocument();
+  });
+
   it('shows the set name when showSet is on', () => {
     renderWithProviders(<CardTile card={makeSnapshot()} showSet />);
     expect(screen.getByText('Obsidian Flames · #1')).toBeInTheDocument();

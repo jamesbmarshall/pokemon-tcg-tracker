@@ -44,12 +44,43 @@ it('shows checklist progress and keeps data uncertainty in the optional explanat
   expect(screen.queryByText(/inferred checklist membership/)).not.toBeInTheDocument();
   expect(master).toHaveTextContent('1/1');
   expect(master).toHaveTextContent('100%');
-  const explanation = screen.getByText(/1 version still needs checking/);
+  const explanation = screen.getByText(/1 printing isn’t confirmed for the checklist yet/);
   expect(explanation.closest('details')).not.toHaveAttribute('open');
   await user().click(screen.getByText('What counts towards Master?'));
   expect(explanation.closest('details')).toHaveAttribute('open');
   await user().click(screen.getByRole('radio', { name: 'Variants you don’t have yet' }));
   expect(screen.getByText('Nothing missing here. Lovely.')).toBeInTheDocument();
+});
+
+describe('when the catalogue has not confirmed printings', () => {
+  const unresolved = (id: string) => ({ id, label: id === 'normal' ? 'Normal' : 'Reverse Holo', finish: 'normal', size: 'standard', distribution: 'unknown', status: 'unverified', role: 'unresolved' }) as const;
+  const uncertain = makeCard({ variants: ['normal', 'reverseHolofoil'], printingCoverage: 'complete', printings: [unresolved('normal'), unresolved('reverseHolofoil')] });
+
+  it('explains why an owned card cannot count towards Base yet', async () => {
+    mocks.useSetCards.mockReturnValue(queryResult([uncertain]));
+    seedCollection({ entries: [makeEntry()], cards: [makeSnapshot()] });
+    useSettings.setState({ setMode: 'base' });
+    renderPage();
+    // Owned, but the standard requires a confirmed printing to fill a Base slot.
+    expect(screen.getByRole('button', { name: /^Base/ })).toHaveTextContent('0/1');
+    expect(screen.getByText(/1 card can’t count towards Base or Full yet/)).toBeInTheDocument();
+  });
+
+  it('says so in Master view instead of blaming filters, and offers All printings', async () => {
+    mocks.useSetCards.mockReturnValue(queryResult([uncertain]));
+    useSettings.setState({ setMode: 'master' });
+    renderPage();
+    expect(screen.queryByText('No cards match these filters.')).not.toBeInTheDocument();
+    expect(screen.getByText('None of this set’s printings are confirmed for the Master checklist yet.')).toBeInTheDocument();
+    await user().click(screen.getByRole('button', { name: 'Show all printings' }));
+    expect(useSettings.getState().setMode).toBe('all');
+  });
+
+  it('says a set with no cards yet has not been catalogued', () => {
+    mocks.useSetCards.mockReturnValue(queryResult([]));
+    renderPage();
+    expect(screen.getByText(/This set hasn’t been catalogued yet/)).toBeInTheDocument();
+  });
 });
 
 describe('SetPage', () => {
@@ -183,6 +214,8 @@ describe('SetPage', () => {
     await u.click(screen.getByRole('radio', { name: 'Owned' }));
     expect(screen.getByText('You don’t own any cards from this set yet.')).toBeInTheDocument();
     await u.click(screen.getByRole('radio', { name: 'Wishlist' }));
+    expect(screen.getByText('None of this set’s cards are on your wishlist.')).toBeInTheDocument();
+    await u.type(screen.getByPlaceholderText('Name or #'), 'nothing like this');
     expect(screen.getByText('No cards match these filters.')).toBeInTheDocument();
   });
 
@@ -283,7 +316,8 @@ describe('SetPage', () => {
       renderPage();
       expect(tiles()).toEqual(['Charmander · Normal', 'Charmander · Reverse Holo', 'Charmeleon · Normal', 'Charmeleon · Reverse Holo', 'Charizard ex · Holo']);
       expect(screen.getByRole('radio', { name: 'All 5' })).toBeInTheDocument();
-      expect(screen.getAllByText(/· Reverse Holo/)).toHaveLength(2);
+      // The printing name has its own line under the number, so it is never truncated.
+      expect(screen.getAllByText('Reverse Holo')).toHaveLength(2);
     });
 
     it('marks ownership and price per printing', () => {

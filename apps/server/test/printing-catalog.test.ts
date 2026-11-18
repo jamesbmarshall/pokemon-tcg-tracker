@@ -90,6 +90,18 @@ describe('automatic catalogue lifecycle', () => {
     }
   });
 
+  it('catalogues sets the instance holds before the rest of the queue', async () => {
+    const client = await setupOwner(server.app);
+    const collection = await personalId(client);
+    // Two sets ahead of ours in the queue's own order (newer release dates come first).
+    server.ctx.db.run("INSERT INTO printing_sync_queue (set_id, release_date, next_at) VALUES ('zz-newer-a', '2030-01-01', 0), ('zz-newer-b', '2030-01-02', 0), (?, '2026-10-14', 0)", setId);
+    await client.put(`/api/collections/${collection}/entries`, { entries: [{ cardId: cards[0].id, variant: 'normal', quantity: 1, addedAt: new Date().toISOString() }] });
+    fetchMock.mockClear();
+    expect(await syncPrintingCatalogues(server.ctx, 1)).toMatchObject({ imported: 1, failed: 0 });
+    expect(readPrintingProfile(server.ctx.db, setId)?.complete).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('zz-newer'))).toBe(false);
+  });
+
   it('discovers an unseen set, imports it without holdings, and serves one classification everywhere', async () => {
     await discoverSets(server.ctx, 'en');
     expect(await syncPrintingCatalogues(server.ctx)).toMatchObject({ imported: 1, failed: 0 });
