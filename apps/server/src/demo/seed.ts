@@ -83,3 +83,22 @@ export function buildSeedPlan(): DemoSeedPlan {
     ],
   };
 }
+
+/**
+ * The printing a demo copy is filed under: the card's first core printing, else its first
+ * catalogued printing, else its first legacy variant. Only with no card data at all (an offline
+ * first boot) does it fall back to the legacy 'normal' label, which the card page then offers to
+ * identify.
+ */
+export function seedPrinting(card: { printings?: { id: string; role?: string }[]; variants?: string[] } | undefined): string {
+  return card?.printings?.find((p) => p.role === 'core')?.id ?? card?.printings?.[0]?.id ?? card?.variants?.[0] ?? 'normal';
+}
+
+/**
+ * Shape of the seeded value history, as a fraction of today's value: a gentle rise over the
+ * window with a small wobble, equal to exactly 1 today (`daysAgo` 0) so the chart ends at the
+ * collection's real total.
+ */
+export function historyFactor(daysAgo: number, days: number): number {
+  return (1 - daysAgo / (days * 3)) * (1 + Math.sin(daysAgo / 4) * 0.03);
+}
