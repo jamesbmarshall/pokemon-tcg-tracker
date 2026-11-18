@@ -41,8 +41,34 @@ describe('Layout', () => {
     for (const name of ['Dashboard', 'Sets', 'Collection', 'Wishlist']) {
       expect(screen.getAllByRole('link', { name: new RegExp(`^${name}`) })).toHaveLength(2);
     }
-    expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(2);
+    // On phones the tab bar holds four pages plus More; Settings lives in the sidebar and the More sheet.
+    expect(screen.getAllByRole('link', { name: 'Settings' })).toHaveLength(1);
+    const tabs = within(screen.getByRole('navigation', { name: 'Main' }));
+    expect(tabs.getAllByRole('link').map((l) => l.textContent)).toEqual(['Dashboard', 'Sets', 'Collection', 'Wishlist']);
+    expect(tabs.getByRole('button', { name: 'More' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'TCGdex' })).toHaveAttribute('href', 'https://tcgdex.dev');
+  });
+
+  it('opens a More sheet on phones with the remaining pages, and closes it after navigating', async () => {
+    renderLayout();
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('button', { name: 'More' }));
+    const sheet = within(screen.getByRole('dialog', { name: 'More' }));
+    // The test user is the owner, so Admin is listed too.
+    expect(sheet.getAllByRole('link').map((l) => l.textContent)).toEqual(['Sealed', 'Search', 'Scan', 'Lists', 'Sharing', 'Settings', 'Admin', 'Account']);
+    expect(sheet.getByRole('button', { name: /theme/i })).toBeInTheDocument();
+    expect(sheet.getByRole('link', { name: 'Lists' })).toHaveAttribute('href', '/lists');
+    await userEvent.click(sheet.getByRole('link', { name: 'Settings' }));
+    expect(screen.getByText('Settings content')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'More' })).not.toBeInTheDocument();
+    // The More tab shows where you are when the page lives in the sheet.
+    expect(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('button', { name: 'More' })).toHaveClass('text-accent');
+  });
+
+  it('closes the More sheet with Escape', async () => {
+    renderLayout();
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('button', { name: 'More' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'More' })).not.toBeInTheDocument();
   });
 
   it('navigates with the nav links and marks the active one', async () => {

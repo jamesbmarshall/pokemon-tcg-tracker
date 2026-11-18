@@ -1,4 +1,4 @@
-import { printingRoleLabel } from '@poketracker/shared/printings';
+import { printingNote } from '@poketracker/shared/printings';
 import { printingLabel } from '@poketracker/shared/printings';
 import { memo, useMemo, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -12,9 +12,25 @@ import { formatGrade } from '../utils/grading';
 import { useMoney } from '../hooks/useMoney';
 import { isFoil, variantLabel, variantShort } from '../utils/variants';
 import { toast } from '../store/toastStore';
+import { cataloguePrice } from '@poketracker/shared/value';
+
+/** What the collection holds of this card, for tiles on holdings pages (collection, shared collections). */
+export interface TileHolding {
+  /** Value of every held copy, raw and slabbed, as counted in the collection total */
+  valueUsd: number;
+  copies: number;
+  /** Copies with no price, which therefore add nothing to valueUsd */
+  unpricedCopies: number;
+}
 
 interface Props {
   card: PokemonCard | CardSnapshot;
+  /**
+   * Set on holdings pages: the tile then shows what the held copies are worth. Without it (and
+   * without `variant`) the tile stands for the card in the catalogue and shows its cheapest core
+   * printing, never the price of a premium printing such as a 1st Edition.
+   */
+  holding?: TileHolding;
   /** Dim cards you don't own (set checklists) */
   dimMissing?: boolean;
   showSet?: boolean;
@@ -29,7 +45,7 @@ import AddToList from './AddToList';
 import { foilLeave, foilMove } from '../utils/foil';
 import { LanguageBadge } from './Language';
 
-function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false, index = 0, variant, listActions = false }: Props) {
+function CardTile({ card, holding, dimMissing = false, showSet = false, quickAdd = false, index = 0, variant, listActions = false }: Props) {
   const s = useMemo(() => ('set' in card ? toSnapshot(card) : card), [card]);
   const owned = useOwned(s.id);
   const allSlabs = useGradedFor(s.id);
@@ -49,9 +65,19 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
   const isOwned = total > 0;
   const topSlab = slabs[0];
   const hasFoil = variant ? isOwned && isFoil(variant) : !!owned && Object.keys(owned).some(isFoil);
-  const price = variant ? s.prices[variant] : Math.max(0, ...s.variants.map((v) => s.prices[v] ?? 0)) || undefined;
+  const allUnpriced = !!holding && holding.unpricedCopies >= holding.copies;
+  const printingCount = !variant && !holding ? s.variants.length : 0;
+  const price = variant ? s.prices[variant] : holding ? (allUnpriced ? undefined : holding.valueUsd) : cataloguePrice({ variants: s.variants, prices: s.prices, printings: card.printings });
+  const priceTitle = holding
+    ? holding.unpricedCopies > 0 && !allUnpriced
+      ? `${holding.copies - holding.unpricedCopies} of ${holding.copies} copies priced`
+      : `Value of ${holding.copies === 1 ? 'your copy' : `your ${holding.copies} copies`}`
+    : printingCount > 1
+      ? `Cheapest of ${printingCount} printings`
+      : undefined;
   const printing = card.printings?.find((p) => p.id === variant);
   const label = variant ? (printingLabel(card, variant) ?? variantLabel(variant)) : '';
+  const note = printing ? printingNote(printing) : undefined;
 
   const change = async (variant: string, delta: number) => {
     const before = owned?.[variant] ?? 0;
@@ -141,11 +167,21 @@ function CardTile({ card, dimMissing = false, showSet = false, quickAdd = false,
           )}
           <p className="mt-0.5 truncate font-mono text-[10.5px] text-faint">
             {showSet ? `${s.setName} · ` : ''}#{s.number}
-            {variant && <span className={isOwned ? 'text-muted' : ''}> · {label}</span>}
           </p>
-          {printing && <p className="text-[10px] text-muted" title={printing.decision?.reason}>{printingRoleLabel(printing)}</p>}
+          {/* In the Master view the printing name is all that tells identical artwork apart, so it gets its own line and is never cut off. */}
+          {variant && <p className={`mt-0.5 text-[11px] leading-snug ${isOwned ? 'text-fg' : 'text-muted'}`}>{label}</p>}
+          {note && <p className="mt-0.5 text-[10.5px] leading-snug text-muted" title={note.detail}>{note.note}</p>}
         </div>
-        {price !== undefined && <span className="shrink-0 font-mono text-[11px] text-muted tabular">{money(price, { compact: true })}</span>}
+        {(price !== undefined || allUnpriced) && (
+          <div className="shrink-0 text-right" title={priceTitle}>
+            {price !== undefined ? (
+              <span className="block font-mono text-[11px] text-muted tabular">{money(price, { compact: true })}</span>
+            ) : (
+              <span className="block text-[11px] text-muted">No price</span>
+            )}
+            {printingCount > 1 && <span className="block text-[10px] text-muted">{printingCount} printings</span>}
+          </div>
+        )}
       </div>
 
       {readOnly ? null : (

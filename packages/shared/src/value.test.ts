@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeValue, costBasis, gradedValue, sealedValue, valuePoint, FALLBACK_RATES } from './value';
+import { cataloguePrice, computeValue, costBasis, gradedValue, sealedValue, valuePoint, FALLBACK_RATES } from './value';
 import type { CardSnapshot, CollectionEntry, GradedCopy, SealedItem } from './types';
 
 const card = (id: string, price = 10): CardSnapshot => ({
@@ -110,5 +110,29 @@ describe('valuePoint', () => {
 
   it('returns undefined for a truly empty collection with no history', () => {
     expect(valuePoint([], new Map(), [], FALLBACK_RATES, false, [])).toBeUndefined();
+  });
+});
+
+describe('cataloguePrice', () => {
+  const printing = (id: string, role: 'core' | 'parallel' | 'additional' | 'unresolved') => ({ id, label: id, role }) as NonNullable<CardSnapshot['printings']>[number];
+
+  it('uses the cheapest core printing, so a premium printing never sets the headline price', () => {
+    // Base Set Mewtwo: the 1st Edition holo is ten times the unlimited holo.
+    const mewtwo = { ...card('base1-10'), variants: ['holo', 'holo1st', 'holoShadowless'], prices: { holo: 85.25, holo1st: 814.64, holoShadowless: 814.64 }, printings: [printing('holo', 'core'), printing('holo1st', 'additional'), printing('holoShadowless', 'additional')] };
+    expect(cataloguePrice(mewtwo)).toBe(85.25);
+  });
+
+  it('falls back to the cheapest priced printing when no core printing has a price', () => {
+    const c = { ...card('base1-10'), variants: ['a', 'b'], prices: { a: 40, b: 12 }, printings: [printing('a', 'unresolved'), printing('b', 'unresolved')] };
+    expect(cataloguePrice(c)).toBe(12);
+  });
+
+  it('uses the cheapest variant for legacy cards without printing records', () => {
+    expect(cataloguePrice({ ...card('sv1-001'), variants: ['normal', 'reverseHolofoil'], prices: { normal: 1, reverseHolofoil: 2 } })).toBe(1);
+  });
+
+  it('ignores zero and missing quotes, and returns undefined when nothing is priced', () => {
+    expect(cataloguePrice({ ...card('sv1-001'), variants: ['normal', 'holofoil'], prices: { normal: 0, holofoil: 3 } })).toBe(3);
+    expect(cataloguePrice({ ...card('sv1-001'), variants: ['normal'], prices: {} })).toBeUndefined();
   });
 });

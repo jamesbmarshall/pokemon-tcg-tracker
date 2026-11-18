@@ -133,13 +133,15 @@ export function EmptyState({ icon, title, children, action }: { icon: ReactNode;
 
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
+    // Actions sit beside the title whenever they fit, and wrap below it only when they don't, so a
+    // phone doesn't spend a whole row on a few buttons.
+    <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-3 border-b border-line pb-4 sm:gap-x-4 sm:pb-5">
+      <div className="min-w-0 flex-1 basis-36">
         {eyebrow && <p className="eyebrow mb-2">{eyebrow}</p>}
         <h1 className="font-display text-[2rem] font-medium leading-[1.1] tracking-tight sm:text-[2.6rem]">{title}</h1>
         {children && <div className="mt-2 text-sm text-muted">{children}</div>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }

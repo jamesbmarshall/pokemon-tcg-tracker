@@ -9,7 +9,8 @@
     "apps/*"
   ],
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "npm": ">=11"
   },
   "scripts": {
     "dev": "npm run dev -w @poketracker/server & npm run dev -w @poketracker/web",
@@ -22,6 +23,8 @@
     "audit:printings": "tsx scripts/audit-printings.ts",
     "test:browser": "playwright test",
     "audit:dependencies": "node scripts/audit-dependencies.mjs",
+    "lockfile:check": "node scripts/lockfile-registry.mjs",
+    "lockfile:fix": "node scripts/lockfile-registry.mjs --fix",
     "test:crash": "node scripts/crash-rehearsal.mjs",
     "test:recovery": "node --import tsx scripts/recovery-rehearsal.ts",
     "test:backup-reliability": "node --import tsx scripts/backup-responsiveness.ts"

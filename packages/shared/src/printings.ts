@@ -85,6 +85,14 @@ export function printingLabel(card: Partial<Pick<PokemonCard, 'printings'>>, id:
   return card.printings?.find((p) => p.id === id)?.label;
 }
 
-export function printingRoleLabel(printing: CardPrinting): string {
-  return printing.role === 'core' || printing.role === 'parallel' ? 'Counts towards Master' : printing.role === 'additional' ? 'Extra · not needed for Master' : 'Not counted towards Master · needs checking';
+/**
+ * A short note for a printing that does not count towards the set's checklist, or undefined for
+ * one that does: counting is the normal case, so it needs no label. Written for collectors, not in
+ * the classifier's terms (see docs/printing-standard.md: no role names or inference jargon in
+ * printing labels).
+ */
+export function printingNote(printing: CardPrinting): { note: string; detail: string } | undefined {
+  if (printing.role === 'core' || printing.role === 'parallel') return undefined;
+  if (printing.role === 'additional') return { note: 'Extra · not needed for Master', detail: 'A special-product or promotional version. Copies you own are kept and valued, but Master does not need it.' };
+  return { note: 'Not in Master count yet', detail: 'The card data does not yet confirm this printing is part of the set’s standard checklist, so it does not count towards Base, Full or Master. You can still add and value copies.' };
 }

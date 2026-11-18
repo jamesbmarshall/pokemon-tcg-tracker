@@ -1,10 +1,12 @@
 import type { CardSnapshot, PokemonCard } from '../api/types';
-import CardTile from './CardTile';
+import CardTile, { type TileHolding } from './CardTile';
 
 export interface GridTile {
   card: PokemonCard | CardSnapshot;
   /** When set, the tile represents this single printing of the card. */
   variant?: string;
+  /** On holdings pages, what is held of the card; the tile then shows its value. */
+  holding?: TileHolding;
 }
 
 export default function CardGrid({
@@ -26,8 +28,8 @@ export default function CardGrid({
   const items: GridTile[] = tiles ?? (cards ?? []).map((card) => ({ card }));
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-4 gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]">
-      {items.map(({ card, variant }, i) => (
-        <CardTile key={variant ? `${card.id}::${variant}` : card.id} card={card} variant={variant} index={i} dimMissing={dimMissing} showSet={showSet} quickAdd={quickAdd} listActions={listActions} />
+      {items.map(({ card, variant, holding }, i) => (
+        <CardTile key={variant ? `${card.id}::${variant}` : card.id} card={card} variant={variant} holding={holding} index={i} dimMissing={dimMissing} showSet={showSet} quickAdd={quickAdd} listActions={listActions} />
       ))}
     </div>
   );

@@ -7,14 +7,15 @@
  * Nothing here runs unless config.demoMode is true, so a normal instance pays no cost for it.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { entryKey, GRADING_COMPANIES } from '@poketracker/shared/value';
+import { entryKey, GRADING_COMPANIES, todayKey } from '@poketracker/shared/value';
 import type { CollectionEntry, GradedCopy, WishlistEntry } from '@poketracker/shared/types';
 import { audit, HttpError, Limiter, now, type Ctx } from './context.ts';
 import { createSession, createUser, toSessionUser } from './auth.ts';
 import { putEntry, putGraded } from './collections.ts';
 import { newId, randomToken } from './security.ts';
-import { allSeedCardIds, buildSeedPlan } from './demo/seed.ts';
-import { refreshCards } from './cards.ts';
+import { allSeedCardIds, buildSeedPlan, historyFactor, SEED_SETS, seedPrinting } from './demo/seed.ts';
+import { readCards, recordValue, refreshCards } from './cards.ts';
+import { getCatalogSet } from './printingCatalog.ts';
 
 export const DEMO_USERNAME = 'demo';
 const DEMO_DISPLAY_NAME = 'Demo collector';
@@ -67,14 +68,29 @@ export async function seedDemo(ctx: Ctx): Promise<void> {
 }
 
 /**
+ * Fetches what the seed needs before it writes anything: the printing catalogues of the seed sets
+ * (so each copy is filed under a printing the catalogue knows, rather than waiting its turn in the
+ * background sync queue) and current prices. Both are best effort: a demo instance without
+ * network access still boots, with legacy 'normal' entries and no value history.
+ */
+async function loadSeedCards(ctx: Ctx) {
+  const warn = (what: string) => (err: unknown) => ctx.log?.warn?.({ err }, `demo seed: could not fetch ${what}`);
+  await Promise.all(SEED_SETS.map((set) => getCatalogSet(ctx, set.id).catch(warn(`the ${set.id} catalogue`))));
+  await refreshCards(ctx, allSeedCardIds()).catch(warn('card data'));
+  return readCards(ctx.db, allSeedCardIds());
+}
+
+/**
  * Wipes and rebuilds the demo collection from the seed plan. Used for the first seed and by the
- * nightly reset job, so visitors never permanently change (or break) the shared demo. Card
- * catalogue data is fetched from TCGdex like any other card; a failed fetch (e.g. no network
- * during tests) leaves entries pointing at ids the client simply can't hydrate yet.
+ * nightly reset job, so visitors never permanently change (or break) the shared demo. Card data
+ * is fetched first, so every copy uses a real printing and the value history ends at the
+ * collection's real total.
  */
 export async function resetDemo(ctx: Ctx): Promise<void> {
   let userId = demoUser(ctx)?.id;
   const plan = buildSeedPlan();
+  const cards = await loadSeedCards(ctx);
+  const printingOf = (cardId: string) => seedPrinting(cards.get(cardId));
 
   ctx.db.tx(() => {
     if (userId) {
@@ -91,7 +107,8 @@ export async function resetDemo(ctx: Ctx): Promise<void> {
 
     const added = now();
     for (const cardId of plan.ownedIds) {
-      const entry: CollectionEntry = { id: entryKey(cardId, 'normal'), cardId, setId: cardId.split('-')[0], variant: 'normal', quantity: 1, addedAt: added };
+      const variant = printingOf(cardId);
+      const entry: CollectionEntry = { id: entryKey(cardId, variant), cardId, setId: cardId.split('-')[0], variant, quantity: 1, addedAt: added };
       putEntry(ctx, collectionId, entry);
     }
     for (const cardId of plan.wishlistIds) {
@@ -104,7 +121,7 @@ export async function resetDemo(ctx: Ctx): Promise<void> {
         id: newId(),
         cardId: g.cardId,
         setId: g.cardId.split('-')[0],
-        variant: 'holofoil',
+        variant: printingOf(g.cardId),
         company: g.company as GradedCopy['company'],
         grade: g.grade,
         label: g.label,
@@ -120,22 +137,20 @@ export async function resetDemo(ctx: Ctx): Promise<void> {
       list.cardIds.forEach((cardId, i) => ctx.db.run('INSERT INTO list_cards (list_id, card_id, position, added_at) VALUES (?, ?, ?, ?)', listId, cardId, i, added));
     }
 
-    // A gently rising 60-day value history so the dashboard chart has something to show. Market
-    // value is a rough per-card estimate (not real prices, which load separately from TCGdex);
-    // the point is a believable shape, not accuracy.
-    const perCard = 4.5;
-    const days = 60;
-    for (let i = days; i >= 0; i--) {
-      const date = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
-      const grown = plan.ownedIds.length * perCard * (1 - i / (days * 3));
-      const wobble = Math.sin(i / 4) * grown * 0.03;
-      const valueUsd = Math.round((grown + wobble) * 100) / 100;
-      ctx.db.run('INSERT OR REPLACE INTO value_history (collection_id, date, data) VALUES (?, ?, ?)', collectionId, date, JSON.stringify({ date, valueUsd, cards: plan.ownedIds.length, unique: plan.ownedIds.length }));
+    // Today's point comes from real prices, like any collection's. The 60 days before it are a
+    // believable shape scaled to end exactly there, so the chart never jumps on the last day.
+    // With no priced cards (offline) there is nothing honest to draw, so no history is seeded.
+    const today = recordValue(ctx, collectionId);
+    if (today && today.valueUsd > 0) {
+      const days = 60;
+      for (let i = days; i >= 1; i--) {
+        // Same local-date keys as recordValue (todayKey), so the backfill meets today's point exactly.
+        const date = todayKey(new Date(Date.now() - i * 86_400_000));
+        const valueUsd = Math.round(today.valueUsd * historyFactor(i, days) * 100) / 100;
+        ctx.db.run('INSERT OR IGNORE INTO value_history (collection_id, date, data) VALUES (?, ?, ?)', collectionId, date, JSON.stringify({ date, valueUsd, cards: today.cards, unique: today.unique }));
+      }
     }
   });
-
-  // Best-effort: a demo instance without network access still boots, just with un-hydrated cards.
-  await refreshCards(ctx, allSeedCardIds()).catch((err) => ctx.log?.warn?.({ err }, 'demo seed: could not fetch card data'));
 }
 
 /**

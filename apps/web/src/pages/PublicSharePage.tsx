@@ -24,7 +24,8 @@ import { useMoney } from '../hooks/useMoney';
 import { formatDate } from '../utils/format';
 import { PRODUCT_TYPE_LABEL } from '../utils/sealed';
 import { PublicShareContext } from '../components/shareContext';
-import CardGrid from '../components/CardGrid';
+import CardGrid, { type GridTile } from '../components/CardGrid';
+import { useCollectionStats } from '../hooks/useCollectionStats';
 import { Logo } from '../components/ui';
 import { AuthShell, LoginPage } from './AuthPages';
 import { GamePublicView, type GamePublicData } from '../tcg/GamePage';
@@ -84,10 +85,20 @@ function ShareBody({ data }: { data: PublicShare }) {
   const pick = (ids: Iterable<string>) => [...new Set(ids)].map((id) => cards.get(id)).filter((c): c is CardSnapshot => !!c);
   const { scope, target } = data.share;
 
+  const stats = useCollectionStats();
+
   // A card held only as a slab still counts as "in the collection".
   const owned = pick([...byCard.keys(), ...gradedByCard.keys()]).sort(bySetThenNumber);
   const wished = pick(data.wishlist.map((w) => w.cardId));
   const graded = pick(gradedByCard.keys()).sort(bySetThenNumber);
+  // Holdings tiles show what the owner's copies are worth. With hideValue the server sends no
+  // prices, so the tiles fall back to catalogue mode, which then shows nothing.
+  const held = new Map(stats.owned.map((o) => [o.card.id, o]));
+  const holdings = (list: CardSnapshot[]): GridTile[] =>
+    list.map((card) => {
+      const o = held.get(card.id);
+      return { card, holding: o && !data.share.hideValue ? { valueUsd: o.valueUsd, copies: o.quantity, unpricedCopies: o.unpricedCopies } : undefined };
+    });
 
   switch (scope) {
     case 'set':
@@ -95,7 +106,7 @@ function ShareBody({ data }: { data: PublicShare }) {
     case 'wishlist':
       return wished.length ? <CardGrid cards={wished} showSet /> : <Empty>The wishlist is empty.</Empty>;
     case 'graded':
-      return graded.length ? <CardGrid cards={graded} showSet /> : <Empty>No graded cards yet.</Empty>;
+      return graded.length ? <CardGrid tiles={holdings(graded)} showSet /> : <Empty>No graded cards yet.</Empty>;
     case 'sealed':
       return data.sealed.length ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -117,7 +128,7 @@ function ShareBody({ data }: { data: PublicShare }) {
       return (
         <div className="space-y-12">
           <Section icon={<Layers size={18} />} title="Cards" count={owned.length}>
-            {owned.length ? <CardGrid cards={owned} showSet /> : <Empty>No cards yet.</Empty>}
+            {owned.length ? <CardGrid tiles={holdings(owned)} showSet /> : <Empty>No cards yet.</Empty>}
           </Section>
           {wished.length > 0 && (
             <Section icon={<Heart size={18} />} title="Wishlist" count={wished.length}>

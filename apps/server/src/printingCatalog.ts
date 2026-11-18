@@ -8,7 +8,7 @@ import { applyPrintingProfile, buildPrintingProfile, POLICY_VERSION, type Printi
 import { PRINTING_VERSION } from '@poketracker/shared/printings';
 import { setProgress } from '@poketracker/shared/completion';
 import type { CardSet, PokemonCard } from '@poketracker/shared/types';
-import { saveSnapshots } from './cards.ts';
+import { saveSnapshots, trackedCardIds } from './cards.ts';
 import { json, type Db } from './db.ts';
 import { notFound, type Ctx } from './context.ts';
 
@@ -144,8 +144,16 @@ export async function catalogSets(ctx: Ctx, lang: Lang): Promise<CardSet[]> {
  * Processes due or version-invalidated sets from the durable queue, sequentially in this job.
  * On-demand imports share the global slots; the raw-card cache resumes interrupted downloads.
  */
+/**
+ * Imports the next due set catalogues. Sets that anyone on the instance holds (owned, wishlisted,
+ * graded or listed) go first: a fresh install queues every set in every language, well over a
+ * thousand, and at this rate its own collections would otherwise wait up to two days for
+ * classified printings. The queue's own order applies within each group.
+ */
 export async function syncPrintingCatalogues(ctx: Ctx, limit = 8) {
-  const pending = ctx.db.all<{ set_id: string }>('SELECT q.set_id FROM printing_sync_queue q LEFT JOIN printing_catalogues c ON c.set_id = q.set_id WHERE q.next_at <= ? OR c.printing_version != ? OR c.policy_version != ? ORDER BY q.next_at, q.release_date DESC, q.set_id LIMIT ?', Date.now(), PRINTING_VERSION, POLICY_VERSION, limit);
+  const due = ctx.db.all<{ set_id: string }>('SELECT q.set_id FROM printing_sync_queue q LEFT JOIN printing_catalogues c ON c.set_id = q.set_id WHERE q.next_at <= ? OR c.printing_version != ? OR c.policy_version != ? ORDER BY q.next_at, q.release_date DESC, q.set_id', Date.now(), PRINTING_VERSION, POLICY_VERSION);
+  const held = new Set(trackedCardIds(ctx.db).map(setIdFromCardId));
+  const pending = [...due.filter((r) => held.has(r.set_id)), ...due.filter((r) => !held.has(r.set_id))].slice(0, limit);
   let imported = 0;
   for (const { set_id } of pending) {
     try { await getCatalogSet(ctx, set_id, true); imported++; }

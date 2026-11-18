@@ -46,6 +46,19 @@ export function priceOf(card: CardSnapshot | undefined, variant: string) {
   return card.prices[variant] ?? (card.printings?.length ? undefined : Object.values(card.prices)[0]);
 }
 
+/**
+ * The price to show for a card that stands for all of its printings, such as a catalogue tile on a
+ * set or search page. It is the cheapest priced core printing, so a 1st Edition or other premium
+ * printing never sets the headline price of an ordinary card. Cards without core printings fall
+ * back to their cheapest priced printing. Zero and missing quotes are ignored.
+ */
+export function cataloguePrice(card: Pick<CardSnapshot, 'variants' | 'prices'> & Partial<Pick<CardSnapshot, 'printings'>>): number | undefined {
+  const priced = (ids: string[]) => ids.map((id) => card.prices[id]).filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0);
+  const core = priced(card.printings?.filter((p) => p.role === 'core').map((p) => p.id) ?? []);
+  const pool = core.length ? core : priced(card.variants);
+  return pool.length ? Math.min(...pool) : undefined;
+}
+
 /** A slab is worth the owner's valuation, else its linked PriceCharting graded price, else the raw market price. */
 export function gradedValue(g: GradedCopy, cards: Map<string, CardSnapshot>) {
   return g.valueUsd ?? g.pcPrice ?? priceOf(cards.get(g.cardId), g.variant) ?? 0;

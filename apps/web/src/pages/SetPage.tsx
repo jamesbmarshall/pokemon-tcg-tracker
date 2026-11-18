@@ -202,7 +202,17 @@ export default function SetPage() {
         <div className="mt-2 max-w-2xl space-y-2">
           <p>Every card in the set, including secret rares, plus its standard variants such as reverse holos. These are the cards you collect from the set’s booster packs, whether bought individually, in a booster box or in an Elite Trainer Box.</p>
           <p>Special-product versions, promotional stamps and jumbo cards are extras. You can track them under All printings without needing them for Master.</p>
-          {!isLoading && (progress.unresolved > 0 || !progress.coverageComplete) && <p>Progress uses the current checklist. {progress.unresolved > 0 ? `${progress.unresolved} ${progress.unresolved === 1 ? 'version still needs' : 'versions still need'} checking under All printings.` : 'Some card data is still being updated.'}</p>}
+          {!isLoading && progress.uncounted > 0 && (
+            <p>
+              {progress.uncounted} {progress.uncounted === 1 ? 'card can’t' : 'cards can’t'} count towards Base or Full yet, because the card data doesn’t confirm which of {progress.uncounted === 1 ? 'its printings is' : 'their printings are'} standard. You can still add {progress.uncounted === 1 ? 'it' : 'them'}, and {progress.uncounted === 1 ? 'it shows' : 'they show'} under All printings.
+            </p>
+          )}
+          {!isLoading && progress.uncounted === 0 && progress.unresolved > 0 && (
+            <p>
+              {progress.unresolved} {progress.unresolved === 1 ? 'printing isn’t' : 'printings aren’t'} confirmed for the checklist yet. {progress.unresolved === 1 ? 'It shows' : 'They show'} under All printings and {progress.unresolved === 1 ? 'doesn’t' : 'don’t'} count towards Master.
+            </p>
+          )}
+          {!isLoading && !progress.coverageComplete && <p>Some card data is still being updated.</p>}
         </div>
       </details>
 
@@ -285,9 +295,28 @@ export default function SetPage() {
       {isLoading ? (
         <CardSkeletonGrid />
       ) : tiles.length === 0 ? (
-        <p className="border-y border-line py-12 text-center text-sm text-muted">
-          {show === 'missing' ? 'Nothing missing here. Lovely.' : show === 'owned' ? 'You don’t own any cards from this set yet.' : 'No cards match these filters.'}
-        </p>
+        <div className="space-y-3 border-y border-line py-12 text-center text-sm text-muted">
+          {cards.length === 0 ? (
+            <p>This set hasn’t been catalogued yet. Its cards appear here once the card database lists them.</p>
+          ) : show === 'missing' ? (
+            <p>Nothing missing here. Lovely.</p>
+          ) : show === 'owned' ? (
+            <p>You don’t own any cards from this set yet.</p>
+          ) : q.trim() || rarity ? (
+            <p>No cards match these filters.</p>
+          ) : show === 'wishlist' ? (
+            <p>None of this set’s cards are on your wishlist.</p>
+          ) : setMode === 'master' ? (
+            <>
+              <p>None of this set’s printings are confirmed for the Master checklist yet.</p>
+              <button type="button" className="btn btn-ghost" onClick={() => setSetMode('all')}>
+                Show all printings
+              </button>
+            </>
+          ) : (
+            <p>No cards match these filters.</p>
+          )}
+        </div>
       ) : setView === 'binder' ? (
         <BinderView slots={slots} pocketSize={pocketSize} />
       ) : (

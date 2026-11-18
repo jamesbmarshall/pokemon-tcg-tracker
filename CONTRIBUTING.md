@@ -24,7 +24,15 @@ npm run typecheck
 npm run validate:deploy
 ```
 
-You need Node 24 (see `.nvmrc`).
+You need Node 24 and the npm 11 that ships with it (see `.nvmrc`; `nvm use` or `fnm use` picks
+it up). `npm ci` stops with an "Unsupported engine" error on anything older. This is enforced
+because npm 10 and npm 11 write `package-lock.json` differently, so mixing them rewrites the
+lockfile on every install.
+
+The lockfile works with any npm registry, including a managed feed or corporate mirror set in
+your own `~/.npmrc`. It records integrity hashes but no download URLs, and the project `.npmrc`
+tells npm to keep it that way. If CI reports registry URLs in the lockfile, run
+`npm run lockfile:fix` and commit the result.
 
 ## Before opening a pull request
 

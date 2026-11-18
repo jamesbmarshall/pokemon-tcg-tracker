@@ -1,7 +1,7 @@
 import { standardVariants } from '@poketracker/shared/printings';
 import { useMemo } from 'react';
 import { isWithinPrintedTotal } from '../utils/progress';
-import { computeValue, costBasis, entryValue, gradedValue, useCollectionStore, type CostBasis } from '../store/collectionStore';
+import { computeValue, costBasis, entryValue, gradedValue, priceOf, useCollectionStore, type CostBasis } from '../store/collectionStore';
 import { useFx } from './useMoney';
 import type { CardSnapshot, CollectionEntry, GradedCopy } from '../api/types';
 
@@ -27,6 +27,8 @@ export interface OwnedCard {
   graded: GradedCopy[];
   /** Raw copies plus slabs */
   quantity: number;
+  /** Copies (raw or slabbed) with no price at all, so they add nothing to valueUsd */
+  unpricedCopies: number;
   valueUsd: number;
   topPrice: number;
   addedAt: string;
@@ -51,10 +53,12 @@ export function useCollectionStats() {
     for (const e of entries.values()) {
       const card = cards.get(e.cardId);
       if (!card) continue;
-      const price = entryValue(e, cards) ?? 0;
-      const o = ownedCards.get(e.cardId) ?? { card, entries: [], graded: [], quantity: 0, valueUsd: 0, topPrice: 0, addedAt: e.addedAt, cost: NO_COST };
+      const quoted = entryValue(e, cards);
+      const price = quoted ?? 0;
+      const o = ownedCards.get(e.cardId) ?? { card, entries: [], graded: [], quantity: 0, unpricedCopies: 0, valueUsd: 0, topPrice: 0, addedAt: e.addedAt, cost: NO_COST };
       o.entries.push(e);
       o.quantity += e.quantity;
+      if (quoted == null) o.unpricedCopies += e.quantity;
       o.valueUsd += price * e.quantity;
       o.topPrice = Math.max(o.topPrice, price);
       if (e.addedAt > o.addedAt) o.addedAt = e.addedAt;
@@ -63,11 +67,13 @@ export function useCollectionStats() {
     for (const [cardId, slabs] of gradedByCard) {
       const card = cards.get(cardId);
       if (!card) continue;
-      const o = ownedCards.get(cardId) ?? { card, entries: [], graded: [], quantity: 0, valueUsd: 0, topPrice: 0, addedAt: slabs[0].addedAt, cost: NO_COST };
+      const o = ownedCards.get(cardId) ?? { card, entries: [], graded: [], quantity: 0, unpricedCopies: 0, valueUsd: 0, topPrice: 0, addedAt: slabs[0].addedAt, cost: NO_COST };
       o.graded = slabs;
       for (const g of slabs) {
         const v = gradedValue(g, cards);
         o.quantity++;
+        // gradedValue falls back to 0, so check the sources it draws on.
+        if (g.valueUsd == null && g.pcPrice == null && priceOf(cards.get(cardId), g.variant) == null) o.unpricedCopies++;
         o.valueUsd += v;
         o.topPrice = Math.max(o.topPrice, v);
         if (g.addedAt > o.addedAt) o.addedAt = g.addedAt;

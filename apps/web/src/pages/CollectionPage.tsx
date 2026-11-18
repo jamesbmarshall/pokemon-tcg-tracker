@@ -89,14 +89,14 @@ export default function CollectionPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         eyebrow={`${stats.count.toLocaleString('en-GB')} cards · ${stats.unique.toLocaleString('en-GB')} unique · ${stats.sets.length} sets`}
         title="Collection"
         actions={
           <>
-            <Link to="/lists" className="btn btn-ghost !h-9 !text-xs">
-              <ListChecks size={14} /> Lists
+            <Link to="/lists" className="btn btn-ghost !h-9 !text-xs" aria-label="Lists">
+              <ListChecks size={14} /> <span className="max-sm:sr-only">Lists</span>
             </Link>
             <ShareButton scope="collection" what="your collection" compact />
             <ShareButton scope="graded" what="your graded cards" compact />
@@ -107,9 +107,10 @@ export default function CollectionPage() {
       <dl className="grid grid-cols-2 gap-x-8 gap-y-4 sm:flex sm:flex-wrap sm:items-end sm:gap-x-12">
         <div>
           <dt className="eyebrow">{setFilter || q || gradedOnly ? 'Filtered value' : 'Total value'}</dt>
-          <dd className="mt-1 font-display text-[2.4rem] font-medium leading-none tracking-tight tabular">{money(ledger.value)}</dd>
+          <dd className="mt-1 font-display text-[2rem] font-medium leading-none tracking-tight tabular sm:text-[2.4rem]">{money(ledger.value)}</dd>
         </div>
-        <div>
+        {/* On a phone the copy count is already in the line above the title. */}
+        <div className="max-sm:hidden">
           <dt className="eyebrow">Copies</dt>
           <dd className="mt-1 font-display text-2xl font-medium leading-none tabular">{ledger.copies.toLocaleString('en-GB')}</dd>
         </div>
@@ -130,16 +131,18 @@ export default function CollectionPage() {
       </dl>
       <ValuationCoverage />
 
+      {/* On a phone: search and the view switch share the first row, and the filters scroll sideways in the second. */}
       <div className="sticky top-14 z-20 -mx-4 flex flex-wrap items-center gap-2 border-b border-line bg-canvas/95 px-4 py-3 lg:top-0">
-        <div className="relative">
+        <div className="relative max-sm:min-w-0 max-sm:flex-1">
           <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, artist or note" aria-label="Filter collection" className="input !h-9 !w-48 !pl-8 !text-xs" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, artist or note" aria-label="Filter collection" className="input !h-9 !w-48 !pl-8 !text-xs max-sm:!w-full" />
           {q && (
             <button onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-faint" aria-label="Clear">
               <X size={13} />
             </button>
           )}
         </div>
+        <div className="flex items-center gap-2 max-sm:order-last max-sm:-mx-4 max-sm:w-[calc(100%+2rem)] max-sm:overflow-x-auto max-sm:px-4 max-sm:[&>*]:shrink-0 sm:contents">
         <select value={setFilter} onChange={(e) => update('set', e.target.value)} className="input !h-9 !w-auto !max-w-52 !text-xs" aria-label="Set">
           <option value="">All sets</option>
           {sets.map((s) => (
@@ -170,6 +173,7 @@ export default function CollectionPage() {
             <Award size={13} /> Graded <span className="font-mono tabular opacity-70">{slabCount}</span>
           </button>
         )}
+        </div>
         <div className="ml-auto">
           <Segmented<View>
             size="sm"
@@ -267,7 +271,7 @@ export default function CollectionPage() {
           </table>
         </div>
       ) : (
-        <CardGrid cards={items.map((o) => o.card)} showSet />
+        <CardGrid tiles={items.map((o) => ({ card: o.card, holding: { valueUsd: o.valueUsd, copies: o.quantity, unpricedCopies: o.unpricedCopies } }))} showSet />
       )}
     </div>
   );

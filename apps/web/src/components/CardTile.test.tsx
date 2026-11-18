@@ -30,14 +30,45 @@ describe('CardTile', () => {
       'pointer-coarse:[&_button]:min-h-9', 'pointer-coarse:[&_button]:min-w-8',
     );
     expect(screen.getByRole('button', { name: 'Add Reverse Holo' })).toHaveTextContent('RH');
-    // Highest variant price ($2) in GBP at the test rate
-    expect(screen.getByText('£1.00')).toBeInTheDocument();
+    // Cheapest printing ($1) in GBP at the test rate, never the dearest
+    expect(screen.getByText('£0.50')).toBeInTheDocument();
+    expect(screen.getByText('2 printings').parentElement).toHaveAttribute('title', 'Cheapest of 2 printings');
     expect(screen.queryByText(/^×/)).not.toBeInTheDocument();
   });
 
   it('omits the price when the card has none', () => {
     renderWithProviders(<CardTile card={makeSnapshot({ prices: {} })} />);
     expect(screen.queryByText(/£/)).not.toBeInTheDocument();
+  });
+
+  it('on holdings pages, shows what the held copies are worth instead of a catalogue price', () => {
+    // The card's dearest printing is $2; the owner's copies are worth $3 in total.
+    renderWithProviders(<CardTile card={makeSnapshot()} holding={{ valueUsd: 3, copies: 2, unpricedCopies: 0 }} />);
+    expect(screen.getByText('£1.50').parentElement).toHaveAttribute('title', 'Value of your 2 copies');
+    expect(screen.queryByText(/printings$/)).not.toBeInTheDocument();
+  });
+
+  it('says "No price" when none of the held copies is priced', () => {
+    renderWithProviders(<CardTile card={makeSnapshot()} holding={{ valueUsd: 0, copies: 1, unpricedCopies: 1 }} />);
+    expect(screen.getByText('No price')).toBeInTheDocument();
+    expect(screen.queryByText(/£/)).not.toBeInTheDocument();
+  });
+
+  it('flags a holding that is only partly priced', () => {
+    renderWithProviders(<CardTile card={makeSnapshot()} holding={{ valueUsd: 2, copies: 3, unpricedCopies: 1 }} />);
+    expect(screen.getByText('£1.00').parentElement).toHaveAttribute('title', '2 of 3 copies priced');
+  });
+
+  it('labels a printing only when it does not count towards Master', () => {
+    const printing = (id: string, role: 'core' | 'additional' | 'unresolved') => ({ id, label: `${id} label`, finish: 'normal', size: 'standard', distribution: 'unknown', status: 'inferred', role }) as const;
+    const card = makeSnapshot({ variants: ['a', 'b', 'c'], printings: [printing('a', 'core'), printing('b', 'additional'), printing('c', 'unresolved')] });
+    renderWithProviders(<><CardTile card={card} variant="a" /><CardTile card={card} variant="b" /><CardTile card={card} variant="c" /></>);
+    // Each printing name is on its own line, whole.
+    for (const id of ['a', 'b', 'c']) expect(screen.getByText(`${id} label`)).toBeInTheDocument();
+    expect(screen.queryByText(/Counts towards Master/)).not.toBeInTheDocument();
+    expect(screen.getByText('Extra · not needed for Master')).toBeInTheDocument();
+    expect(screen.getByText('Not in Master count yet')).toHaveAttribute('title', expect.stringContaining('does not yet confirm'));
+    expect(screen.queryByText(/needs checking/)).not.toBeInTheDocument();
   });
 
   it('shows the set name when showSet is on', () => {

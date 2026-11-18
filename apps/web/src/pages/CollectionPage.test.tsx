@@ -55,6 +55,16 @@ describe('CollectionPage', () => {
     expect(value()).toBe('£32.00');
   });
 
+  it('prices each tile by the copies held, so the tiles add up to the total', () => {
+    renderPage();
+    // Charmander: 2 × $1 normal + 1 × $2 reverse = $4, not its dearest printing; Charizard $50; Blastoise $10.
+    const tile = (name: string) => screen.getByRole('link', { name: new RegExp(`^${name} .*owned`) }).closest('[data-card]')!;
+    expect(within(tile('Charmander') as HTMLElement).getByText('£2.00')).toBeInTheDocument();
+    expect(within(tile('Charizard') as HTMLElement).getByText('£25.00')).toBeInTheDocument();
+    expect(within(tile('Blastoise') as HTMLElement).getByText('£5.00')).toBeInTheDocument();
+    expect(value()).toBe('£32.00');
+  });
+
   it('shows the grid sorted by most recently added', () => {
     renderPage();
     expect(gridNames()).toEqual(['Blastoise', 'Charmander', 'Charizard']);

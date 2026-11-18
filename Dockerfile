@@ -25,8 +25,8 @@ COPY apps/web/package.json apps/web/
 COPY apps/server/package.json apps/server/
 COPY apps/launcher/package.json apps/launcher/
 COPY packages/shared/package.json packages/shared/
-# npm swaps the registry.npmjs.org host in the lockfile's resolved URLs for the configured
-# registry, so a mirror works without editing package-lock.json.
+# The lockfile records integrity hashes but no registry URLs (see .npmrc), so npm fetches each
+# tarball from whichever registry is configured and a mirror works without editing it.
 ARG NPM_REGISTRY=""
 RUN --mount=type=cache,target=/root/.npm \
     --mount=type=secret,id=npmrc,target=/root/.npmrc,required=false \

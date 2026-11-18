@@ -18,6 +18,18 @@ describe('useCollectionStats', () => {
     expect(result.current).toMatchObject({ valueUsd: 0, count: 0, unique: 0, owned: [], sets: [], completedSets: 0 });
   });
 
+  it('counts copies with no price, raw and slabbed', () => {
+    const slab = makeGraded({ id: 'g-unpriced', cardId: 'sv03-001', variant: 'holofoil' });
+    useCollectionStore.setState({
+      entries: new Map([makeEntry({ cardId: 'sv03-001', variant: 'normal', quantity: 2 }), makeEntry({ cardId: 'sv03-001', variant: 'legacy', quantity: 1 })].map((e) => [e.id, e])),
+      cards: new Map([[ 'sv03-001', makeSnapshot({ id: 'sv03-001', printings: [{ id: 'normal', label: 'Normal', role: 'core' }] as never, prices: { normal: 1 } }) ]]),
+      graded: new Map([[slab.id, slab]]),
+      gradedByCard: indexGraded(new Map([[slab.id, slab]])),
+    });
+    const { result } = renderStats();
+    expect(result.current.owned[0]).toMatchObject({ quantity: 4, valueUsd: 2, unpricedCopies: 2 });
+  });
+
   it('aggregates owned cards and per-set progress, counting secret rares outside base', () => {
     const tiny = { printedTotal: 2, setId: 'tiny', setName: 'Tiny', series: 'Test' };
     useCollectionStore.setState({
